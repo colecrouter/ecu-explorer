@@ -1,0 +1,19 @@
+{
+	"name": "@ecu-explorer/tools",
+	"version": "0.0.1",
+	"type": "module",
+	"description": "CLI tools for ECU Explorer",
+	"private": true,
+	"scripts": {
+		"build": "echo 'No build step required for JS package'",
+		"inspect-rom": "node ./inspect-rom.js"
+	},
+	"dependencies": {
+		"@ecu-explorer/core": "*",
+		"@ecu-explorer/definitions-ecuflash": "*",
+		"sade": "^1.8.1"
+	},
+	"devDependencies": {
+		"@types/node": "*"
+	}
+}

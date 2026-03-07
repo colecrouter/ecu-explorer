@@ -196,6 +196,38 @@ npm run test -- binary.test.ts
 
 ## Common Pitfalls
 
+### CLI Tools (`packages/tools`)
+
+The project includes a CLI tools package at `packages/tools/` for headless operations.
+
+**Structure**:
+- Plain JavaScript with JSDoc
+- Uses [Sade](https://github.com/lukeed/sade) CLI framework
+- Scripts use `tools:` prefix (e.g., `npm run tools:inspect-rom`)
+
+**Available tools**:
+
+- `inspect-rom`: Inspects ROM files and outputs metadata
+
+> [!WARN] All tools rely on existing packages in this repository. Make sure latest changes are built before running tools.
+
+**Adding new tools**:
+1. Add JS file to `packages/tools/`
+2. Add script to `packages/tools/package.json`
+3. Add script to root `package.json` with `tools:` prefix
+
+### Headless ROM Inspection for Agents
+
+Use [`npm run tools:inspect-rom`](package.json) when you need a non-UI reproduction of the ROM loading flow.
+
+**Usage**:
+
+```bash
+npm run tools:inspect-rom -- --rom ./path/to/rom.hex --definition ./path/to/definition.xml
+```
+
+> [!NOTE] Always pipe output to filter for the specific key you need, e.g. `| grep "Injector"` or `| findstr /c:"Injector"`.
+
 ### Test ROM File Format Confusion
 
 **Problem**: Sample ROM files with `.hex` extension are **raw binary data**, NOT Intel hex format.
