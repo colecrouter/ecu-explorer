@@ -18,10 +18,12 @@ type UndoRedoOperation = {
  */
 function create1DTableDef(rows: number = 10): Table1DDefinition {
 	return {
+		id: `table-1d-${rows}`,
 		kind: "table1d",
 		name: "Test 1D Table",
 		rows,
 		z: {
+			id: "z-test-1d",
 			name: "Values",
 			address: 0x1000,
 			length: rows,
@@ -38,11 +40,13 @@ function create2DTableDef(
 	cols: number = 4,
 ): Table2DDefinition {
 	return {
+		id: `table-2d-${rows}x${cols}`,
 		kind: "table2d",
 		name: "Test 2D Table",
 		rows,
 		cols,
 		z: {
+			id: "z-test-2d",
 			name: "Values",
 			address: 0x1000,
 			length: rows * cols,
@@ -60,12 +64,14 @@ function create3DTableDef(
 	depth: number = 2,
 ): Table3DDefinition {
 	return {
+		id: `table-3d-${rows}x${cols}x${depth}`,
 		kind: "table3d",
 		name: "Test 3D Table",
 		rows,
 		cols,
 		depth,
 		z: {
+			id: "z-test-3d",
 			name: "Values",
 			address: 0x1000,
 			length: rows * cols * depth,

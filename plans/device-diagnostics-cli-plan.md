@@ -27,6 +27,16 @@ Target runtime split:
 - CLI runtime uses the `webusb` export from `node-usb`
 - tests use a fake WebUSB-compatible provider
 
+### Runtime fallback for OpenPort ownership conflicts
+
+When running on macOS or other systems where the OpenPort USB interface is already claimed by a kernel driver, the transport should fall back to WebHID when available.
+
+Behavior:
+- Attempt WebUSB/open path first for the normal flow.
+- If `connect()` cannot claim the interface through USB, continue with the same device lookup through WebHID.
+- This preserves CLI diagnostics and protocol probing in environments where bulk USB claim is blocked without requiring manual driver swaps for every run.
+- If neither path works, surface the original USB claim failure to preserve actionable error context.
+
 ### Reuse existing output patterns
 
 The diagnostics tool should feel like a sibling of [`inspect-rom.js`](../packages/tools/inspect-rom.js), not a one-off debugging script.

@@ -10,11 +10,13 @@ function create2DTableDef(
 	cols: number = 4,
 ): Table2DDefinition {
 	return {
+		id: `table-2d-${rows}x${cols}`,
 		kind: "table2d",
 		name: "Test 2D Table",
 		rows,
 		cols,
 		z: {
+			id: "z-test-2d",
 			name: "Values",
 			address: 0x1000,
 			length: rows * cols,

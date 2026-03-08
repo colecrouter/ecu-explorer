@@ -17,6 +17,10 @@
 - [ ] Explore tree-shaking plotly
 - [x] Logs integration
 - [x] USB device support
+- [ ] Validate OpenPort 2.0 desktop transport matrix:
+  - macOS desktop should prefer CDC ACM serial when exposed by the device
+  - HID support remains provisional until end-to-end validation proves parity with USB/serial
+  - remove HID fallback if it cannot be validated for real OpenPort 2.0 workflows
 - [x] "Open Graph" opens wrong graph, should open graph for active table/doc
 - [ ] ROM flash/readback via OpenPort 2.0
 - [x] MCP tools integration
