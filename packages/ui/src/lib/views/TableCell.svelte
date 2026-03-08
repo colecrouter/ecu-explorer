@@ -1,8 +1,12 @@
 <script lang="ts">
-	import type { Endianness, ScalarType, ValidationResult } from "@ecu-explorer/core";
+	import type {
+		Endianness,
+		ScalarType,
+		ValidationResult,
+	} from "@ecu-explorer/core";
 	import { validateValue } from "@ecu-explorer/core";
 	import { createEventDispatcher } from "svelte";
-	import { getStepForDataType, getRangeForDataType } from "./table";
+	import { getStepForDataType, getRangeForDataType } from "./table.js";
 
 	const dispatch = createEventDispatcher<{
 		commit: { bytes: Uint8Array };

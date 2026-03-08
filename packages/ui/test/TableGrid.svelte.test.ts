@@ -7,7 +7,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-svelte";
-import TableGrid from "../src/lib/views/TableGrid.svelte.js";
+import TableGrid from "../src/lib/views/TableGrid.svelte";
 import { TableView } from "../src/lib/views/table.svelte.js";
 
 function createUnit(symbol: string): Unit {
@@ -29,6 +29,7 @@ function createStaticAxis(
 	unit: Unit,
 ): StaticArrayDefinition {
 	return {
+		id: `axis-${name.toLowerCase().replace(/\s+/g, "-")}`,
 		kind: "static",
 		name,
 		values,
@@ -40,11 +41,12 @@ describe("TableGrid Component", () => {
 	const rom = new Uint8Array(1024).fill(0);
 
 	const def2d: Table2DDefinition = {
+		id: "table-2d-test",
 		kind: "table2d",
 		name: "Test 2D",
 		rows: 4,
 		cols: 4,
-		z: { name: "Values", address: 0, length: 16, dtype: "u8" },
+		z: { id: "z-test-2d", name: "Values", address: 0, length: 16, dtype: "u8" },
 	};
 
 	it("should render correct number of cells for 2D table", async () => {
@@ -57,12 +59,19 @@ describe("TableGrid Component", () => {
 
 	it("should show layer selector for 3D table", async () => {
 		const def3d: Table3DDefinition = {
+			id: "table-3d-test",
 			kind: "table3d",
 			name: "Test 3D",
 			rows: 4,
 			cols: 4,
 			depth: 2,
-			z: { name: "Values", address: 0, length: 32, dtype: "u8" },
+			z: {
+				id: "z-test-3d",
+				name: "Values",
+				address: 0,
+				length: 32,
+				dtype: "u8",
+			},
 		};
 		const view = new TableView(rom, def3d);
 		const screen = render(TableGrid, { view, definition: def3d });

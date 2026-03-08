@@ -4,6 +4,8 @@ import type {
 	DeviceTransport,
 } from "@ecu-explorer/device";
 
+// USBDevice and USBDeviceRequestOptions are available globally from @types/w3c-web-usb
+
 // Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L1
 // USB vendor/product IDs for OpenPort 2.0
 const VENDOR_ID = 0x0403;
@@ -13,6 +15,14 @@ const PRODUCT_ID = 0xcc4d;
 // USB bulk transfer endpoint addresses
 const ENDPOINT_IN = 0x81;
 const ENDPOINT_OUT = 0x02;
+
+/**
+ * Options for OpenPort2Transport constructor.
+ */
+export interface OpenPort2TransportOptions {
+	/** Optional USB interface. Defaults to navigator.usb in browser environments. */
+	usb?: USB;
+}
 
 /**
  * Ensure a Uint8Array is backed by a plain ArrayBuffer (not SharedArrayBuffer).
@@ -208,16 +218,30 @@ export class OpenPort2Connection implements DeviceConnection {
 /**
  * DeviceTransport implementation for the Tactrix OpenPort 2.0 USB interface.
  * Uses the WebUSB API (navigator.usb) to enumerate and connect to devices.
+ *
+ * Supports injecting a custom USB interface for use in non-browser environments
+ * (e.g., Node.js CLI tools using node-usb).
  */
 export class OpenPort2Transport implements DeviceTransport {
 	readonly name = "Tactrix OpenPort 2.0";
+	private readonly usb: USB;
+
+	/**
+	 * Creates a new OpenPort2Transport.
+	 *
+	 * @param options - Optional configuration options
+	 * @param options.usb - Custom USB interface. Defaults to navigator.usb.
+	 */
+	constructor(options?: OpenPort2TransportOptions) {
+		this.usb = options?.usb ?? globalThis.navigator?.usb;
+	}
 
 	/**
 	 * Return all previously-granted OpenPort 2.0 devices.
 	 * Does NOT trigger the browser USB picker.
 	 */
 	async listDevices(): Promise<DeviceInfo[]> {
-		const devices = await navigator.usb.getDevices();
+		const devices = await this.usb.getDevices();
 		return devices
 			.filter((d) => d.vendorId === VENDOR_ID && d.productId === PRODUCT_ID)
 			.map(usbDeviceToInfo);
@@ -228,7 +252,7 @@ export class OpenPort2Transport implements DeviceTransport {
 	 * Returns the DeviceInfo for the selected device.
 	 */
 	async requestDevice(): Promise<DeviceInfo> {
-		const device = await navigator.usb.requestDevice({
+		const device = await this.usb.requestDevice({
 			filters: [{ vendorId: VENDOR_ID, productId: PRODUCT_ID }],
 		});
 		return usbDeviceToInfo(device);
@@ -241,7 +265,7 @@ export class OpenPort2Transport implements DeviceTransport {
 	 * @param deviceId - The id field from DeviceInfo (format: "openport2:<serial>")
 	 */
 	async connect(deviceId: string): Promise<OpenPort2Connection> {
-		const devices = await navigator.usb.getDevices();
+		const devices = await this.usb.getDevices();
 		const device = devices.find(
 			(d) =>
 				d.vendorId === VENDOR_ID &&

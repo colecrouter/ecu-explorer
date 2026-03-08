@@ -12,7 +12,7 @@ import type { Table1DDefinition, Table2DDefinition } from "@ecu-explorer/core";
 import { describe, expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-svelte";
-import TableGrid from "../src/lib/views/TableGrid.svelte.js";
+import TableGrid from "../src/lib/views/TableGrid.svelte";
 import { TableView } from "../src/lib/views/table.svelte.js";
 
 describe("TableGrid cell editing — index correctness", () => {
@@ -22,10 +22,17 @@ describe("TableGrid cell editing — index correctness", () => {
 			const rom = new Uint8Array(1024);
 
 			const def: Table1DDefinition = {
+				id: "table-1d-edit-8",
 				kind: "table1d",
 				name: "Test 1D",
 				rows: 8,
-				z: { name: "Values", address: 0, length: 8, dtype: "u8" },
+				z: {
+					id: "z-test-1d-8",
+					name: "Values",
+					address: 0,
+					length: 8,
+					dtype: "u8",
+				},
 			};
 
 			const view = new TableView(rom, def);
@@ -71,10 +78,17 @@ describe("TableGrid cell editing — index correctness", () => {
 			const rom = new Uint8Array(1024);
 
 			const def: Table1DDefinition = {
+				id: "table-1d-edit-5",
 				kind: "table1d",
 				name: "Test 1D",
 				rows: 5,
-				z: { name: "Values", address: 0, length: 5, dtype: "u8" },
+				z: {
+					id: "z-test-1d-5",
+					name: "Values",
+					address: 0,
+					length: 5,
+					dtype: "u8",
+				},
 			};
 
 			const view = new TableView(rom, def);
@@ -114,11 +128,18 @@ describe("TableGrid cell editing — index correctness", () => {
 		it("editing cell at row=1, col=2 in a 4×4 table should update address 6", async () => {
 			const rom = new Uint8Array(1024);
 			const def: Table2DDefinition = {
+				id: "table-2d-edit-4x4",
 				kind: "table2d",
 				name: "Test 2D",
 				rows: 4,
 				cols: 4,
-				z: { name: "Values", address: 0, length: 16, dtype: "u8" },
+				z: {
+					id: "z-test-2d",
+					name: "Values",
+					address: 0,
+					length: 16,
+					dtype: "u8",
+				},
 			};
 			const view = new TableView(rom, def);
 			const screen = render(TableGrid, { view, definition: def });
