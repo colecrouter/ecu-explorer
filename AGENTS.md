@@ -6,7 +6,7 @@ Instructions:
 - Make sure to rebuild the project after making cross-package changes, or else they will not update.
 - [`README.md`](README.md) describes the project structure and technical details.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) describes how to contribute to the project, including code style and conventions.
-- [`DEVELOPMENT.md`](DEVELOPMENT.md) outlines internal, long-term developments.
+- [`DEVELOPMENT.md`](DEVELOPMENT.md) is historical context only; active planning lives in GitHub Issues and the GitHub project.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) describes the architecture of the project.
 - [`TESTING_IDEOLOGY.md`](TESTING_IDEOLOGY.md) codifies our testing principles (Contract-focused, Transcript-driven).
 
@@ -14,15 +14,15 @@ Instructions:
 
 ### How to Find What to Work On
 
-1. **Check DEVELOPMENT.md** - Review the current phase and feature status
-2. **Review PROGRESS matrix** - See which features are in progress, blocked, or ready
+1. **Check GitHub Issues** - Review open issues and linked project items
+2. **Review the GitHub project board** - See which features are in progress, blocked, or ready
 3. **Check KNOWN_ISSUES.md** - Identify bugs that need fixing
 4. **Look for TODO comments** - Search codebase for `TODO:` and `FIXME:` markers
 5. **Review open specs** - Check `specs/` folder for features awaiting implementation
 
 **Decision**: Pick a feature that is:
 
-- Marked as "Ready" in DEVELOPMENT.md
+- Marked as `Ready` in the GitHub project
 - Has clear acceptance criteria in its spec
 - Has no blocking dependencies
 - Matches your current expertise level
@@ -53,7 +53,7 @@ Instructions:
 6. **Run tests** - Execute `npm run test:coverage` to verify tests pass
 7. **Update documentation** - Add JSDoc comments, update specs if needed
 8. **Verify against spec** - Ensure all acceptance criteria are met
-9. **Update DEVELOPMENT.md** - Mark feature as complete (if present)
+9. **Update the linked GitHub issue/project item** - Mark feature as complete and capture notes there
 
 
 ## Code Review Checklist
@@ -170,20 +170,20 @@ npm run test -- binary.test.ts
 4. **Add examples** - Include code examples of feature usage
 5. **Link to code** - Reference implementation files
 
-### Update DEVELOPMENT.md Progress
+### Update GitHub Tracking
 
-1. **Mark feature as complete** - Update status in DEVELOPMENT.md
-2. **Add completion date** - Include date completed
-3. **Link to commit** - Reference the commit hash
+1. **Mark feature as complete** - Update the linked issue and project item status
+2. **Add completion date** - Include date completed in the issue or PR
+3. **Link to commit/PR** - Reference the implementing change
 4. **Note any blockers** - Document any remaining issues
-5. **Update metrics** - Update test coverage and code metrics
+5. **Update metrics** - Update test coverage and code metrics where relevant
 
 ### Link to Related Documentation
 
 - Link to spec file in commit message
 - Link to related documentation in JSDoc
 - Link to test files in code comments
-- Link to DEVELOPMENT.md in feature descriptions
+- Link to the relevant GitHub issue or project item in feature descriptions
 
 ### Include Code Examples
 

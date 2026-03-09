@@ -16,7 +16,8 @@ A community-driven monorepo for ROM analysis, real-time ECU telemetry, and calib
 
 **Want to contribute?**
 - See the [`CONTRIBUTING.md`](CONTRIBUTING.md) guide for how to get involved
-- Check [`DEVELOPMENT.md`](DEVELOPMENT.md) for architecture and roadmap
+- Check the [GitHub Issues](https://github.com/colecrouter/vscode-ecu-explorer/issues) and [v1 project board](https://github.com/users/colecrouter/projects/3) for active roadmap work
+- Read [`DEVELOPMENT.md`](DEVELOPMENT.md) for archived planning context
 - Read [`AGENTS.md`](AGENTS.md) for development rules and patterns
 
 ---

@@ -45,7 +45,7 @@ Use descriptive branch names that reflect the feature or fix (e.g., `feature/add
 
 - Read the relevant specification in the [`specs/`](specs/) folder
 - Review [`ARCHITECTURE.md`](ARCHITECTURE.md) to understand the system design
-- Check [`DEVELOPMENT.md`](DEVELOPMENT.md) for current development phases
+- Check the [GitHub Issues](https://github.com/colecrouter/vscode-ecu-explorer/issues) and [v1 project board](https://github.com/users/colecrouter/projects/3) for current priorities
 - Review [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) for known limitations
 
 ### 3. Make Your Changes
@@ -156,6 +156,7 @@ npm run test:coverage
 1. **JSDoc comments**: Add proportionally detailed comments to exported/reusable functions
 1. **Update specs**: Update/correct implementation notes
 1. **Update README.md**: Add user-facing features or major changes
+1. **Update linked issue/project state**: Keep the GitHub issue *and* [project item](https://github.com/users/colecrouter/projects/3) current
 1. **Add code examples**: Include usage examples when relevant
 
 ## Code Style
