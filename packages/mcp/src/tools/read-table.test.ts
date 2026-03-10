@@ -1,7 +1,7 @@
 import type { ROMDefinition, Table2DDefinition } from "@ecu-explorer/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { handleReadTable } from "./read-table.js";
 import type { McpConfig } from "../config.js";
+import { handleReadTable } from "./read-table.js";
 
 let definition: ROMDefinition;
 let romBytes: Uint8Array;
@@ -24,40 +24,38 @@ vi.mock("../rom-loader.js", () => ({
 describe("handleReadTable", () => {
 	beforeEach(() => {
 		romBytes = Uint8Array.from([10, 20, 30, 40]);
+		const ignitionTable = {
+			id: "ign",
+			name: "High Octane Ignition",
+			kind: "table2d",
+			rows: 2,
+			cols: 2,
+			category: "Ignition",
+			x: {
+				id: "x-axis",
+				kind: "static",
+				name: "RPM (rpm)",
+				values: [3000, 4000],
+			},
+			y: {
+				id: "y-axis",
+				kind: "static",
+				name: "Load (g/rev)",
+				values: [1.6, 2.0],
+			},
+			z: {
+				id: "z",
+				name: "values",
+				address: 0,
+				dtype: "u8",
+			},
+		} satisfies Table2DDefinition;
 		definition = {
 			uri: "file:///tmp/sample.xml",
 			name: "Sample Definition",
 			fingerprints: [],
 			platform: {},
-			tables: [
-				{
-					id: "ign",
-					name: "High Octane Ignition",
-					kind: "table2d",
-					rows: 2,
-					cols: 2,
-					category: "Ignition",
-					x: {
-						id: "x-axis",
-						kind: "static",
-						name: "RPM (rpm)",
-						values: [3000, 4000],
-					},
-					y: {
-						id: "y-axis",
-						kind: "static",
-						name: "Load (g/rev)",
-						values: [1.6, 2.0],
-					},
-					z: {
-						id: "z",
-						name: "values",
-						address: 0,
-						dtype: "u8",
-						unit: "deg",
-					},
-				} as unknown as Table2DDefinition,
-			],
+			tables: [ignitionTable],
 		};
 	});
 

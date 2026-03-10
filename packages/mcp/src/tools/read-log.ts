@@ -11,7 +11,7 @@ import { compileExpression } from "filtrex";
 import type { McpConfig } from "../config.js";
 import { buildMarkdownTable } from "../formatters/markdown.js";
 import { toYamlFrontmatter } from "../formatters/yaml-formatter.js";
-import { readLogFileMeta, parseLogFileRows } from "../log-reader.js";
+import { parseLogFileRows, readLogFileMeta } from "../log-reader.js";
 import {
 	buildAliasedObject,
 	buildFieldAliasMap,
@@ -65,8 +65,15 @@ function formatLogValue(v: number | undefined): string {
 	return s.replace(/\.?0+$/, "");
 }
 
-function toSeconds(timestamp: number): number {
-	return Math.abs(timestamp) > 1000 ? timestamp / 1000 : timestamp;
+function normalizeTimeToMs(
+	timestamp: number,
+	timeUnit: "ms" | "s" | null,
+): number {
+	return timeUnit === "s" ? timestamp * 1000 : timestamp;
+}
+
+function toSeconds(timestampMs: number): number {
+	return timestampMs / 1000;
 }
 
 function mergeWindows(windows: TimeWindow[]): TimeWindow[] {
@@ -95,7 +102,10 @@ function clipWindows(
 ): TimeWindow[] {
 	return windows
 		.map((window) => ({
-			startMs: startMs !== undefined ? Math.max(window.startMs, startMs) : window.startMs,
+			startMs:
+				startMs !== undefined
+					? Math.max(window.startMs, startMs)
+					: window.startMs,
 			endMs: endMs !== undefined ? Math.min(window.endMs, endMs) : window.endMs,
 		}))
 		.filter((window) => window.startMs <= window.endMs);
@@ -119,7 +129,9 @@ function validateRequestedChannels(
 ): string[] {
 	if (requestedChannels === undefined) return availableChannels;
 
-	const missing = requestedChannels.filter((channel) => !availableChannels.includes(channel));
+	const missing = requestedChannels.filter(
+		(channel) => !availableChannels.includes(channel),
+	);
 	if (missing.length > 0) {
 		throw new Error(
 			`Unknown channel(s): ${missing.join(", ")}. Available channels: ${availableChannels.join(", ")}`,
@@ -136,7 +148,8 @@ export async function handleReadLog(
 	options: ReadLogOptions,
 	config: McpConfig,
 ): Promise<string> {
-	const { file, where, channels, startS, endS, beforeMs, afterMs, stepMs } = options;
+	const { file, where, channels, startS, endS, beforeMs, afterMs, stepMs } =
+		options;
 	const logPath = resolveLogFilePath(config.logsDir, file);
 
 	try {
@@ -148,7 +161,10 @@ export async function handleReadLog(
 	const meta = await readLogFileMeta(logPath);
 	const parsed = await parseLogFileRows(logPath);
 	const timeColumnName = parsed.timeColumnName;
-	const dataChannels = parsed.headers.filter((header) => header !== timeColumnName);
+	const timeUnit = parsed.timeUnit;
+	const dataChannels = parsed.headers.filter(
+		(header) => header !== timeColumnName,
+	);
 	const selectedChannels = validateRequestedChannels(channels, dataChannels);
 
 	if (isSchemaOnlyRequest(options)) {
@@ -156,9 +172,12 @@ export async function handleReadLog(
 			file,
 			rows: meta.rowCount,
 			duration_s:
-				meta.durationMs !== null ? Number((meta.durationMs / 1000).toFixed(3)) : null,
+				meta.durationMs !== null
+					? Number((meta.durationMs / 1000).toFixed(3))
+					: null,
 			sample_rate_hz: meta.sampleRateHz,
 			time_column: timeColumnName,
+			time_unit: timeUnit,
 			channels: selectedChannels,
 		});
 
@@ -178,17 +197,30 @@ export async function handleReadLog(
 	const startMs = startS !== undefined ? startS * 1000 : undefined;
 	const endMs = endS !== undefined ? endS * 1000 : undefined;
 
-	if ((startMs !== undefined || endMs !== undefined || beforeMs !== undefined || afterMs !== undefined || stepMs !== undefined) && !timeColumnName) {
-		throw new Error(`Log ${file} does not expose a time column required for range/window options.`);
+	if (
+		(startMs !== undefined ||
+			endMs !== undefined ||
+			beforeMs !== undefined ||
+			afterMs !== undefined ||
+			stepMs !== undefined) &&
+		!timeColumnName
+	) {
+		throw new Error(
+			`Log ${file} does not expose a time column required for range/window options.`,
+		);
 	}
 
-	const normalizedWhere = where !== undefined ? normalizeExpression(where) : undefined;
+	const normalizedWhere =
+		where !== undefined ? normalizeExpression(where) : undefined;
 	let filterFn: ((obj: Record<string, number>) => unknown) | undefined;
 	let referencedFields: string[] = [];
 	const { fieldToAlias } = buildFieldAliasMap(parsed.headers, "__log_");
 
 	if (normalizedWhere !== undefined) {
-		referencedFields = extractReferencedFields(where ?? normalizedWhere, parsed.headers);
+		referencedFields = extractReferencedFields(
+			where ?? normalizedWhere,
+			parsed.headers,
+		);
 		const unknownFragments = detectUnknownFieldFragments(
 			where ?? normalizedWhere,
 			parsed.headers,
@@ -197,7 +229,10 @@ export async function handleReadLog(
 			throw buildUnknownFieldError("field", unknownFragments, parsed.headers);
 		}
 
-		const rewritten = rewriteExpressionWithAliases(normalizedWhere, fieldToAlias);
+		const rewritten = rewriteExpressionWithAliases(
+			normalizedWhere,
+			fieldToAlias,
+		);
 
 		try {
 			filterFn = compileExpression(rewritten);
@@ -213,13 +248,15 @@ export async function handleReadLog(
 		row,
 		timeMs:
 			timeColumnName !== null && row[timeColumnName] !== undefined
-				? row[timeColumnName]
+				? normalizeTimeToMs(row[timeColumnName], timeUnit)
 				: undefined,
 	}));
 
 	const matchedRows = baseRows.filter(({ row, timeMs }) => {
-		if (startMs !== undefined && timeMs !== undefined && timeMs < startMs) return false;
-		if (endMs !== undefined && timeMs !== undefined && timeMs > endMs) return false;
+		if (startMs !== undefined && timeMs !== undefined && timeMs < startMs)
+			return false;
+		if (endMs !== undefined && timeMs !== undefined && timeMs > endMs)
+			return false;
 		if (!filterFn) return true;
 
 		const aliasRow = buildAliasedObject(row, fieldToAlias);
@@ -232,7 +269,11 @@ export async function handleReadLog(
 
 	let selectedRows = matchedRows;
 
-	if ((beforeMs !== undefined || afterMs !== undefined) && where !== undefined && timeColumnName) {
+	if (
+		(beforeMs !== undefined || afterMs !== undefined) &&
+		where !== undefined &&
+		timeColumnName
+	) {
 		const windows = matchedRows
 			.filter((entry) => entry.timeMs !== undefined)
 			.map((entry) => ({
@@ -240,16 +281,15 @@ export async function handleReadLog(
 				endMs: (entry.timeMs as number) + (afterMs ?? 0),
 			}));
 
-		const effectiveWindows = clipWindows(
-			mergeWindows(windows),
-			startMs,
-			endMs,
-		);
+		const effectiveWindows = clipWindows(mergeWindows(windows), startMs, endMs);
 
 		selectedRows = baseRows.filter((entry) => {
 			if (entry.timeMs === undefined) return false;
 			return effectiveWindows.some(
-				(window) => entry.timeMs! >= window.startMs && entry.timeMs! <= window.endMs,
+				(window) =>
+					entry.timeMs !== undefined &&
+					entry.timeMs >= window.startMs &&
+					entry.timeMs <= window.endMs,
 			);
 		});
 	}
@@ -258,7 +298,10 @@ export async function handleReadLog(
 		let lastIncludedTime: number | undefined;
 		selectedRows = selectedRows.filter((entry) => {
 			if (entry.timeMs === undefined) return false;
-			if (lastIncludedTime === undefined || entry.timeMs - lastIncludedTime >= stepMs) {
+			if (
+				lastIncludedTime === undefined ||
+				entry.timeMs - lastIncludedTime >= stepMs
+			) {
 				lastIncludedTime = entry.timeMs;
 				return true;
 			}
@@ -281,6 +324,7 @@ export async function handleReadLog(
 					]
 				: null,
 		time_column: timeColumnName,
+		time_unit: timeUnit,
 		channels: selectedChannels,
 		where: where ?? null,
 		referenced_fields: referencedFields,
@@ -290,7 +334,9 @@ export async function handleReadLog(
 		return `${frontmatter}\n(No rows matched the requested log slice)`;
 	}
 
-	const headers = timeColumnName ? ["Time (s)", ...selectedChannels] : [...selectedChannels];
+	const headers = timeColumnName
+		? ["Time (s)", ...selectedChannels]
+		: [...selectedChannels];
 	const markdownRows = selectedRows.map(({ row, timeMs }) => {
 		const cells: string[] = [];
 		if (timeColumnName) {

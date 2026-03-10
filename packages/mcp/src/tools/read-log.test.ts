@@ -1,16 +1,17 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as logReader from "../log-reader.js";
-import { handleReadLog } from "./read-log.js";
-import { handleQueryLogs } from "./query-logs.js";
 import type { McpConfig } from "../config.js";
+import * as logReader from "../log-reader.js";
+import { handleQueryLogs } from "./query-logs.js";
+import { handleReadLog } from "./read-log.js";
 
 vi.mock("../log-reader.js", async () => {
-	const actual = await vi.importActual<typeof import("../log-reader.js")>(
-		"../log-reader.js",
-	);
+	const actual =
+		await vi.importActual<typeof import("../log-reader.js")>(
+			"../log-reader.js",
+		);
 	return {
 		...actual,
 		readLogFileMeta: vi.fn(),
@@ -55,10 +56,12 @@ describe("handleReadLog", () => {
 			rowCount: 42,
 			durationMs: 4100,
 			sampleRateHz: 10,
+			timeUnit: "ms",
 		});
 		vi.mocked(logReader.parseLogFileRows).mockResolvedValue({
 			headers: ["Timestamp (ms)", "Engine RPM", "Knock Sum"],
 			timeColumnName: "Timestamp (ms)",
+			timeUnit: "ms",
 			sampleRateHz: 10,
 			rows: [],
 		});
@@ -94,10 +97,12 @@ describe("handleReadLog", () => {
 			rowCount: 3,
 			durationMs: 200,
 			sampleRateHz: 10,
+			timeUnit: "ms",
 		});
 		vi.mocked(logReader.parseLogFileRows).mockResolvedValue({
 			headers: ["Timestamp (ms)", "Engine Temp", "Coolant Temp"],
 			timeColumnName: "Timestamp (ms)",
+			timeUnit: "ms",
 			sampleRateHz: 10,
 			rows: [
 				{ "Timestamp (ms)": 0, "Engine Temp": 120, "Coolant Temp": 95 },
@@ -145,10 +150,12 @@ describe("handleReadLog", () => {
 			rowCount: 1,
 			durationMs: 0,
 			sampleRateHz: 10,
+			timeUnit: "ms",
 		});
 		vi.mocked(logReader.parseLogFileRows).mockResolvedValue({
 			headers: ["Timestamp (ms)", "Engine RPM", "Knock Sum"],
 			timeColumnName: "Timestamp (ms)",
+			timeUnit: "ms",
 			sampleRateHz: 10,
 			rows: [{ "Timestamp (ms)": 0, "Engine RPM": 3000, "Knock Sum": 0 }],
 		});
@@ -197,17 +204,19 @@ describe("handleReadLog", () => {
 			rowCount: 5,
 			durationMs: 400,
 			sampleRateHz: 10,
+			timeUnit: "ms",
 		});
 		vi.mocked(logReader.parseLogFileRows).mockResolvedValue({
 			headers: ["Timestamp (ms)", "Engine RPM", "Knock Sum"],
 			timeColumnName: "Timestamp (ms)",
+			timeUnit: "ms",
 			sampleRateHz: 10,
 			rows: [
-				{ "Timestamp (ms)": 1010, "Engine RPM": 2000, "Knock Sum": 1 },
-				{ "Timestamp (ms)": 1080, "Engine RPM": 2200, "Knock Sum": 0 },
-				{ "Timestamp (ms)": 1160, "Engine RPM": 2400, "Knock Sum": 1 },
-				{ "Timestamp (ms)": 1240, "Engine RPM": 2600, "Knock Sum": 0 },
-				{ "Timestamp (ms)": 1400, "Engine RPM": 2800, "Knock Sum": 0 },
+				{ "Timestamp (ms)": 100, "Engine RPM": 2000, "Knock Sum": 1 },
+				{ "Timestamp (ms)": 180, "Engine RPM": 2200, "Knock Sum": 0 },
+				{ "Timestamp (ms)": 260, "Engine RPM": 2400, "Knock Sum": 1 },
+				{ "Timestamp (ms)": 340, "Engine RPM": 2600, "Knock Sum": 0 },
+				{ "Timestamp (ms)": 500, "Engine RPM": 2800, "Knock Sum": 0 },
 			],
 		});
 
@@ -226,11 +235,11 @@ describe("handleReadLog", () => {
 
 		expect(result).toContain("rows_returned: 4");
 		expect(result).toContain("time_range_s:");
-		expect(result).toContain("| 1.01");
-		expect(result).toContain("| 1.08");
-		expect(result).toContain("| 1.16");
-		expect(result).toContain("| 1.24");
-		expect(result).not.toContain("| 1.40");
+		expect(result).toContain("| 0.10");
+		expect(result).toContain("| 0.18");
+		expect(result).toContain("| 0.26");
+		expect(result).toContain("| 0.34");
+		expect(result).not.toContain("| 0.50");
 	});
 
 	it("supports overlapping field names in where expressions", async () => {
@@ -253,10 +262,12 @@ describe("handleReadLog", () => {
 			rowCount: 2,
 			durationMs: 100,
 			sampleRateHz: 10,
+			timeUnit: "ms",
 		});
 		vi.mocked(logReader.parseLogFileRows).mockResolvedValue({
 			headers: ["Timestamp (ms)", "Load", "Load Avg"],
 			timeColumnName: "Timestamp (ms)",
+			timeUnit: "ms",
 			sampleRateHz: 10,
 			rows: [
 				{ "Timestamp (ms)": 0, Load: 1.2, "Load Avg": 1.0 },

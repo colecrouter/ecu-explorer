@@ -3,9 +3,10 @@ import * as logReader from "../log-reader.js";
 import { handleListLogs } from "./list-logs.js";
 
 vi.mock("../log-reader.js", async () => {
-	const actual = await vi.importActual<typeof import("../log-reader.js")>(
-		"../log-reader.js",
-	);
+	const actual =
+		await vi.importActual<typeof import("../log-reader.js")>(
+			"../log-reader.js",
+		);
 	return {
 		...actual,
 		listLogFiles: vi.fn(),
@@ -29,6 +30,7 @@ describe("handleListLogs", () => {
 				rowCount: 200,
 				durationMs: 2500,
 				sampleRateHz: 80,
+				timeUnit: "ms",
 			},
 			{
 				filePath: "/tmp/logs/cruise.csv",
@@ -40,6 +42,7 @@ describe("handleListLogs", () => {
 				rowCount: 100,
 				durationMs: 12000,
 				sampleRateHz: 10,
+				timeUnit: "ms",
 			},
 		]);
 
@@ -68,6 +71,7 @@ describe("handleListLogs", () => {
 				rowCount: 10 + index,
 				durationMs: 1000,
 				sampleRateHz: 10,
+				timeUnit: "ms",
 			})),
 		);
 
