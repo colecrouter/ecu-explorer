@@ -7,7 +7,6 @@
  */
 
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import {
 	findClosestMatches,
 	planRomDefinitionResolution,
@@ -18,10 +17,7 @@ import sade from "sade";
 import { formatTable } from "../mcp/dist/formatters/table-formatter.js";
 import { formatTableListMarkdown } from "../mcp/dist/formatters/table-summary.js";
 import { toYamlFrontmatter } from "../mcp/dist/formatters/yaml-formatter.js";
-
-console.warn = () => {};
-
-const invocationCwd = process.env.INIT_CWD || process.cwd();
+import { resolveCliPath } from "./mcp-cli.js";
 
 /**
  * Converts a filesystem path to a file:// URI.
@@ -30,18 +26,6 @@ const invocationCwd = process.env.INIT_CWD || process.cwd();
  */
 function toFileUri(fsPath) {
 	return `file://${fsPath.replace(/\\/g, "/")}`;
-}
-
-/**
- * Resolves a CLI path from the original invocation directory.
- * npm workspace scripts run from the workspace directory, so relative
- * paths need to be interpreted from the caller's cwd instead.
- *
- * @param {string} fsPath - User-provided filesystem path
- * @returns {string} Absolute filesystem path
- */
-function resolveCliPath(fsPath) {
-	return path.isAbsolute(fsPath) ? fsPath : path.resolve(invocationCwd, fsPath);
 }
 
 /**
@@ -145,8 +129,9 @@ function findTableByName(definition, tableName) {
  * @returns {Promise<void>}
  */
 async function inspectRom(romPath, opts) {
-	const definitionsRoots = opts.definitionsRoot
-		? [resolveCliPath(opts.definitionsRoot)]
+	const definitionsRoot = opts["definitions-root"];
+	const definitionsRoots = definitionsRoot
+		? [resolveCliPath(definitionsRoot)]
 		: [];
 	const resolvedRomPath = resolveCliPath(romPath);
 	const definitionPath = opts.definition
@@ -161,12 +146,12 @@ async function inspectRom(romPath, opts) {
 		definitionPath,
 	);
 
-	if (opts.listMarkdown) {
+	if (opts["list-markdown"]) {
 		console.log(buildListTablesOutput(resolvedRomPath, resolved.definition));
 		return;
 	}
 
-	const readTableName = opts.readTable ?? opts["read-table"];
+	const readTableName = opts["read-table"];
 	if (readTableName) {
 		const tableDef = findTableByName(resolved.definition, readTableName);
 		console.log(formatTable(resolvedRomPath, tableDef, romBytes).content);
