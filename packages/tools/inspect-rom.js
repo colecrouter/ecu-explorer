@@ -21,6 +21,8 @@ import { toYamlFrontmatter } from "../mcp/dist/formatters/yaml-formatter.js";
 
 console.warn = () => {};
 
+const invocationCwd = process.env.INIT_CWD || process.cwd();
+
 /**
  * Converts a filesystem path to a file:// URI.
  * @param {string} fsPath - Filesystem path
@@ -28,6 +30,18 @@ console.warn = () => {};
  */
 function toFileUri(fsPath) {
 	return `file://${fsPath.replace(/\\/g, "/")}`;
+}
+
+/**
+ * Resolves a CLI path from the original invocation directory.
+ * npm workspace scripts run from the workspace directory, so relative
+ * paths need to be interpreted from the caller's cwd instead.
+ *
+ * @param {string} fsPath - User-provided filesystem path
+ * @returns {string} Absolute filesystem path
+ */
+function resolveCliPath(fsPath) {
+	return path.isAbsolute(fsPath) ? fsPath : path.resolve(invocationCwd, fsPath);
 }
 
 /**
@@ -132,31 +146,34 @@ function findTableByName(definition, tableName) {
  */
 async function inspectRom(romPath, opts) {
 	const definitionsRoots = opts.definitionsRoot
-		? [path.resolve(opts.definitionsRoot)]
+		? [resolveCliPath(opts.definitionsRoot)]
 		: [];
-	const definitionPath = opts.definition;
-	const romBytes = new Uint8Array(await fs.readFile(romPath));
+	const resolvedRomPath = resolveCliPath(romPath);
+	const definitionPath = opts.definition
+		? resolveCliPath(opts.definition)
+		: undefined;
+	const romBytes = new Uint8Array(await fs.readFile(resolvedRomPath));
 	const provider = new EcuFlashProvider(definitionsRoots);
 	const resolved = await resolveDefinition(
-		romPath,
+		resolvedRomPath,
 		romBytes,
 		provider,
 		definitionPath,
 	);
 
 	if (opts.listMarkdown) {
-		console.log(buildListTablesOutput(romPath, resolved.definition));
+		console.log(buildListTablesOutput(resolvedRomPath, resolved.definition));
 		return;
 	}
 
 	const readTableName = opts.readTable ?? opts["read-table"];
 	if (readTableName) {
 		const tableDef = findTableByName(resolved.definition, readTableName);
-		console.log(formatTable(romPath, tableDef, romBytes).content);
+		console.log(formatTable(resolvedRomPath, tableDef, romBytes).content);
 		return;
 	}
 
-	console.log(buildListTablesOutput(romPath, resolved.definition));
+	console.log(buildListTablesOutput(resolvedRomPath, resolved.definition));
 }
 
 // Create CLI with Sade
