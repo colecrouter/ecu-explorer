@@ -114,7 +114,20 @@ server.resource(
 	"ecu-explorer://context/open-documents",
 	"ecu-explorer://context/open-documents",
 	async () => {
-		const payload = JSON.stringify(currentOpenContext, null, 2);
+		const payload = JSON.stringify(
+			{
+				version: currentOpenContext.version,
+				timestamp: currentOpenContext.timestamp,
+				...(currentOpenContext.roms.length > 0
+					? { roms: currentOpenContext.roms }
+					: {}),
+				...(currentOpenContext.tables.length > 0
+					? { tables: currentOpenContext.tables }
+					: {}),
+			},
+			null,
+			2,
+		);
 		return {
 			contents: [
 				{
@@ -176,7 +189,7 @@ export function updateOpenContext(
 
 server.tool(
 	"list_tables",
-	"List all calibration tables in a ROM. Use `category` to filter (e.g. 'Fuel', 'Ignition'). Call this first to discover table names before reading or patching.",
+	"Discover calibration tables in a ROM. Supports metadata query and pagination. Includes axis names so agents can transition directly into read_table or patch_table selectors.",
 	{
 		rom: z
 			.string()
@@ -185,16 +198,33 @@ server.tool(
 			.string()
 			.optional()
 			.describe("Optional explicit path to an ECU definition XML file"),
-		category: z
+		query: z
 			.string()
 			.optional()
 			.describe(
-				"Filter string — only tables whose category contains this string (case-insensitive) are returned",
+				"Optional metadata query across table name, category, dimensions, unit, and axis names",
 			),
+		page: z.number().int().min(1).optional().describe("1-based page number"),
+		page_size: z
+			.number()
+			.int()
+			.min(1)
+			.optional()
+			.describe("Maximum rows to return per page"),
 	},
-	async ({ rom, definition, category }) => {
+	async ({ rom, definition, query, page, page_size }) => {
 		try {
-			const content = await handleListTables(rom, config, category, definition);
+			const listTableOptions: Parameters<typeof handleListTables>[2] = {};
+			if (query !== undefined) listTableOptions.query = query;
+			if (page !== undefined) listTableOptions.page = page;
+			if (page_size !== undefined) listTableOptions.pageSize = page_size;
+
+			const content = await handleListTables(
+				rom,
+				config,
+				listTableOptions,
+				definition,
+			);
 			return { content: [{ type: "text", text: content }] };
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -210,7 +240,7 @@ server.tool(
 
 server.tool(
 	"read_table",
-	"Read a calibration table from a ROM. Returns axis breakpoints and cell values. Use row/column indices from this output when calling patch_table.",
+	"Read a calibration table from a ROM. Omit `where` to read the full table, or use `where` with the table's real axis names to read a selected slice.",
 	{
 		rom: z
 			.string()
@@ -220,10 +250,22 @@ server.tool(
 			.optional()
 			.describe("Optional explicit path to an ECU definition XML file"),
 		table: z.string().describe("Table name (from list_tables)"),
+		where: z
+			.string()
+			.optional()
+			.describe(
+				"Optional selector expression using the table's real axis names, e.g. 'RPM (rpm) == 4000 && Load (g/rev) == 1.8'",
+			),
 	},
-	async ({ rom, definition, table }) => {
+	async ({ rom, definition, table, where }) => {
 		try {
-			const content = await handleReadTable(rom, table, config, definition);
+			const content = await handleReadTable(
+				rom,
+				table,
+				config,
+				where,
+				definition,
+			);
 			return { content: [{ type: "text", text: content }] };
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -239,7 +281,7 @@ server.tool(
 
 server.tool(
 	"patch_table",
-	"Apply an operation to cells in a ROM table, returns the updated table. (Note: this produces rounding errors, due to how the ROM stores values.)",
+	"Apply an operation to cells in a ROM table using a value-based `where` selector. Returns the affected slice after the patch. Equality matches exact axis breakpoint values.",
 	{
 		rom: z.string().describe("Path to ROM file"),
 		definition: z
@@ -253,20 +295,14 @@ server.tool(
 		value: z.number().optional().describe("Operand for set/add/multiply"),
 		min: z.number().optional().describe("Lower bound for clamp"),
 		max: z.number().optional().describe("Upper bound for clamp"),
-		row: z
-			.number()
-			.int()
-			.min(0)
+		where: z
+			.string()
 			.optional()
-			.describe("0-based row index; omit for all rows"),
-		col: z
-			.number()
-			.int()
-			.min(0)
-			.optional()
-			.describe("0-based column index; omit for all columns"),
+			.describe(
+				"Optional selector expression using the table's real axis names, e.g. 'RPM (rpm) >= 3000 && Load (g/rev) <= 2.0'",
+			),
 	},
-	async ({ rom, definition, table, op, value, min, max, row, col }) => {
+	async ({ rom, definition, table, op, value, min, max, where }) => {
 		try {
 			const opts: PatchTableOptions = {
 				rom,
@@ -277,8 +313,7 @@ server.tool(
 			if (value !== undefined) opts.value = value;
 			if (min !== undefined) opts.min = min;
 			if (max !== undefined) opts.max = max;
-			if (row !== undefined) opts.row = row;
-			if (col !== undefined) opts.col = col;
+			if (where !== undefined) opts.where = where;
 			const content = await handlePatchTable(opts, config);
 			return { content: [{ type: "text", text: content }] };
 		} catch (err) {

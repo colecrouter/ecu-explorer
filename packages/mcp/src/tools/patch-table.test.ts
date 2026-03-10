@@ -123,4 +123,54 @@ describe("handlePatchTable transform handling", () => {
 		expect(lastWrittenBytes?.[2]).toBe(7);
 		expect(lastWrittenBytes?.[3]).toBe(9);
 	});
+
+	it("should patch only cells matched by where selectors", async () => {
+		romBytes = Uint8Array.from([10, 20, 30, 40]);
+		definition = {
+			uri: "file:///tmp/selector.xml",
+			name: "Selector Definition",
+			fingerprints: [],
+			platform: {},
+			tables: [
+				{
+					id: "selector-table",
+					name: "Selector Table",
+					kind: "table2d",
+					rows: 2,
+					cols: 2,
+					x: {
+						id: "x-selector",
+						kind: "static",
+						name: "RPM (rpm)",
+						values: [3000, 4000],
+					},
+					y: {
+						id: "y-selector",
+						kind: "static",
+						name: "Load (g/rev)",
+						values: [1.6, 2.0],
+					},
+					z: {
+						id: "selector-z",
+						name: "values",
+						address: 0,
+						dtype: "u8",
+					},
+				} as Table2DDefinition,
+			],
+		};
+
+		await handlePatchTable(
+			{
+				rom: "/tmp/transformed.rom",
+				table: "Selector Table",
+				op: "add",
+				value: 5,
+				where: "RPM (rpm) == 4000 && Load (g/rev) == 2",
+			},
+			config,
+		);
+
+		expect(lastWrittenBytes).toEqual(Uint8Array.from([10, 20, 30, 45]));
+	});
 });

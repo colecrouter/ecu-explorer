@@ -1,0 +1,79 @@
+import type { ROMDefinition, Table2DDefinition } from "@ecu-explorer/core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { handleReadTable } from "./read-table.js";
+import type { McpConfig } from "../config.js";
+
+let definition: ROMDefinition;
+let romBytes: Uint8Array;
+
+const config: McpConfig = {
+	definitionsPaths: [],
+	logsDir: "/tmp",
+};
+
+vi.mock("../rom-loader.js", () => ({
+	loadRom: vi.fn(async () => ({
+		romPath: "/tmp/sample.hex",
+		romBytes,
+		definition,
+		fileSizeBytes: romBytes.length,
+		mtime: Date.now(),
+	})),
+}));
+
+describe("handleReadTable", () => {
+	beforeEach(() => {
+		romBytes = Uint8Array.from([10, 20, 30, 40]);
+		definition = {
+			uri: "file:///tmp/sample.xml",
+			name: "Sample Definition",
+			fingerprints: [],
+			platform: {},
+			tables: [
+				{
+					id: "ign",
+					name: "High Octane Ignition",
+					kind: "table2d",
+					rows: 2,
+					cols: 2,
+					category: "Ignition",
+					x: {
+						id: "x-axis",
+						kind: "static",
+						name: "RPM (rpm)",
+						values: [3000, 4000],
+					},
+					y: {
+						id: "y-axis",
+						kind: "static",
+						name: "Load (g/rev)",
+						values: [1.6, 2.0],
+					},
+					z: {
+						id: "z",
+						name: "values",
+						address: 0,
+						dtype: "u8",
+						unit: "deg",
+					},
+				} as unknown as Table2DDefinition,
+			],
+		};
+	});
+
+	it("returns a selected slice when where is provided", async () => {
+		const result = await handleReadTable(
+			"/tmp/sample.hex",
+			"High Octane Ignition",
+			config,
+			"RPM (rpm) == 4000 && Load (g/rev) == 2",
+		);
+
+		expect(result).toContain("selector_axes:");
+		expect(result).toContain("RPM (rpm)");
+		expect(result).toContain("Load (g/rev)");
+		expect(result).toContain("| Load (g/rev)\\RPM (rpm) | 4000 |");
+		expect(result).toContain("| 2                      | 40");
+		expect(result).not.toContain("| 3000 | 4000 |");
+	});
+});
