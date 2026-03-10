@@ -101,10 +101,11 @@ Connect to a vehicle via OpenPort 2.0 and stream live data:
 The extension includes an MCP server with tools for AI integration:
 
 - `list_tables` — List all tables in a ROM
-- `process_table` — Apply operations to tables
+- `read_table` — Read a full table or selected slice
+- `patch_table` — Apply operations to tables
 - `rom_info` — Get ROM metadata
 - `list_logs` — List saved log files
-- `query_logs` — Query log data
+- `read_log` — Inspect one selected log file
 
 ---
 

@@ -63,6 +63,7 @@ import { handleListLogs } from "./tools/list-logs.js";
 import { handleListTables } from "./tools/list-tables.js";
 import { handlePatchTable } from "./tools/patch-table.js";
 import { handleQueryLogs } from "./tools/query-logs.js";
+import { handleReadLog } from "./tools/read-log.js";
 import { handleReadTable } from "./tools/read-table.js";
 import { handleRomInfo } from "./tools/rom-info.js";
 
@@ -124,6 +125,36 @@ server.resource(
 			],
 		};
 	},
+);
+
+server.resource(
+	"ecu-explorer://docs/query-syntax",
+	"ecu-explorer://docs/query-syntax",
+	async () => ({
+		contents: [
+			{
+				uri: "ecu-explorer://docs/query-syntax",
+				mimeType: "text/markdown",
+				text: [
+					"# ECU Explorer Query Syntax",
+					"",
+					"Supported operators:",
+					"- `==`, `!=`, `>`, `>=`, `<`, `<=`",
+					"- `&&`, `||`",
+					"- parentheses",
+					"",
+					"Field names can be used exactly as exposed by the tool, including spaces and punctuation.",
+					"",
+					"Examples:",
+					"- `Engine RPM > 3000 && Knock Sum > 0`",
+					"- `RPM (rpm) >= 3000 && Load (g/rev) <= 2.0`",
+					"- `Coolant Temp (C) >= 60 && Coolant Temp (C) <= 90`",
+					"",
+					"For table selectors, equality matches exact breakpoint values only.",
+				].join("\n"),
+			},
+		],
+	}),
 );
 
 /**
@@ -292,11 +323,28 @@ server.tool(
 
 server.tool(
 	"list_logs",
-	"List available log files sorted by recency (1 = most recent). Returns channel names available in each file. Use the filename with `query_logs` to filter a specific session, or omit to search all logs.",
-	{},
-	async () => {
+	"Discover available log files. Supports metadata search and pagination. Use `read_log(file)` to inspect one selected log.",
+	{
+		query: z
+			.string()
+			.optional()
+			.describe("Optional metadata query across filename, channels, date, row count, duration, and sample rate"),
+		page: z.number().int().min(1).optional().describe("1-based page number"),
+		page_size: z
+			.number()
+			.int()
+			.min(1)
+			.optional()
+			.describe("Maximum rows to return per page"),
+	},
+	async ({ query, page, page_size }) => {
 		try {
-			const content = await handleListLogs(config);
+			const listLogOptions: Parameters<typeof handleListLogs>[1] = {};
+			if (query !== undefined) listLogOptions.query = query;
+			if (page !== undefined) listLogOptions.page = page;
+			if (page_size !== undefined) listLogOptions.pageSize = page_size;
+
+			const content = await handleListLogs(config, listLogOptions);
 			return { content: [{ type: "text", text: content }] };
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -308,11 +356,69 @@ server.tool(
 	},
 );
 
-// ─── Tool: query_logs ─────────────────────────────────────────────────────────
+// ─── Tool: read_log ───────────────────────────────────────────────────────────
+
+server.tool(
+	"read_log",
+	"Inspect one selected log file. Call with only `file` to get fields/units/schema. Add `where`, time range, and `step_ms` to read a slice from that log.",
+	{
+		file: z.string().describe("Filename from list_logs"),
+		where: z
+			.string()
+			.optional()
+			.describe(
+				"Optional row filter expression using fields from read_log(file), e.g. 'Engine RPM > 3000 && Knock Sum > 0'",
+			),
+		channels: z
+			.array(z.string())
+			.optional()
+			.describe("Optional subset of channels to include in the output"),
+		start_s: z.number().nonnegative().optional().describe("Optional start time in seconds"),
+		end_s: z.number().nonnegative().optional().describe("Optional end time in seconds"),
+		before_ms: z
+			.number()
+			.nonnegative()
+			.optional()
+			.describe("Optional context window before each where match"),
+		after_ms: z
+			.number()
+			.nonnegative()
+			.optional()
+			.describe("Optional context window after each where match"),
+		step_ms: z
+			.number()
+			.positive()
+			.optional()
+			.describe("Optional minimum time spacing between returned rows in milliseconds"),
+	},
+	async ({ file, where, channels, start_s, end_s, before_ms, after_ms, step_ms }) => {
+		try {
+			const readLogOptions: Parameters<typeof handleReadLog>[0] = { file };
+			if (where !== undefined) readLogOptions.where = where;
+			if (channels !== undefined) readLogOptions.channels = channels;
+			if (start_s !== undefined) readLogOptions.startS = start_s;
+			if (end_s !== undefined) readLogOptions.endS = end_s;
+			if (before_ms !== undefined) readLogOptions.beforeMs = before_ms;
+			if (after_ms !== undefined) readLogOptions.afterMs = after_ms;
+			if (step_ms !== undefined) readLogOptions.stepMs = step_ms;
+
+			const content = await handleReadLog(readLogOptions, config);
+			return { content: [{ type: "text", text: content }] };
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			return {
+				content: [{ type: "text", text: `Error: ${message}` }],
+				isError: true,
+			};
+		}
+	},
+);
+
+// ─── Tool: query_logs (compatibility alias) ──────────────────────────────────
 
 server.tool(
 	"query_logs",
-	"Query log data using a filter expression. Channel names are case-sensitive and must match `list_logs` output exactly. `sample_rate` reduces output density (e.g. `sample_rate: 10` on a 100 Hz log returns every 10th matching row). Omit `file` to search all logs — useful when you don't know which session contains the relevant data.",
+	"Deprecated compatibility alias for `read_log`. Prefer `read_log(file)` and `step_ms`.",
 	{
 		filter: z
 			.string()
