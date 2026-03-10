@@ -5,6 +5,8 @@
  * expressions, even when names contain spaces or punctuation.
  */
 
+import { findClosestMatches } from "@ecu-explorer/core";
+
 /**
  * Normalize a query expression from JS-style boolean operators to the
  * filtrex-compatible forms we compile internally.
@@ -111,4 +113,63 @@ export function extractReferencedFields(
 	}
 
 	return Array.from(matches);
+}
+
+/**
+ * Best-effort detection of unknown field fragments after removing known fields,
+ * operators, and numeric literals from an expression.
+ */
+export function detectUnknownFieldFragments(
+	expr: string,
+	fields: string[],
+): string[] {
+	let remaining = normalizeExpression(expr);
+	const sorted = [...fields].sort((a, b) => b.length - a.length);
+
+	for (const field of sorted) {
+		const escaped = escapeRegex(field);
+		const re = new RegExp(
+			`(^|[^A-Za-z0-9_])${escaped}(?=[^A-Za-z0-9_]|$)`,
+			"g",
+		);
+		remaining = remaining.replace(re, "$1 ");
+	}
+
+	remaining = remaining
+		.replace(/\b(?:and|or|not)\b/gi, "|")
+		.replace(/[-+]?\d+(?:\.\d+)?/g, "|")
+		.replace(/(?:==|!=|<=|>=|<|>)/g, "|")
+		.replace(/[()]/g, "|");
+
+	const fragments = remaining
+		.split("|")
+		.map((token) => token.trim().replace(/\s+/g, " "))
+		.filter((token) => token.length > 0);
+
+	return [...new Set(fragments)];
+}
+
+/**
+ * Build a helpful unknown-field error with available names and suggestions.
+ */
+export function buildUnknownFieldError(
+	kind: string,
+	unknownFragments: string[],
+	availableFields: string[],
+): Error {
+	const suggestionLines = unknownFragments
+		.map((fragment) => {
+			const suggestions = findClosestMatches(fragment, availableFields, 3, 20);
+			if (suggestions.length === 0) return null;
+			return `${fragment}: ${suggestions.join(", ")}`;
+		})
+		.filter((line): line is string => line !== null);
+
+	return new Error(
+		`Unknown ${kind}: ${unknownFragments.join(", ")}. ` +
+			`Available ${kind === "axis name" ? "axes" : "fields"}: ${availableFields.join(", ")}` +
+			(suggestionLines.length > 0
+				? `. Suggestions: ${suggestionLines.join("; ")}`
+				: ""),
+	);
 }

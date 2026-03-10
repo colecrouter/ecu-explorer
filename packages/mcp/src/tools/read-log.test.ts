@@ -124,6 +124,58 @@ describe("handleReadLog", () => {
 		expect(result).toContain("120");
 		expect(result).toContain("95");
 	});
+
+	it("returns helpful errors for unknown fields in where expressions", async () => {
+		const tempDir = await mkdtemp(path.join(os.tmpdir(), "ecu-mcp-read-log-"));
+		const target = path.join(tempDir, "session.csv");
+		await writeFile(target, "");
+
+		config = {
+			...baseConfig,
+			logsDir: tempDir,
+		};
+
+		vi.mocked(logReader.readLogFileMeta).mockResolvedValue({
+			filePath: target,
+			fileName: "session.csv",
+			fileSizeBytes: 1,
+			mtime: new Date("2026-03-10T00:00:00.000Z"),
+			channels: ["Engine RPM", "Knock Sum"],
+			units: ["rpm", "count"],
+			rowCount: 1,
+			durationMs: 0,
+			sampleRateHz: 10,
+		});
+		vi.mocked(logReader.parseLogFileRows).mockResolvedValue({
+			headers: ["Timestamp (ms)", "Engine RPM", "Knock Sum"],
+			timeColumnName: "Timestamp (ms)",
+			sampleRateHz: 10,
+			rows: [{ "Timestamp (ms)": 0, "Engine RPM": 3000, "Knock Sum": 0 }],
+		});
+
+		await expect(
+			handleReadLog(
+				{
+					file: "session.csv",
+					where: "Engine RPm > 2500 && KnockCount > 0",
+				},
+				config,
+			),
+		).rejects.toThrow(/Unknown field: Engine RPm, KnockCount\./);
+		await expect(
+			handleReadLog(
+				{
+					file: "session.csv",
+					where: "Engine RPm > 2500 && KnockCount > 0",
+				},
+				config,
+			),
+		).rejects.toThrow(
+			/Suggestions: Engine RPm: Engine RPM(?:, [^;]+)*; KnockCount: Knock Sum/,
+		);
+
+		await rm(tempDir, { recursive: true, force: true });
+	});
 });
 
 describe("handleQueryLogs compatibility alias", () => {

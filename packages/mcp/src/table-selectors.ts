@@ -6,7 +6,9 @@ import { compileExpression } from "filtrex";
 import type { Table1DDefinition, Table2DDefinition, TableDefinition } from "@ecu-explorer/core";
 import {
 	buildAliasedObject,
+	buildUnknownFieldError,
 	buildFieldAliasMap,
+	detectUnknownFieldFragments,
 	escapeRegex,
 	normalizeExpression,
 	rewriteExpressionWithAliases,
@@ -81,6 +83,11 @@ export function selectTableCells(
 
 	const selectorAxes = getSelectorAxes(table);
 	const { fieldToAlias } = buildFieldAliasMap(selectorAxes, "__axis_");
+	const unknownFragments = detectUnknownFieldFragments(where, selectorAxes);
+	if (unknownFragments.length > 0) {
+		throw buildUnknownFieldError("axis name", unknownFragments, selectorAxes);
+	}
+
 	const rewritten = rewriteExpressionWithAliases(normalizeExpression(where), fieldToAlias);
 
 	let selector: (values: Record<string, number>) => unknown;

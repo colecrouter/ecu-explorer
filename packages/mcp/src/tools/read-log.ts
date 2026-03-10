@@ -15,6 +15,8 @@ import { readLogFileMeta, parseLogFileRows } from "../log-reader.js";
 import {
 	buildAliasedObject,
 	buildFieldAliasMap,
+	buildUnknownFieldError,
+	detectUnknownFieldFragments,
 	extractReferencedFields,
 	normalizeExpression,
 	rewriteExpressionWithAliases,
@@ -186,14 +188,22 @@ export async function handleReadLog(
 	const { fieldToAlias } = buildFieldAliasMap(parsed.headers, "__log_");
 
 	if (normalizedWhere !== undefined) {
-		const rewritten = rewriteExpressionWithAliases(normalizedWhere, fieldToAlias);
 		referencedFields = extractReferencedFields(where ?? normalizedWhere, parsed.headers);
+		const unknownFragments = detectUnknownFieldFragments(
+			where ?? normalizedWhere,
+			parsed.headers,
+		);
+		if (unknownFragments.length > 0) {
+			throw buildUnknownFieldError("field", unknownFragments, parsed.headers);
+		}
+
+		const rewritten = rewriteExpressionWithAliases(normalizedWhere, fieldToAlias);
 
 		try {
 			filterFn = compileExpression(rewritten);
 		} catch (err) {
 			throw new Error(
-				`Invalid where expression: ${err instanceof Error ? err.message : String(err)}`,
+				`Invalid where expression: ${err instanceof Error ? err.message : String(err)}. Available fields: ${parsed.headers.join(", ")}`,
 			);
 		}
 	}

@@ -76,4 +76,17 @@ describe("handleReadTable", () => {
 		expect(result).toContain("| 2                      | 40");
 		expect(result).not.toContain("| 3000 | 4000 |");
 	});
+
+	it("returns helpful errors for unknown axis names in where expressions", async () => {
+		await expect(
+			handleReadTable(
+				"/tmp/sample.hex",
+				"High Octane Ignition",
+				config,
+				"Engine Speed >= 4000 && LoadValue == 2",
+			),
+		).rejects.toThrow(
+			/Unknown axis name: Engine Speed, LoadValue\. Available axes: RPM \(rpm\), Load \(g\/rev\)/,
+		);
+	});
 });
