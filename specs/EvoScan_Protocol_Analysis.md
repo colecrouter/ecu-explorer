@@ -1,6 +1,6 @@
 # 📖 REFERENCE DOCUMENT: EvoScan and MMCodingWriter Protocol Analysis
 
-**Status:** Raw analysis from EvoScan decompilation
+**Status:** Analysis from EvoScan decompilation
 **Date:** February 24, 2026
 **Source Files:**
 - EvoScanV3.1.exe (5.59 MB)
@@ -16,7 +16,7 @@
 
 ## Executive Summary
 
-This document contains extracted protocol information from EvoScan V3.1 and MMCodingWriter, reverse-engineered using command-line tools (strings, file utilities). The primary focus is on the **MUT-III protocol**, which is used for real-time data logging, ROM reading/writing, and parameter adjustment on Mitsubishi Evolution vehicles. Additional protocols (Subaru SSM/SSMI) were also identified in the binaries.
+This document contains extracted protocol information from EvoScan V3.1 and MMCodingWriter, reverse-engineered using string extraction and .NET decompilation. The primary focus is on the **MUT-III protocol**, which is used for real-time data logging, ROM reading/writing, and parameter adjustment on Mitsubishi Evolution vehicles. Additional protocols (Subaru SSM/SSMI) and Windows adapter backends were also identified in the binaries.
 
 ---
 
@@ -185,6 +185,58 @@ SSM Read Word:      Similar to E4 (2-byte read)
 - Real-time data logging
 - Parameter adjustment
 - Checksum and data integrity verification
+
+### 3.4 Windows Hardware Backends
+
+EvoScan V3.1 exposes multiple Windows hardware paths, and they should not be treated as interchangeable:
+
+- **OpenPort 2.0**: Uses `op20pt32.DLL` via the J2534 PassThru API.
+- **OpenPort 1.3**: Uses `FTD2XX.dll` direct FTDI calls rather than J2534.
+- **Generic serial/COM**: Uses the .NET `SerialPort` path for other adapters.
+
+This matters for reverse-engineering because OpenPort 1.3 and OpenPort 2.0 do **not** share the same Windows communication layer. Findings derived from the OpenPort 2.0 J2534 path should not be projected onto the older FTDI-backed OpenPort 1.3 path without verification.
+
+---
+
+## 3.5 Windows OpenPort Findings (2026-03-10)
+
+### OpenPort 2.0: confirmed J2534 usage
+
+Decompilation of `EvoScanV3.1.exe` shows direct imports from `op20pt32.DLL` for:
+
+- `PassThruOpen`
+- `PassThruClose`
+- `PassThruConnect`
+- `PassThruDisconnect`
+- `PassThruReadMsgs`
+- `PassThruWriteMsgs`
+- `PassThruStartMsgFilter`
+- `PassThruStopMsgFilter`
+- `PassThruIoctl`
+
+This confirms the OpenPort 2.0 path on Windows is a standard J2534 PassThru integration, not a raw FTDI transport.
+
+### OpenPort 1.3: confirmed FTDI usage
+
+The same assembly also imports a large set of `FTD2XX.dll` functions including:
+
+- `FT_Open`
+- `FT_Read`
+- `FT_Write`
+- `FT_SetBaudRate`
+- `FT_SetLatencyTimer`
+- `FT_SetUSBParameters`
+- `FT_SetBreakOn`
+- `FT_SetBreakOff`
+
+This is consistent with EvoScan's older OpenPort 1.3 support being implemented through the FTDI D2XX API rather than J2534.
+
+### Implication
+
+For live logging and RX-path investigation:
+
+- **OpenPort 2.0 findings** are relevant to the project's current `op20` / J2534-style work.
+- **OpenPort 1.3 findings** are relevant to legacy FTDI adapters and K-line style workflows, but should not be assumed to match OpenPort 2.0 behavior.
 
 ---
 
@@ -424,6 +476,303 @@ MMCodingWriter ←→ Same Serial Interface ←→ ECU
              Verify write operations
 ```
 
+### 10.4 OpenPort 2.0 J2534 Session Findings
+
+The Windows OpenPort 2.0 session setup recovered from decompilation is materially more specific than the earlier string-only analysis.
+
+**Observed sequence:**
+
+1. `PassThruOpen(...)`
+2. `PassThruIoctl(deviceId, 3, ...)`
+3. `PassThruConnect(deviceId, protocol, flags=0, baud=500000, out channelId)`
+4. `PassThruStartMsgFilter(channelId, 1, ...)`
+5. `PassThruIoctl(channelId, 7, ...)`
+6. `PassThruIoctl(channelId, 8, ...)`
+7. `PassThruReadMsgs(...)` / `PassThruWriteMsgs(...)`
+
+These numeric IDs align with the standard J2534 naming used elsewhere in the project:
+
+- `Ioctl(3)` → `READ_VBATT`
+- `StartMsgFilter(..., 1, ...)` → `PASS_FILTER`
+- `Ioctl(7)` → `CLEAR_TX_BUFFER`
+- `Ioctl(8)` → `CLEAR_RX_BUFFER`
+
+**Protocol selection:**
+
+- `protocol = 5` for CAN
+- `protocol = 6` for ISO15765
+- `flags = 0`
+- `baud = 500000`
+
+**ISO15765 filter finding:**
+
+For the ISO15765 branch, EvoScan starts a **filter type `1`** message filter, not the flow-control filter style currently assumed in the project's OpenPort transport.
+
+The decompiled code constructs a 4-byte message object with:
+
+- `ProtocolID = 6`
+- zero-valued flags
+- `DataSize = 4`
+- a zeroed 4-byte payload
+
+and passes that same structure to `PassThruStartMsgFilter(...)` for both mask and pattern. The exact semantic meaning of the obfuscated structure fields still needs confirmation against J2534 constants, but two points are already clear:
+
+- EvoScan's ISO15765 RX path is **not** using the explicit `0x7E8` / `0x7E0` filter tuple currently used by this project.
+- EvoScan performs additional channel-level `Ioctl` calls (`7`, `8`) after filter setup.
+
+**Working hypothesis:**
+
+This mismatch is a plausible explanation for why the project could prove TX-side adapter writes but still fail to surface ECU RX traffic on the current OpenPort 2.0 path.
+
+### 10.5 EvoScan Live Logging Read-Path Findings
+
+The next layer of decompilation shows that EvoScan's end-to-end logging path is more than a one-time `Connect` + `Filter` + `ReadMsgs` setup. The logger configures the channel, then treats J2534 reads as a lower-level byte source that it reassembles and interprets in application code.
+
+**Observed channel configuration before the read/write loop:**
+
+- EvoScan calls a helper that wraps `PassThruIoctl(..., 2, ...)`, which is the standard J2534 `SET_CONFIG` path.
+- With the decompiled branch conditions inspected more closely, the earlier four-value config sequence is now attributable to the **`MUTII` branch**, not the `ISO15765` branch.
+- In that `MUTII` path, EvoScan invokes `SET_CONFIG` with:
+  - `3 = 1`
+  - `6 = 750`
+  - `10 = 0`
+  - `12 = 0`
+- Elsewhere in the same `MUTII` path, EvoScan retunes similar config IDs across phases:
+  - `3 = 0`, `7 = 0`, `10 = 0`, `12 = 0`
+  - later `3 = 1`, `7 = 40`, `10 = 110`, `12 = 10`
+- Those values are therefore best interpreted as **legacy MUT-II / low-speed timing and loopback-related channel tuning**, not as currently-proven ISO15765 requirements.
+- The most likely standard J2534 names are:
+  - `3` = `LOOPBACK`
+  - `6` = `P1_MIN`
+  - `7` = `P1_MAX`
+  - `10` = `P3_MIN`
+  - `12` = `P4_MIN`
+- That mapping is still an inference from standard J2534 parameter numbering plus call context, but the branch attribution is now high confidence.
+
+**Observed manual read/write probe behavior:**
+
+- EvoScan allocates a read-message structure with:
+  - six `uint` header fields
+  - `byte[120]` payload storage
+- It then performs repeated `PassThruReadMsgs(channel, out msg, ref count = 1, timeout = 200)` calls.
+- If one message is returned, it dumps the raw payload bytes using the J2534-reported message length rather than assuming a higher-level decoded frame abstraction.
+- The same routine also writes a fixed 12-byte payload:
+
+```text
+FE 00 00 00 00 00 00 00 00 00 00 00
+```
+
+- This appears to be a transport/probe routine rather than the normal steady-state logger, but it confirms that EvoScan uses direct `ReadMsgs` / `WriteMsgs` traffic inspection during diagnostics.
+
+**Observed steady-state logger read behavior:**
+
+- In the main logging loop, EvoScan repeatedly:
+  - zeroes the read-message structure
+  - calls `PassThruReadMsgs(channel, out msg, ref count, timeout)`
+  - expects `count == 1` in the normal case
+  - appends the returned message payload bytes into a local accumulation buffer
+  - only processes the response once enough bytes have been accumulated for the expected higher-level payload
+- EvoScan treats J2534 return codes `9` and `16` as non-fatal during this loop and continues polling, while other non-zero codes break the operation.
+- A second decompiled read loop performs similar byte-by-byte accumulation and compares the resulting hex string against configured expected patterns, reinforcing that response matching is done above the raw J2534 message boundary.
+- In the standard J2534 error numbering used by the same OpenPort reference ecosystem, those two tolerated return codes are most likely:
+  - `9` = `ERR_TIMEOUT`
+  - `16` = `ERR_BUFFER_EMPTY`
+- That means EvoScan's logger is probably treating "no message yet" conditions as normal polling states rather than hard failures.
+
+**Observed ISO15765-specific setup and write behavior:**
+
+- A later ISO15765-specific initialization path connects with `PassThruConnect(..., 6, 0, 500000, ...)`, sets the read/write timeout fields from UI-configured values, and then starts a `PASS_FILTER` using a zeroed 4-byte filter payload.
+- In that same `ISO15765` branch, EvoScan immediately follows filter creation with a `SET_CONFIG(channel, 3, 0)` call.
+- If the standard J2534 parameter numbering inference is correct, that means EvoScan is explicitly forcing `LOOPBACK = 0` on the ISO15765 path, even though the legacy `MUTII` path uses loopback/timing tuning more aggressively.
+- After branch-specific setup is complete, EvoScan explicitly clears both buffers:
+  - `PassThruIoctl(channel, 7, ...)`
+  - `PassThruIoctl(channel, 8, ...)`
+- In the ISO15765 write path used during logging/polling, EvoScan clears the RX buffer before issuing `PassThruWriteMsgs(...)` with a `1000 ms` timeout.
+- Across the ISO15765 logging paths inspected so far, the application does **not** appear to make meaningful decisions from `RxStatus` or `ExtraDataIndex`; it primarily relies on `DataSize`, payload bytes, and higher-level byte-pattern matching.
+
+**Implications for this project:**
+
+- EvoScan's logging path does **not** appear to rely on a rich driver-side receive abstraction; it reads one J2534 message at a time and performs higher-level framing and matching itself.
+- That means the remaining RX gap in this project is unlikely to be solved by filter type alone.
+- The extra `SET_CONFIG` sequence should **not** currently be treated as an ISO15765/OpenPort 2.0 requirement, because the decompiled code ties it to EvoScan's `MUTII` path.
+- The ISO15765 path still appears to do a small amount of branch-specific channel management beyond basic connect/filter:
+  - likely `LOOPBACK = 0`
+  - explicit TX/RX buffer clears
+  - RX buffer clear before at least some writes
+- The current OpenPort transport may still be too narrow if it:
+  - assumes a single adapter packet maps cleanly to one complete diagnostic response
+  - ignores recoverable/non-fatal read statuses that EvoScan tolerates
+  - discards inbound packets that do not match the current minimal `AR...` ISO15765 expectations
+- The most likely remaining mismatch is now in receive semantics and parser behavior, not the basic protocol/baud/CAN-ID tuple.
+
+### 10.6 Mitsubishi "PassThru CAN" Package Findings
+
+A local Mitsubishi package (`CANPassThru.zip`) and companion DLL (`ptc32.dll`) were inspected on March 10, 2026.
+
+**Installer extraction path:**
+
+- `CANPassThru.zip` is an InstallShield bundle containing `setup.inx`, `data1.cab`, `data1.hdr`, `data2.cab`, `CGDPTMC.msi`, and `Setup.exe`
+- `unshield` cleanly extracts `data2.cab`, which contains the real application payload
+
+**Recovered application payload from `data2.cab`:**
+
+- `Common/PTCAN.exe`
+- `Common/MUT_VCI.dll`
+- `Common/VciCRepro.dll`
+- `Common/ptc32.dll`
+- `Common/CommCServ.exe`
+- `Common/MUT3_VCImodules.xml`
+- `Driver/firmware.frm`
+- `ini_common/ClearDiagCANID.ini`
+
+**Observed role of the main binaries:**
+
+- `PTCAN.exe`
+  - Native 32-bit Windows GUI executable
+  - Contains strings for:
+    - `PassThru CAN`
+    - `PassThruCANFlash`
+    - `PassThruCANImmobi`
+    - `PassThruCANTeachIn`
+    - `PassThruCANVINWriting`
+    - `CP_REQUEST_CANIDENTIFIER`
+    - `CP_RESPONSE_CANIDENTIFIER`
+    - `\Ini\ClearDiagCANID.ini`
+    - `C:\Program Files\PassThruCAN\System\Common\ptc32.dll`
+  - This strongly suggests `PTCAN.exe` is the real Mitsubishi front-end for diagnostics, coding, VIN writing, immobilizer, and flash workflows.
+- `MUT_VCI.dll`
+  - Native 32-bit Windows DLL
+  - Exports a full D-PDU style interface including:
+    - `PDUConnect`
+    - `PDUCreateComLogicalLink`
+    - `PDUStartComPrimitive`
+    - `PDUIoCtl`
+    - `PDUSetParameter`
+    - `PDUGetParameter`
+  - Strings indicate MUT-3-specific transport resources and IOCTLs such as:
+    - `PDU_IOCTL_READ_VBATT`
+    - `PDU_IOCTL_CLEAR_RX_QUEUE`
+    - `PDU_IOCTL_CLEAR_TX_QUEUE`
+    - `Use resource=MUT_RSC_CANHS_MMC`
+    - `Use resource=MUT_RSC_K_LINE_MMC`
+  - The bundled `MUT3_VCImodules.xml` defines the transport model explicitly:
+    - bus `CANHS` (`id=2000`) with supported baud rates of `500000` or `250000`
+    - bus `K-LINE` (`id=2001`)
+    - protocol `MSP_KW2C_MMC` (`id=3000`) described as `Keyword on CAN for MMC (ES-X46228)`
+    - protocol `MSP_KW2K_MMC` (`id=3001`) described as `Keyword on K-Line for MMC (ES-X46228)`
+    - resource `CANHS_MMC` (`id=4000`) on pins `6` and `14`
+    - resource `K-LINE_MMC` (`id=4001`) on pin `7`
+  - The same XML records default CAN transport/session values:
+    - `PDU_PARAM_BUS_BAUDRATE = 500000`
+    - `PDU_PARAM_PROT_DLC_SIZE = 0` meaning fixed 8-byte frames padded with `0xFF`
+    - `PDU_PARAM_PROT_P2CAN = 60`
+    - `PDU_PARAM_PROT_P2CAN_78 = 2600`
+    - `PDU_PARAM_PROT_Cr = 70`
+    - `PDU_PARAM_PROT_DNUM = 3`
+    - `PDU_PARAM_PROT_TESTER_PRESENT_INTERVAL = 1000`
+    - `PDU_PARAM_PROT_TESTER_PRESENT_DATA = 023E02FFFFFFFFFF`
+    - `PDU_PARAM_PROT_TESTER_PRESENT_IDENTIFIER_SUB = 0x7DF`
+    - `PDU_PARAM_PROT_START_DIAG_SES_FLAG = 1`
+    - `PDU_PARAM_PROT_START_NORMAL_SES_FLAG = 1`
+    - `PDU_PARAM_PROT_START_DIAG_SES_DATA = 0x1092`
+    - `PDU_PARAM_PROT_START_NORMAL_SES_DATA = 0x1081`
+  - The XML also maps Mitsubishi D-PDU IOCTL IDs:
+    - `PDU_IOCTL_READ_VBATT = 0x10000001`
+    - `PDU_IOCTL_CLEAR_TX_QUEUE = 0x10000010`
+    - `PDU_IOCTL_CLEAR_RX_QUEUE = 0x100000013`
+    - `PDU_IOCTL_READ_CAN_VOL = 0xF0000003`
+    - `PDU_IOCTL_READ_CAN_REG = 0xF0000004`
+- `VciCRepro.dll`
+  - Native 32-bit Windows DLL
+  - Exports reprogramming-oriented entrypoints such as `DownLoad`, `UpDate`, `InitialReset`, and `CheckComm`
+  - Additional strings such as `EraseCheck` and `EraseDrvRcdData` reinforce that this DLL is aligned with ECU programming/reflash flows rather than ordinary logging
+- `ptc32.dll`
+  - Native 32-bit Windows DLL
+  - Exports only:
+    - `FUNC_LIST`
+    - `GET_VERSION`
+  - Appears to be a lower-level Mitsubishi transport shim used by the front-end rather than a flat J2534-style API surface.
+
+**Recovered CAN ID configuration:**
+
+`ini_common/ClearDiagCANID.ini` contains:
+
+```ini
+[CANID]
+NUMBER=1
+REQ1=7E0
+RES1=7E8
+```
+
+This confirms Mitsubishi's PassThru CAN tooling expects the same standard MUT/UDS-style request/response identifiers already assumed by the project.
+
+**Recovered diagnostic/session behavior from `protocol.gbf` and the CBF payloads:**
+
+- The bundled protocol metadata is based on `KWP2000CAN 1.2.8` rather than a generic OBD-only stack.
+- Addressing semantics are described explicitly:
+  - `PHYSICAL` uses `CP_REQUEST_CANIDENTIFIER` and expects a reply on `CP_RESPONSE_CANIDENTIFIER`
+  - `FUNCTIONAL` uses `CP_GLOBAL_REQUEST_CANIDENTIFIER` and does not expect a response
+- Default initialization behavior is also described explicitly:
+  - `UseDefaultInitialization = DEFAULTINIT` generates `StartDiagnosticSession-DCXDiagnosticSession (10 92)`
+  - `NOINIT` begins with tester present (`3E`) and considers communication started on either positive or negative response
+  - `UseDefaultExit = DEFAULTEXIT` generates `StartDiagnosticSession-StandardDiagnosticSession (10 81)` on exit
+- The protocol metadata states the expected positive response SID is normally `request SID + 0x40`, but that the application can override it if an ECU behaves differently.
+- Negative response handling is parameterized:
+  - retry timing for `7F xx 21`
+  - pending/response wait semantics for `7F xx 78`
+- CAN monitoring is an explicit protocol feature, not an implementation accident:
+  - `CP_CANMONITORING` toggles monitoring on/off
+  - `CP_CANMONITORINGFILTER` defines a hardware monitoring mask where `1 = must match`
+  - `CP_CANMONITORINGIDENTIFIER` defines the identifier to monitor
+  - helper names such as `GPDMonitorControlCAN`, `GPDInsertMonitor`, and `GPDReturnMessageFlush` appear throughout the CAN protocol metadata
+- Response filtering is also explicit in the protocol layer:
+  - `GPDFilter_POSITIVERESPONSE`
+  - `GPDFilter_NEGATIVERESPONSE`
+  - `GPDFilter_WAIT`
+  - `GPDFilter_REPEAT`
+  - `GPDFilter_TESTERPRESENT`
+  - `GPDFilter_HEXSERVICE`
+- DTC handling is implemented in a fairly rich way:
+  - strings and symbols identify `ReportDTCbyDTCNumber`, `ReportDTCbyStatusMask`, `ReportSupportedDTCs`, and environment-data retrieval flows
+  - the payload references both Mitsubishi-specific DTC handling (`PALErrorList`) and OBD-oriented handling (`OBDErrorList`)
+  - CBF metadata contains `Extended Diagnostic Session` and `Normal/Default Session`, along with VIN-oriented data items such as `VIN-Current` and `VIN-Original`
+  - DTC status evaluation includes UDS-style interpretations such as ACTIVE, PENDING, CONFIRMED/STORED, TestNotComplete, and WarningIndicatorRequested
+- `PTCAN.exe` also references `FN_Control_DTC_Setting_No_response_required` and `FN_Normal_Message_Transmission_Disable_No_Resp_required`, which suggests some service wrappers intentionally tolerate or expect no response.
+
+**Recovered hardware/firmware configuration hints:**
+
+- `slave.ini` enables `Monitoring=TRUE` for several Mitsubishi VCI profiles and can enable `CANWarningCheck=TRUE`, indicating that passive receive/monitoring and CAN controller warning capture are first-class firmware features.
+- The same file shows USB-backed operation for `PartY` with `Interface=USB`, rather than a pure serial-only transport assumption.
+- `hardware.ini` defines multiple cable/adapter profiles with high CAN channel counts (commonly `50`) and explicit CANHS pin mappings.
+- `mapping.plf` maps OBD-II CAN onto the expected physical pins, reinforcing that the installed stack is built around explicit cable and pin-layout knowledge rather than generic adapter defaults.
+
+**Observed role of `CGDPTMC.dll`:**
+
+- Installed by `CGDPTMC.msi`
+- Exports COM registration entrypoints only
+- Strings identify it as a `CopyGuard`-style licensing component
+
+This means `CGDPTMC.dll` is not the transport implementation; the real technical value is in `PTCAN.exe`, `MUT_VCI.dll`, and related config files extracted from `data2.cab`.
+
+**Assessment:**
+
+- Mitsubishi's package is more useful than first assumed because it includes a real application, a VCI/PDU API, and explicit CAN ID configuration.
+- It does **not** directly replace EvoScan as the clearest OpenPort 2.0 J2534 reference, because Mitsubishi appears to use a D-PDU / MUT-3 stack instead of the managed J2534 path EvoScan exposes.
+- It is still valuable for corroborating expected CAN IDs, queue-clearing concepts, transport resource names, default session/tester-present behavior, and DTC/diagnostic workflow boundaries.
+- The Mitsubishi artifacts strengthen the case that the unresolved RX issue is not about high-level MUT/UDS semantics alone; both the EvoScan J2534 path and the Mitsubishi D-PDU path rely on explicit session control, tester-present handling, queue management, and response-shape expectations.
+- The Mitsubishi metadata also suggests that receive visibility may depend on explicit monitoring/filter configuration, which is consistent with a world where TX succeeds but RX is filtered, flushed, or never surfaced to the application layer.
+
+### 10.7 Open Questions
+
+- Determine whether EvoScan relies on OpenPort driver defaults for RX routing that the current project does not reproduce.
+- Confirm the inferred J2534 names for EvoScan's `MUTII`-branch `SET_CONFIG` parameter IDs `3`, `6`, `7`, `10`, and `12`.
+- Confirm whether EvoScan's tolerated `PassThruReadMsgs` return codes `9` and `16` are exactly `ERR_TIMEOUT` and `ERR_BUFFER_EMPTY` in the OpenPort 2.0 driver it ships against.
+- Determine whether EvoScan's ISO15765-specific `SET_CONFIG(channel, 3, 0)` call is in fact `LOOPBACK = 0` and whether that matters for the current project's RX behavior.
+- Validate whether the OpenPort 1.3 FTDI path uses a materially different RX strategy for MUT logging.
+- Determine whether EvoScan's future MUT-II support should explicitly mirror those `SET_CONFIG` values or instead prefer an existing open-source implementation as the baseline.
+- Determine how `PTCAN.exe` configures `MUT_VCI.dll` logical links and whether its D-PDU parameter set exposes CAN receive behavior relevant to the current RX gap.
+- Determine whether the current project should mimic Mitsubishi's fixed 8-byte padding, tester-present cadence, and default `10 92` / `10 81` session lifecycle when validating MUT logging over OpenPort 2.0.
+
 ---
 
 ## 11. Known Limitations and Constraints
@@ -436,19 +785,21 @@ MMCodingWriter ←→ Same Serial Interface ←→ ECU
   - `nm` - List symbols ✗ (Not applicable to .exe without debug symbols)
   - `objdump` - Disassemble ✗ (MacOS limitation - Windows executable)
   - `Radare2` - Binary analysis ✗ (Not pre-installed)
+  - `ilspycmd` - .NET decompilation ✓ Used on `EvoScanV3.1.exe`
 
 ### 11.2 Information Not Extracted
 
-- **Exact seed-key algorithm:** Not visible in string extraction
+- **Exact seed-key algorithm:** Still not recovered
 - **CRC/Checksum polynomials:** Not explicitly found
-- **Complete command set:** Only E0-E6 confirmed from documentation
+- **Complete command set:** Only E0-E6 confirmed for MUT logging path
 - **ROM write procedures:** Likely requires authentication
 - **Hardware-specific timing:** Not accessible from binaries
-- **Security algorithm details:** Obfuscated or compiled
+- **Security algorithm details:** Still obfuscated or compiled
+- **J2534 constant names:** Core EvoScan constants are now mapped with high confidence, but additional Mitsubishi-native constants may still need mapping
 
 ### 11.3 What Would Be Needed for Complete Reverse-Engineering
 
-1. **Disassembler/Decompiler:** IDA Pro, Ghidra, or Radare2 on Windows
+1. **Disassembler/Decompiler:** IDA Pro, Ghidra, Radare2, or ILSpy/dnSpy for managed binaries
 2. **Debugger:** WinDbg or x64dbg to trace protocol execution
 3. **ROM files:** Actual evo ECU ROM images to reverse-engineer checksums
 4. **Protocol analyzer:** Serial sniffer to capture live communication
@@ -504,16 +855,20 @@ This analysis extracted significant protocol information from EvoScan V3.1 and r
 
 4. **Real-Time Logging:** Extensive data logging via memory-mapped parameters with bit-level extraction
 
-5. **Security:** Seed-key authentication and VIN-locking mechanisms observed
+5. **Hardware Split:** OpenPort 2.0 is handled through J2534 `op20pt32.DLL`, while OpenPort 1.3 uses FTDI `FTD2XX.dll`
 
-6. **Tool Ecosystem:** EvoScan for tuning/logging + MMCodingWriter for ROM flashing represents complete editing suite
+6. **OpenPort 2.0 Session Shape:** EvoScan's Windows ISO15765 setup uses `PassThruConnect`, filter type `1`, and post-connect `Ioctl(7)` / `Ioctl(8)` calls
+
+7. **Security:** Seed-key authentication and VIN-locking mechanisms observed
+
+8. **Tool Ecosystem:** EvoScan for tuning/logging + MMCodingWriter for ROM flashing represents complete editing suite
 
 ### **Limitations:**
 
-- Binary analysis without disassembly limits depth of protocol understanding
+- Some decompiled methods remain obfuscated and require manual interpretation
 - Exact authentication algorithms remain proprietary/obfuscated
 - ROM write and security procedures partially obfuscated
-- Windows executable analysis on non-Windows system constrains available tools
+- J2534 constant names for some `Ioctl` and filter calls still need mapping
 
 ### **Applicability:**
 
@@ -549,5 +904,5 @@ This is NOT sufficient for:
 
 ---
 
-**Document prepared using string extraction and binary analysis techniques.**
-**Not based on official documentation or reverse engineering via disassembly.**
+**Document prepared using string extraction and .NET decompilation techniques.**
+**Not based on official documentation.**

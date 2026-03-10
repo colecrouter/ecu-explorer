@@ -20,11 +20,12 @@ const DEFAULT_FRAME_TIMEOUT_MS = 500;
 const ADAPTER_DRAIN_TIMEOUT_MS = 25;
 const ADAPTER_DRAIN_MAX_READS = 8;
 const ADAPTER_COMMAND_TIMEOUT_MS = 2000;
+const VBATT_PIN = 16;
 const ISO15765_PROTOCOL_ID = 6;
 const ISO15765_CHANNEL_CODE = 0x36;
 const ISO15765_DEFAULT_FLAGS = 0;
 const ISO15765_DEFAULT_BAUD = 500000;
-const ISO15765_FLOW_CONTROL_FILTER = 3;
+const ISO15765_PASS_FILTER = 1;
 const CAN_ID_MASK_11BIT = 0x7ff;
 const DEFAULT_TESTER_CAN_ID = 0x7e0;
 const DEFAULT_ECU_CAN_ID = 0x7e8;
@@ -325,6 +326,92 @@ function unwrapIso15765Payload(data: Uint8Array): Uint8Array {
 	return data.slice(4);
 }
 
+function appendBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
+	const combined = new Uint8Array(left.length + right.length);
+	combined.set(left, 0);
+	combined.set(right, left.length);
+	return combined;
+}
+
+function copyBytes(data: Uint8Array): Uint8Array<ArrayBuffer> {
+	const copy = new Uint8Array(data.length);
+	copy.set(data, 0);
+	return copy;
+}
+
+function consumeProtocolBytes(
+	buffer: Uint8Array,
+	payload: Uint8Array,
+): {
+	buffer: Uint8Array;
+	payload: Uint8Array;
+	message: Uint8Array | null;
+} {
+	let offset = 0;
+	let accumulatedPayload = payload;
+
+	while (offset + 5 <= buffer.length) {
+		if (buffer[offset] !== 0x61 || buffer[offset + 1] !== 0x72) {
+			offset += 1;
+			continue;
+		}
+
+		const channelCode = buffer[offset + 2];
+		const packetLength = buffer[offset + 3] ?? 0;
+		const packetType = buffer[offset + 4] ?? 0;
+		const packetTotalLength = packetLength + 4;
+		if (packetTotalLength <= 0) {
+			offset += 1;
+			continue;
+		}
+		if (offset + packetTotalLength > buffer.length) {
+			break;
+		}
+
+		if (channelCode === 0x6f) {
+			offset += packetTotalLength;
+			continue;
+		}
+
+		if (channelCode !== ISO15765_CHANNEL_CODE) {
+			offset += packetTotalLength;
+			continue;
+		}
+
+		const packetPayloadLength = Math.max(0, packetLength - 5);
+		const payloadStart = offset + 9;
+		const payloadEnd = Math.min(
+			payloadStart + packetPayloadLength,
+			offset + packetTotalLength,
+		);
+		const packetPayload = buffer.slice(payloadStart, payloadEnd);
+
+		if (
+			packetType === PACKET_NORMAL_START ||
+			packetType === PACKET_NORMAL ||
+			packetType === PACKET_RX_END
+		) {
+			accumulatedPayload = appendBytes(accumulatedPayload, packetPayload);
+		}
+
+		offset += packetTotalLength;
+
+		if (packetType === PACKET_RX_END) {
+			return {
+				buffer: copyBytes(buffer.slice(offset)),
+				payload: new Uint8Array(0),
+				message: accumulatedPayload,
+			};
+		}
+	}
+
+	return {
+		buffer: copyBytes(buffer.slice(offset)),
+		payload: accumulatedPayload,
+		message: null,
+	};
+}
+
 /**
  * An open, active connection to a Tactrix OpenPort 2.0 device.
  * Extends DeviceConnection with OpenPort 2.0-specific AT command methods.
@@ -337,6 +424,7 @@ export class OpenPort2Connection implements DeviceConnection {
 
 	private readonly device: USBDevice;
 	private channelId: number | null = null;
+	private pendingProtocolBytes: Uint8Array = new Uint8Array(0);
 	private streamActive = false;
 	private streamAbortController: AbortController | null = null;
 
@@ -495,6 +583,29 @@ export class OpenPort2Connection implements DeviceConnection {
 		}
 	}
 
+	private async readBatteryVoltage(): Promise<number | null> {
+		const response = await this.sendExpect(`atr ${VBATT_PIN}\r\n`, "arr ");
+		const tokens = response.trim().split(/\s+/);
+		if (tokens.length < 3 || tokens[0] !== "arr") {
+			return null;
+		}
+		const pin = Number.parseInt(tokens[1] ?? "", 10);
+		const millivolts = Number.parseInt(tokens[2] ?? "", 10);
+		if (pin !== VBATT_PIN || Number.isNaN(millivolts)) {
+			return null;
+		}
+		return millivolts;
+	}
+
+	private async clearTxBuffer(): Promise<void> {
+		// The reference J2534 implementation treats CLEAR_TX_BUFFER as a local no-op.
+		await Promise.resolve();
+	}
+
+	private async clearRxBuffer(): Promise<void> {
+		await this.drainPendingInput();
+	}
+
 	/**
 	 * Initialize the OpenPort 2.0 device by sending identification and
 	 * connect AT commands.
@@ -504,6 +615,7 @@ export class OpenPort2Connection implements DeviceConnection {
 	async initialize(): Promise<void> {
 		await this.sendExpect("\r\n\r\nati\r\n", "ari ");
 		await this.sendExpect("ata\r\n", null);
+		await this.readBatteryVoltage();
 		await this.drainPendingInput();
 		this.channelId = await this.openChannel(
 			ISO15765_PROTOCOL_ID,
@@ -512,11 +624,13 @@ export class OpenPort2Connection implements DeviceConnection {
 		);
 		await this.startMessageFilter(
 			this.channelId,
-			ISO15765_FLOW_CONTROL_FILTER,
+			ISO15765_PASS_FILTER,
 			encodeCanId(CAN_ID_MASK_11BIT),
 			encodeCanId(DEFAULT_ECU_CAN_ID),
 			encodeCanId(DEFAULT_TESTER_CAN_ID),
 		);
+		await this.clearTxBuffer();
+		await this.clearRxBuffer();
 	}
 
 	/**
@@ -611,72 +725,30 @@ export class OpenPort2Connection implements DeviceConnection {
 	 */
 	private async readProtocolMessage(timeoutMs: number): Promise<Uint8Array> {
 		const startedAt = Date.now();
-		let payload = new Uint8Array(0);
+		let payload: Uint8Array = new Uint8Array(0);
+		let buffered: Uint8Array = this.pendingProtocolBytes;
+		this.pendingProtocolBytes = new Uint8Array(0);
 
 		while (Date.now() - startedAt < timeoutMs) {
+			if (buffered.length > 0) {
+				const parsed = consumeProtocolBytes(buffered, payload);
+				buffered = parsed.buffer;
+				payload = parsed.payload;
+				if (parsed.message != null) {
+					this.pendingProtocolBytes = buffered;
+					return parsed.message;
+				}
+			}
+
 			const remaining = Math.max(1, timeoutMs - (Date.now() - startedAt));
 			const chunk = await this.readUsbPacket(remaining);
 			if (chunk.length === 0) {
 				continue;
 			}
-
-			let offset = 0;
-			while (offset + 5 <= chunk.length) {
-				if (chunk[offset] !== 0x61 || chunk[offset + 1] !== 0x72) {
-					offset += 1;
-					continue;
-				}
-
-				const channelCode = chunk[offset + 2];
-				const packetLength = chunk[offset + 3] ?? 0;
-				const packetType = chunk[offset + 4] ?? 0;
-				const packetTotalLength = packetLength + 4;
-				if (
-					packetTotalLength <= 0 ||
-					offset + packetTotalLength > chunk.length
-				) {
-					break;
-				}
-
-				if (channelCode === 0x6f) {
-					offset += 5;
-					continue;
-				}
-
-				if (channelCode !== ISO15765_CHANNEL_CODE) {
-					offset += packetTotalLength;
-					continue;
-				}
-
-				const packetPayloadLength = Math.max(0, packetLength - 5);
-				const payloadStart = offset + 9;
-				const payloadEnd = Math.min(
-					payloadStart + packetPayloadLength,
-					offset + packetTotalLength,
-				);
-				const packetPayload = chunk.slice(payloadStart, payloadEnd);
-
-				if (
-					packetType === PACKET_NORMAL_START ||
-					packetType === PACKET_NORMAL ||
-					packetType === PACKET_RX_END
-				) {
-					const combined = new Uint8Array(
-						payload.length + packetPayload.length,
-					);
-					combined.set(payload, 0);
-					combined.set(packetPayload, payload.length);
-					payload = combined;
-				}
-
-				offset += packetTotalLength;
-
-				if (packetType === PACKET_RX_END) {
-					return payload;
-				}
-			}
+			buffered = appendBytes(buffered, chunk);
 		}
 
+		this.pendingProtocolBytes = buffered;
 		throw new Error(`OpenPort 2.0 read timed out after ${timeoutMs}ms`);
 	}
 
@@ -855,6 +927,7 @@ class OpenPort2SerialConnection implements DeviceConnection {
 	readonly deviceInfo: DeviceInfo;
 	private readonly port: SerialPortLike;
 	private channelId: number | null = null;
+	private pendingProtocolBytes: Uint8Array = new Uint8Array(0);
 	private streamActive = false;
 	private streamAbortController: AbortController | null = null;
 
@@ -953,9 +1026,32 @@ class OpenPort2SerialConnection implements DeviceConnection {
 		}
 	}
 
+	private async readBatteryVoltage(): Promise<number | null> {
+		const response = await this.sendExpect(`atr ${VBATT_PIN}\r\n`, "arr ");
+		const tokens = response.trim().split(/\s+/);
+		if (tokens.length < 3 || tokens[0] !== "arr") {
+			return null;
+		}
+		const pin = Number.parseInt(tokens[1] ?? "", 10);
+		const millivolts = Number.parseInt(tokens[2] ?? "", 10);
+		if (pin !== VBATT_PIN || Number.isNaN(millivolts)) {
+			return null;
+		}
+		return millivolts;
+	}
+
+	private async clearTxBuffer(): Promise<void> {
+		await Promise.resolve();
+	}
+
+	private async clearRxBuffer(): Promise<void> {
+		await this.drainPendingInput();
+	}
+
 	async initialize(): Promise<void> {
 		await this.sendExpect("\r\n\r\nati\r\n", "ari ");
 		await this.sendExpect("ata\r\n", null);
+		await this.readBatteryVoltage();
 		await this.drainPendingInput();
 		this.channelId = await this.openChannel(
 			ISO15765_PROTOCOL_ID,
@@ -964,11 +1060,13 @@ class OpenPort2SerialConnection implements DeviceConnection {
 		);
 		await this.startMessageFilter(
 			this.channelId,
-			ISO15765_FLOW_CONTROL_FILTER,
+			ISO15765_PASS_FILTER,
 			encodeCanId(CAN_ID_MASK_11BIT),
 			encodeCanId(DEFAULT_ECU_CAN_ID),
 			encodeCanId(DEFAULT_TESTER_CAN_ID),
 		);
+		await this.clearTxBuffer();
+		await this.clearRxBuffer();
 	}
 
 	async openChannel(
@@ -1039,72 +1137,30 @@ class OpenPort2SerialConnection implements DeviceConnection {
 
 	private async readProtocolMessage(timeoutMs: number): Promise<Uint8Array> {
 		const startedAt = Date.now();
-		let payload = new Uint8Array(0);
+		let payload: Uint8Array = new Uint8Array(0);
+		let buffered: Uint8Array = this.pendingProtocolBytes;
+		this.pendingProtocolBytes = new Uint8Array(0);
 
 		while (Date.now() - startedAt < timeoutMs) {
+			if (buffered.length > 0) {
+				const parsed = consumeProtocolBytes(buffered, payload);
+				buffered = parsed.buffer;
+				payload = parsed.payload;
+				if (parsed.message != null) {
+					this.pendingProtocolBytes = buffered;
+					return parsed.message;
+				}
+			}
+
 			const remaining = Math.max(1, timeoutMs - (Date.now() - startedAt));
 			const chunk = await this.port.read(256, remaining);
 			if (chunk.length === 0) {
 				continue;
 			}
-
-			let offset = 0;
-			while (offset + 5 <= chunk.length) {
-				if (chunk[offset] !== 0x61 || chunk[offset + 1] !== 0x72) {
-					offset += 1;
-					continue;
-				}
-
-				const channelCode = chunk[offset + 2];
-				const packetLength = chunk[offset + 3] ?? 0;
-				const packetType = chunk[offset + 4] ?? 0;
-				const packetTotalLength = packetLength + 4;
-				if (
-					packetTotalLength <= 0 ||
-					offset + packetTotalLength > chunk.length
-				) {
-					break;
-				}
-
-				if (channelCode === 0x6f) {
-					offset += 5;
-					continue;
-				}
-
-				if (channelCode !== ISO15765_CHANNEL_CODE) {
-					offset += packetTotalLength;
-					continue;
-				}
-
-				const packetPayloadLength = Math.max(0, packetLength - 5);
-				const payloadStart = offset + 9;
-				const payloadEnd = Math.min(
-					payloadStart + packetPayloadLength,
-					offset + packetTotalLength,
-				);
-				const packetPayload = chunk.slice(payloadStart, payloadEnd);
-
-				if (
-					packetType === PACKET_NORMAL_START ||
-					packetType === PACKET_NORMAL ||
-					packetType === PACKET_RX_END
-				) {
-					const combined = new Uint8Array(
-						payload.length + packetPayload.length,
-					);
-					combined.set(payload, 0);
-					combined.set(packetPayload, payload.length);
-					payload = combined;
-				}
-
-				offset += packetTotalLength;
-
-				if (packetType === PACKET_RX_END) {
-					return payload;
-				}
-			}
+			buffered = appendBytes(buffered, chunk);
 		}
 
+		this.pendingProtocolBytes = buffered;
 		throw new Error(`OpenPort 2.0 read timed out after ${timeoutMs}ms`);
 	}
 

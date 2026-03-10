@@ -35,6 +35,25 @@ function createIso15765ResponseFrame(payload: Uint8Array): DataView {
 	return new DataView(frame.buffer.slice(0));
 }
 
+function createAdapterPacket(
+	channelCode: number,
+	packetType: number,
+	payload: Uint8Array,
+): Uint8Array {
+	const frame = new Uint8Array(9 + payload.length);
+	frame[0] = 0x61; // 'a'
+	frame[1] = 0x72; // 'r'
+	frame[2] = channelCode;
+	frame[3] = payload.length + 5;
+	frame[4] = packetType;
+	frame.set(payload, 9);
+	return frame;
+}
+
+function decodeAsciiPrefix(frame: Uint8Array, prefixLength: number): string {
+	return new TextDecoder().decode(frame.slice(0, prefixLength));
+}
+
 // Fake USBDevice implementation for testing
 // Using any to avoid complex type issues with USBDevice interface
 const createFakeUSBDevice = (options: {
@@ -45,6 +64,7 @@ const createFakeUSBDevice = (options: {
 	// biome-ignore lint/suspicious/noExplicitAny: Mocking complex USBDevice interface
 }): any => {
 	let _dataBuffer: ArrayBuffer = new ArrayBuffer(0);
+	const writes: Uint8Array[] = [];
 	return {
 		// Required USBDevice properties (minimal implementation)
 		usbVersionMajor: 2,
@@ -87,6 +107,7 @@ const createFakeUSBDevice = (options: {
 			_endpoint: number,
 			data: Uint8Array,
 		): Promise<{ status: string }> {
+			writes.push(new Uint8Array(data));
 			// Echo back the data for testing
 			_dataBuffer = data.buffer.slice(0) as ArrayBuffer;
 			return { status: "ok" };
@@ -94,6 +115,9 @@ const createFakeUSBDevice = (options: {
 		// Test helper
 		setResponseData(data: Uint8Array): void {
 			_dataBuffer = data.buffer.slice(0) as ArrayBuffer;
+		},
+		getWrites(): Uint8Array[] {
+			return writes.map((entry) => new Uint8Array(entry));
 		},
 	};
 };
@@ -154,6 +178,7 @@ class FakeSerialPort {
 	readonly path: string;
 	isOpen = false;
 	private readonly reads: Uint8Array[] = [];
+	private readonly writes: Uint8Array[] = [];
 
 	constructor(path: string, responses: Uint8Array[] = []) {
 		this.path = path;
@@ -168,8 +193,8 @@ class FakeSerialPort {
 		this.isOpen = false;
 	}
 
-	async write(_data: Uint8Array): Promise<void> {
-		// no-op
+	async write(data: Uint8Array): Promise<void> {
+		this.writes.push(new Uint8Array(data));
 	}
 
 	async read(_maxLength: number, _timeoutMs: number): Promise<Uint8Array> {
@@ -178,6 +203,10 @@ class FakeSerialPort {
 			throw new Error(`OpenPort 2.0 read timed out after ${_timeoutMs}ms`);
 		}
 		return next;
+	}
+
+	getWrites(): Uint8Array[] {
+		return this.writes.map((entry) => new Uint8Array(entry));
 	}
 }
 
@@ -460,10 +489,73 @@ describe("OpenPort2Transport", () => {
 			fakeDevice.transferIn = vi.fn(async () => ({
 				data: createIso15765ResponseFrame(testData),
 			}));
-			await expect(connection.sendFrame(testData)).resolves.toEqual(testData);
+				await expect(connection.sendFrame(testData)).resolves.toEqual(testData);
+			});
+
+		it("reassembles ISO15765 responses split across multiple adapter reads", async () => {
+			const payload = new Uint8Array([0x62, 0xf1, 0x90, 0x31, 0x32, 0x33]);
+			const frame = new Uint8Array(createIso15765ResponseFrame(payload).buffer);
+			const chunks = [frame.slice(0, 7), frame.slice(7)];
+			fakeDevice.transferIn = vi.fn(async () => ({
+				data: new DataView((chunks.shift() ?? new Uint8Array(0)).buffer),
+			}));
+
+			await expect(connection.sendFrame(payload)).resolves.toEqual(payload);
 		});
 
-		it("receiveFrame returns data from device", async () => {
+		it("ignores adapter control packets before returning the ISO15765 response", async () => {
+			const payload = new Uint8Array([0x62, 0x10, 0x92]);
+			const controlPacket = createAdapterPacket(
+				0x6f,
+				0x00,
+				new Uint8Array([0x01]),
+			);
+			const responsePacket = new Uint8Array(
+				createIso15765ResponseFrame(payload).buffer,
+			);
+			const chunks = [controlPacket, responsePacket];
+			fakeDevice.transferIn = vi.fn(async () => ({
+				data: new DataView((chunks.shift() ?? new Uint8Array(0)).buffer),
+			}));
+
+			await expect(connection.sendFrame(payload)).resolves.toEqual(payload);
+		});
+
+			it("initialization should use EvoScan's ISO15765 PASS_FILTER setup", async () => {
+				const reads = [
+					new TextEncoder().encode("ari main code version : 1.17.4877\r\n"),
+					new TextEncoder().encode("aro\r\n"),
+					new TextEncoder().encode("arr 16 12234\r\n"),
+					new Uint8Array(0),
+					new TextEncoder().encode("aro\r\n"),
+					new TextEncoder().encode("arf6 0 0\r\n"),
+					new Uint8Array(0),
+				];
+				fakeDevice.transferIn = vi.fn(async () => ({
+					data: new DataView((reads.shift() ?? new Uint8Array(0)).buffer),
+				}));
+
+				await connection.initialize();
+
+				const writes = fakeDevice.getWrites() as Uint8Array[];
+				expect(decodeAsciiPrefix(writes[0] ?? new Uint8Array(0), 9)).toBe(
+					"\r\n\r\nati\r\n",
+				);
+				expect(decodeAsciiPrefix(writes[1] ?? new Uint8Array(0), 5)).toBe(
+					"ata\r\n",
+				);
+				expect(decodeAsciiPrefix(writes[2] ?? new Uint8Array(0), 10)).toBe(
+					"atr 16\r\n",
+				);
+				expect(decodeAsciiPrefix(writes[3] ?? new Uint8Array(0), 17)).toBe(
+					"ato6 0 500000 0\r\n",
+				);
+				expect(decodeAsciiPrefix(writes[4] ?? new Uint8Array(0), 12)).toBe(
+					"atf6 1 0 4\r\n",
+				);
+			});
+
+			it("receiveFrame returns data from device", async () => {
 			// The receiveFrame method exists and can be called
 			// Note: Full data return testing requires more complex mock setup
 			expect(typeof connection.receiveFrame).toBe("function");
@@ -558,6 +650,115 @@ describe("OpenPort2Transport", () => {
 		it("initializes over serial and reads wrapped responses", async () => {
 			const path = "/dev/cu.usbmodemTAgdW56p1";
 			const payload = new Uint8Array([0x01, 0x02]);
+			let openedPort: FakeSerialPort | null = null;
+			const serial = new FakeSerialRuntime(
+				[
+					{
+						path,
+						serialNumber: "TAgdW56p",
+						manufacturer: "Tactrix",
+						friendlyName: "Tactrix OpenPort 2.0",
+						vendorId: "0403",
+						productId: "cc4d",
+					},
+				],
+					new Map([
+						[
+							path,
+							() => {
+								openedPort = new FakeSerialPort(path, [
+									new TextEncoder().encode(
+										"ari main code version : 1.17.4877\r\n",
+									),
+									new TextEncoder().encode("aro\r\n"),
+									new TextEncoder().encode("arr 16 12234\r\n"),
+									new Uint8Array(0),
+									new TextEncoder().encode("aro\r\n"),
+									new TextEncoder().encode("arf6 0 0\r\n"),
+									new Uint8Array(0),
+									new Uint8Array(createIso15765ResponseFrame(payload).buffer),
+								]);
+								return openedPort;
+							},
+						],
+					]),
+				);
+
+			const transport = new OpenPort2Transport({ serial });
+			const connection = (await transport.connect(
+				`openport2-serial:${path}`,
+			)) as TestConnection;
+				await connection.initialize();
+
+				const writes = openedPort?.getWrites() ?? [];
+				expect(decodeAsciiPrefix(writes[0] ?? new Uint8Array(0), 9)).toBe(
+					"\r\n\r\nati\r\n",
+				);
+				expect(decodeAsciiPrefix(writes[1] ?? new Uint8Array(0), 5)).toBe(
+					"ata\r\n",
+				);
+				expect(decodeAsciiPrefix(writes[2] ?? new Uint8Array(0), 10)).toBe(
+					"atr 16\r\n",
+				);
+				expect(decodeAsciiPrefix(writes[3] ?? new Uint8Array(0), 17)).toBe(
+					"ato6 0 500000 0\r\n",
+				);
+
+				await expect(connection.sendFrame(payload)).resolves.toEqual(payload);
+				await connection.close();
+			});
+
+		it("initialization should use PASS_FILTER instead of the legacy flow-control filter tuple", async () => {
+			const path = "/dev/cu.usbmodemTAgdW56p1";
+			let openedPort: FakeSerialPort | null = null;
+			const serial = new FakeSerialRuntime(
+				[
+					{
+						path,
+						serialNumber: "TAgdW56p",
+						manufacturer: "Tactrix",
+						friendlyName: "Tactrix OpenPort 2.0",
+						vendorId: "0403",
+						productId: "cc4d",
+					},
+				],
+				new Map([
+					[
+						path,
+						() => {
+							openedPort = new FakeSerialPort(path, [
+								new TextEncoder().encode(
+									"ari main code version : 1.17.4877\r\n",
+								),
+								new TextEncoder().encode("aro\r\n"),
+								new TextEncoder().encode("arr 16 12234\r\n"),
+								new Uint8Array(0),
+								new TextEncoder().encode("aro\r\n"),
+								new TextEncoder().encode("arf6 0 0\r\n"),
+							]);
+							return openedPort;
+						},
+					],
+				]),
+			);
+
+			const transport = new OpenPort2Transport({ serial });
+			const connection = (await transport.connect(
+				`openport2-serial:${path}`,
+			)) as TestConnection;
+			await connection.initialize();
+
+			const writes = openedPort?.getWrites() ?? [];
+			expect(decodeAsciiPrefix(writes[4] ?? new Uint8Array(0), 12)).toBe(
+				"atf6 1 0 4\r\n",
+			);
+			await connection.close();
+		});
+
+		it("clears pending RX data after filter setup before reading protocol messages", async () => {
+			const path = "/dev/cu.usbmodemTAgdW56p1";
+			const payload = new Uint8Array([0x01, 0x02]);
+			const staleConsoleOutput = new TextEncoder().encode("stale-rx\r\n");
 			const serial = new FakeSerialRuntime(
 				[
 					{
@@ -578,12 +779,63 @@ describe("OpenPort2Transport", () => {
 									"ari main code version : 1.17.4877\r\n",
 								),
 								new TextEncoder().encode("aro\r\n"),
-								new TextEncoder().encode("aro\r\n"),
+								new TextEncoder().encode("arr 16 12234\r\n"),
 								new Uint8Array(0),
 								new TextEncoder().encode("aro\r\n"),
 								new TextEncoder().encode("arf6 0 0\r\n"),
+								staleConsoleOutput,
+								new Uint8Array(0),
 								new Uint8Array(createIso15765ResponseFrame(payload).buffer),
 							]),
+					],
+				]),
+			);
+
+			const transport = new OpenPort2Transport({ serial });
+			const connection = (await transport.connect(
+				`openport2-serial:${path}`,
+			)) as TestConnection;
+			await connection.initialize();
+
+			await expect(connection.sendFrame(payload)).resolves.toEqual(payload);
+			await connection.close();
+		});
+
+		it("reassembles serial ISO15765 responses split across multiple adapter reads", async () => {
+			const path = "/dev/cu.usbmodemTAgdW56p1";
+			const payload = new Uint8Array([0x62, 0xf1, 0x90, 0x31, 0x32, 0x33]);
+			const frame = new Uint8Array(createIso15765ResponseFrame(payload).buffer);
+			let openedPort: FakeSerialPort | null = null;
+			const serial = new FakeSerialRuntime(
+				[
+					{
+						path,
+						serialNumber: "TAgdW56p",
+						manufacturer: "Tactrix",
+						friendlyName: "Tactrix OpenPort 2.0",
+						vendorId: "0403",
+						productId: "cc4d",
+					},
+				],
+				new Map([
+					[
+						path,
+						() => {
+							openedPort = new FakeSerialPort(path, [
+								new TextEncoder().encode(
+									"ari main code version : 1.17.4877\r\n",
+								),
+								new TextEncoder().encode("aro\r\n"),
+								new TextEncoder().encode("arr 16 12234\r\n"),
+								new Uint8Array(0),
+								new TextEncoder().encode("aro\r\n"),
+								new TextEncoder().encode("arf6 0 0\r\n"),
+								new Uint8Array(0),
+								frame.slice(0, 7),
+								frame.slice(7),
+							]);
+							return openedPort;
+						},
 					],
 				]),
 			);
