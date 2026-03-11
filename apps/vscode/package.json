@@ -355,7 +355,7 @@
 		"watch:extension:web": "vite build --watch --config vite.web.config.ts",
 		"watch:webview": "vite build --watch --config vite.webview.config.ts",
 		"watch:mcp": "vite build --watch --config vite.mcp.config.ts",
-		"check:tsc": "tsc -b tsconfig.check.json --noEmit",
+		"check:tsc": "tsc -p tsconfig.json --noEmit && tsc -b tsconfig.check.json --noEmit",
 		"check:webview": "svelte-check --tsconfig ./tsconfig.webview.json",
 		"check": "npm run check:tsc && npm run check:webview",
 		"vscode:prepublish": "npm run check && npm run build",

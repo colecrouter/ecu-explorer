@@ -1,5 +1,5 @@
 import type { ROMDefinition, TableDefinition } from "@ecu-explorer/core";
-import { TableView } from "./table.svelte";
+import { TableView } from "./table.svelte.js";
 
 export class ROMView {
 	protected bytes: Uint8Array;

@@ -360,7 +360,10 @@ export class GraphPanelManager {
 
 		// Restored panels do not carry an in-memory snapshot, so rebuild it on demand.
 		if (!context.snapshot && this.getSnapshot) {
-			context.snapshot = this.getSnapshot(context.romPath, context.tableId);
+			const snapshot = this.getSnapshot(context.romPath, context.tableId);
+			if (snapshot) {
+				context.snapshot = snapshot;
+			}
 		}
 
 		if (!context.snapshot) {

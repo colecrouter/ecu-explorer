@@ -13,5 +13,9 @@
 		"lib": ["ESNext", "DOM"]
 	},
 	"include": ["src/**/*"],
-	"exclude": ["src/mcp-provider.ts", "src/extension.desktop.ts"]
+	"exclude": [
+		"src/mcp-provider.ts",
+		"src/extension.desktop.ts",
+		"src/webview/**/*"
+	]
 }
