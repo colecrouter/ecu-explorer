@@ -1,10 +1,10 @@
-import type { ROMDefinition, TableDefinition } from "@ecu-explorer/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { RomDocument } from "../src/rom/document.js";
 import type { RomEditorProvider } from "../src/rom/editor-provider.js";
 import { RomExplorerTreeProvider } from "../src/tree/rom-tree-provider.js";
 import { WorkspaceState } from "../src/workspace-state.js";
+import { createTestDefinition, createTestTable } from "./mocks/rom-fixtures.js";
 
 type MockEditorProvider = Pick<
 	RomEditorProvider,
@@ -39,45 +39,6 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			mockWorkspaceState,
 		);
 	});
-
-	/**
-	 * Helper to create a mock table definition
-	 */
-	function createMockTable(
-		name: string,
-		category?: string,
-		kind: "table1d" | "table2d" | "table3d" = "table1d",
-	): TableDefinition {
-		const baseTable = {
-			id: `${name}-table`,
-			name,
-			kind,
-			rows: 10,
-			z: {
-				id: `${name}-z`,
-				name: "z",
-				address: 0x1000,
-				dtype: "u8" as const,
-			},
-		};
-
-		return category
-			? ({ ...baseTable, category } as TableDefinition)
-			: (baseTable as TableDefinition);
-	}
-
-	/**
-	 * Helper to create a mock ROM definition
-	 */
-	function createMockDefinition(tables: TableDefinition[]): ROMDefinition {
-		return {
-			uri: "file:///test/definition.xml",
-			name: "Test Definition",
-			fingerprints: [],
-			platform: {},
-			tables,
-		};
-	}
 
 	describe("ecuExplorer.openTable Command", () => {
 		it("should accept romUri and tableName arguments", () => {
@@ -130,11 +91,11 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			const mockUri2 = vscode.Uri.file("/test/rom2.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables1 = [createMockTable("Table1", "Fuel")];
-			const tables2 = [createMockTable("Table2", "Boost")];
+			const tables1 = [createTestTable({ name: "Table1", category: "Fuel" })];
+			const tables2 = [createTestTable({ name: "Table2", category: "Boost" })];
 
-			const definition1 = createMockDefinition(tables1);
-			const definition2 = createMockDefinition(tables2);
+			const definition1 = createTestDefinition(tables1);
+			const definition2 = createTestDefinition(tables2);
 			const [table1] = tables1;
 			const [table2] = tables2;
 			if (table1 == null || table2 == null) {
@@ -176,7 +137,7 @@ describe("ECU Explorer Commands - Phase 2", () => {
 				throw new Error("Expected category node to be defined");
 
 			const tableNodes = await treeProvider.getChildren(categoryNode);
-			const table2Node = tableNodes.find((n) => n.label === "Table2");
+			const table2Node = tableNodes.find((n) => n.label === table2.name);
 			if (table2Node?.data.type === "table") {
 				expect(table2Node.data.isActive).toBe(true);
 			}
@@ -189,12 +150,12 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
 			const tables = [
-				createMockTable("Table1", "Fuel"),
-				createMockTable("Table2", "Fuel"),
+				createTestTable({ name: "Table1", category: "Fuel" }),
+				createTestTable({ name: "Table2", category: "Fuel" }),
 			];
 			const [table1] = tables;
 			if (table1 == null) throw new Error("Expected first table to be defined");
-			const definition = createMockDefinition(tables);
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -214,7 +175,7 @@ describe("ECU Explorer Commands - Phase 2", () => {
 
 			const tableNodes = await treeProvider.getChildren(categoryNode);
 
-			const table1Node = tableNodes.find((n) => n.label === "Table1");
+			const table1Node = tableNodes.find((n) => n.label === table1.name);
 			if (table1Node?.data.type === "table") {
 				expect(table1Node.data.isActive).toBe(true);
 			}
@@ -225,15 +186,15 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
 			const tables = [
-				createMockTable("Table1", "Fuel"),
-				createMockTable("Table2", "Fuel"),
-				createMockTable("Table3", "Ignition"),
+				createTestTable({ name: "Table1", category: "Fuel" }),
+				createTestTable({ name: "Table2", category: "Fuel" }),
+				createTestTable({ name: "Table3", category: "Ignition" }),
 			];
 			const [table1, table2, table3] = tables;
 			if (table1 == null || table2 == null || table3 == null) {
 				throw new Error("Expected tables to be defined");
 			}
-			const definition = createMockDefinition(tables);
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -256,11 +217,11 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			const mockUri2 = vscode.Uri.file("/test/rom2.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables1 = [createMockTable("Table1", "Fuel")];
-			const tables2 = [createMockTable("Table2", "Boost")];
+			const tables1 = [createTestTable({ name: "Table1", category: "Fuel" })];
+			const tables2 = [createTestTable({ name: "Table2", category: "Boost" })];
 
-			const definition1 = createMockDefinition(tables1);
-			const definition2 = createMockDefinition(tables2);
+			const definition1 = createTestDefinition(tables1);
+			const definition2 = createTestDefinition(tables2);
 			const [table1] = tables1;
 			const [table2] = tables2;
 			if (table1 == null || table2 == null) {
@@ -311,8 +272,8 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			const mockUri = vscode.Uri.file("/test/rom.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables = [createMockTable("Table1", "Fuel")];
-			const definition = createMockDefinition(tables);
+			const tables = [createTestTable({ name: "Table1", category: "Fuel" })];
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -333,14 +294,14 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			const mockUri = vscode.Uri.file("/test/rom.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables = [createMockTable("Table1", "Fuel")];
-			const definition = createMockDefinition(tables);
+			const tables = [createTestTable({ name: "Table1", category: "Fuel" })];
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
 
 			// Set active table
-			treeProvider.setActiveTable(mockUri.toString(), "Table1");
+			treeProvider.setActiveTable(mockUri.toString(), tables[0]?.id ?? "");
 
 			// Refresh tree
 			treeProvider.refresh();
@@ -348,7 +309,7 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			// Active table should still be set
 			expect(treeProvider.getActiveTable()).toEqual({
 				romUri: mockUri.toString(),
-				tableName: "Table1",
+				tableName: tables[0]?.id ?? "",
 			});
 		});
 
@@ -386,8 +347,8 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			const mockUri = vscode.Uri.file("/test/rom.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables = [createMockTable("TestTable", "Fuel")];
-			const definition = createMockDefinition(tables);
+			const tables = [createTestTable({ name: "TestTable", category: "Fuel" })];
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -409,7 +370,7 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			// Verify node has correct data for command
 			if (tableNode.data.type === "table") {
 				expect(tableNode.data.romUri).toBe(mockUri.toString());
-				expect(tableNode.data.tableDef.name).toBe("TestTable");
+				expect(tableNode.data.tableDef.name).toBe(tables[0]?.name);
 			}
 		});
 
@@ -417,8 +378,8 @@ describe("ECU Explorer Commands - Phase 2", () => {
 			const mockUri = vscode.Uri.file("/test/rom.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables = [createMockTable("TestTable", "Fuel")];
-			const definition = createMockDefinition(tables);
+			const tables = [createTestTable({ name: "TestTable", category: "Fuel" })];
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -447,7 +408,7 @@ describe("ECU Explorer Commands - Phase 2", () => {
 				expect(typeof romUri).toBe("string");
 				expect(typeof tableName).toBe("string");
 				expect(romUri).toBe(mockUri.toString());
-				expect(tableName).toBe("TestTable");
+				expect(tableName).toBe(tables[0]?.name);
 
 				// Verify romUri is not "[object Object]"
 				expect(romUri).not.toBe("[object Object]");

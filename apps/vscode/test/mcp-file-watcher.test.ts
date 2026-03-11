@@ -15,50 +15,15 @@
 import * as nodePath from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
+import {
+	type CapturingFileSystemWatcher,
+	createCapturingFileSystemWatcher,
+	createMockRomDocument,
+} from "./mocks/vscode-harness.js";
 
 type MockReadFileResult = Awaited<
 	ReturnType<typeof vscode.workspace.fs.readFile>
 >;
-
-interface MockRomDocument {
-	uri: vscode.Uri;
-	romBytes: Uint8Array;
-	definition: undefined;
-	isDirty: boolean;
-	updateBytes: ReturnType<
-		typeof vi.fn<
-			(
-				newBytes: Uint8Array,
-				address?: number,
-				length?: number,
-				markDirty?: boolean,
-			) => void
-		>
-	>;
-	makeDirty: ReturnType<typeof vi.fn>;
-	makeClean: ReturnType<typeof vi.fn>;
-	onDidChange: ReturnType<typeof vi.fn>;
-	onDidUpdateBytes: ReturnType<typeof vi.fn>;
-	onDidDispose: ReturnType<
-		typeof vi.fn<(cb: () => void) => { dispose: () => void }>
-	>;
-	dispose: ReturnType<typeof vi.fn>;
-	triggerDispose: () => void;
-}
-
-type Disposable = { dispose: () => void };
-
-interface CapturingFileSystemWatcher {
-	onDidChange: (cb: (uri: vscode.Uri) => void) => Disposable;
-	onDidCreate: (cb: (uri: vscode.Uri) => void) => Disposable;
-	onDidDelete: () => Disposable;
-	dispose: () => void;
-	ignoreCreateEvents: boolean;
-	ignoreChangeEvents: boolean;
-	ignoreDeleteEvents: boolean;
-	fireChange: (uri: vscode.Uri) => void;
-	fireCreate: (uri: vscode.Uri) => void;
-}
 
 function asFileSystemWatcher(
 	watcher: CapturingFileSystemWatcher,
@@ -79,91 +44,6 @@ vi.mock("node:fs/promises", () => ({
 	readdir: vi.fn().mockResolvedValue([]),
 	readFile: vi.fn().mockResolvedValue(new Uint8Array(0)),
 }));
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Creates a mock FileSystemWatcher that captures its `onDidChange` and
- * `onDidCreate` listeners so tests can fire file-change events programmatically.
- */
-function createCapturingFileSystemWatcher(): CapturingFileSystemWatcher {
-	let changeListener: ((uri: vscode.Uri) => void) | null = null;
-	let createListener: ((uri: vscode.Uri) => void) | null = null;
-
-	const watcher = {
-		onDidChange(cb: (uri: vscode.Uri) => void) {
-			changeListener = cb;
-			return { dispose: vi.fn() };
-		},
-		onDidCreate(cb: (uri: vscode.Uri) => void) {
-			createListener = cb;
-			return { dispose: vi.fn() };
-		},
-		onDidDelete: vi.fn().mockReturnValue({ dispose: vi.fn() }),
-		dispose: vi.fn(),
-		ignoreCreateEvents: false,
-		ignoreChangeEvents: false,
-		ignoreDeleteEvents: true,
-		/** Fire the captured onDidChange listener for the given URI. */
-		fireChange(uri: vscode.Uri) {
-			if (changeListener) changeListener(uri);
-		},
-		/** Fire the captured onDidCreate listener for the given URI. */
-		fireCreate(uri: vscode.Uri) {
-			if (createListener) createListener(uri);
-		},
-	};
-
-	// Spy on onDidChange and onDidCreate so we can assert they were called
-	vi.spyOn(watcher, "onDidChange");
-	vi.spyOn(watcher, "onDidCreate");
-
-	return watcher;
-}
-
-/**
- * Creates a minimal mock RomDocument for testing.
- */
-function createMockRomDocument(
-	uri: vscode.Uri,
-	romBytes: Uint8Array,
-): MockRomDocument {
-	let disposeListener: (() => void) | null = null;
-
-	const doc = {
-		uri,
-		romBytes,
-		definition: undefined,
-		isDirty: false,
-		updateBytes: vi.fn(
-			(
-				_newBytes: Uint8Array,
-				_address?: number,
-				_length?: number,
-				_markDirty?: boolean,
-			) => {},
-		),
-		makeDirty: vi.fn(),
-		makeClean: vi.fn(),
-		onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
-		onDidUpdateBytes: vi.fn(() => ({ dispose: vi.fn() })),
-		onDidDispose: vi.fn((cb: () => void) => {
-			disposeListener = cb;
-			return { dispose: vi.fn() };
-		}),
-		dispose: vi.fn(() => {
-			if (disposeListener) disposeListener();
-		}),
-		/** Trigger the dispose lifecycle manually in tests */
-		triggerDispose() {
-			if (disposeListener) disposeListener();
-		},
-	};
-
-	return doc;
-}
 
 // ---------------------------------------------------------------------------
 // Unit-level tests: callback logic in isolation (no full activate())

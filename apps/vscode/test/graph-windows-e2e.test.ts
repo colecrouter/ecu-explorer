@@ -8,13 +8,21 @@
  * - Panel persistence across VSCode reload
  */
 
-import type { TableSnapshot } from "@ecu-explorer/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { GraphPanelManager } from "../src/graph-panel-manager.js";
 import { GraphPanelSerializer } from "../src/graph-panel-serializer.js";
-import { RomDocument } from "../src/rom/document.js";
+import type { RomDocument } from "../src/rom/document.js";
 import type { RomEditorProvider } from "../src/rom/editor-provider.js";
+import {
+	createGraphSnapshot,
+	createPersistedGraphDocument,
+	FIRST_GRAPH_PANEL_CASE,
+	GRAPH_PANEL_TITLE,
+	PRIMARY_GRAPH_CASE,
+	SECOND_GRAPH_PANEL_CASE,
+} from "./mocks/graph-fixtures.js";
+import { createExtensionContext } from "./mocks/vscode-harness.js";
 import {
 	createMockPanel,
 	createMockWebviewPanel,
@@ -44,7 +52,7 @@ describe("Graph Windows E2E", () => {
 	): GraphCompatibleWebviewPanel => panel as GraphCompatibleWebviewPanel;
 
 	const getRestoredPanel = (): vscode.WebviewPanel => {
-		const panel = createMockPanel("ecuExplorerGraph", "Graph: Test Table");
+		const panel = createMockPanel("ecuExplorerGraph", GRAPH_PANEL_TITLE);
 		panel.iconPath = vscode.Uri.file("/test/icon.svg");
 		return panel as vscode.WebviewPanel;
 	};
@@ -52,43 +60,9 @@ describe("Graph Windows E2E", () => {
 	const asMockWebview = (panel: vscode.WebviewPanel): MockGraphWebview =>
 		getMockPanel(panel).webview;
 
-	const createMockSnapshot = (value: number = 10): TableSnapshot => ({
-		kind: "table2d",
-		name: "Test Table",
-		description: "Test description",
-		rows: 2,
-		cols: 2,
-		x: [0, 1],
-		y: [0, 1],
-		z: [
-			[value, value + 10],
-			[value + 20, value + 30],
-		],
-	});
-
+	const createMockSnapshot = createGraphSnapshot;
 	const createMockDocument = (romPath: string): RomDocument =>
-		new RomDocument(vscode.Uri.file(romPath), new Uint8Array(1024), {
-			uri: "file:///test/definition.xml",
-			name: "Test ROM",
-			fingerprints: [],
-			platform: {},
-			tables: [
-				{
-					id: "table1",
-					name: "table1",
-					kind: "table2d",
-					rows: 2,
-					cols: 2,
-					z: {
-						id: "table1-z",
-						name: "z",
-						address: 0x1000,
-						dtype: "u8",
-						endianness: "be",
-					},
-				},
-			],
-		});
+		createPersistedGraphDocument(romPath);
 
 	beforeEach(() => {
 		// Mock vscode.window.createWebviewPanel
@@ -99,10 +73,9 @@ describe("Graph Windows E2E", () => {
 		);
 
 		// Create mock context
-		mockContext = {
+		mockContext = createExtensionContext({
 			subscriptions: [] as vscode.Disposable[],
-			extensionUri: vscode.Uri.file("/test/extension"),
-		} satisfies Partial<vscode.ExtensionContext> as vscode.ExtensionContext;
+		}) as vscode.ExtensionContext;
 
 		// Create mock table editor webview
 		tableEditorPostMessage = vi.fn<(message: unknown) => void>();
@@ -159,15 +132,15 @@ describe("Graph Windows E2E", () => {
 
 			// Simulate command execution
 			const panel = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				PRIMARY_GRAPH_CASE.romPath,
+				PRIMARY_GRAPH_CASE.tableId,
+				PRIMARY_GRAPH_CASE.tableName,
 				snapshot,
 			);
 
 			// Panel should be created
 			expect(panel).toBeDefined();
-			expect(panel.title).toBe("Graph: Test Table");
+			expect(panel.title).toBe(GRAPH_PANEL_TITLE);
 		});
 
 		it("should open graph via button click in table editor", () => {
@@ -176,9 +149,9 @@ describe("Graph Windows E2E", () => {
 			// Simulate button click (message from table editor)
 			// In real scenario, this would come from TableApp.svelte
 			const panel = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				PRIMARY_GRAPH_CASE.romPath,
+				PRIMARY_GRAPH_CASE.tableId,
+				PRIMARY_GRAPH_CASE.tableName,
 				snapshot,
 			);
 
@@ -192,17 +165,17 @@ describe("Graph Windows E2E", () => {
 
 			// Open first graph
 			const panel1 = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table 1",
+				FIRST_GRAPH_PANEL_CASE.romPath,
+				FIRST_GRAPH_PANEL_CASE.tableId,
+				FIRST_GRAPH_PANEL_CASE.tableName,
 				snapshot,
 			);
 
 			// Open second graph
 			const panel2 = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table2",
-				"Test Table 2",
+				SECOND_GRAPH_PANEL_CASE.romPath,
+				SECOND_GRAPH_PANEL_CASE.tableId,
+				SECOND_GRAPH_PANEL_CASE.tableName,
 				snapshot,
 			);
 

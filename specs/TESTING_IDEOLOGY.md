@@ -41,6 +41,13 @@ Vitest is configured to clear mock call history between tests. Do not add suite-
 - Use targeted `.mockClear()` inside a test only when you intentionally want to ignore calls made during an earlier phase of that same test.
 - Prefer local `mockRestore()` or `vi.restoreAllMocks()` only when a test creates temporary spies that must be explicitly reverted.
 
+### Preferred Mock Patterns By Package
+- `apps/vscode/test`: start from the shared `test/mocks/vscode-harness.ts` helpers for extension contexts, file watchers, and lightweight ROM documents. Keep `test/setup.ts` as the single global `vscode` module mock, then override only the specific VS Code boundary your test needs.
+- `apps/vscode/test`: use `test/mocks/webview-mock.ts` for webview and panel behavior instead of re-creating ad hoc panel doubles in each suite.
+- `packages/mcp`: prefer small fixture builders for ROM loader and log-reader inputs so the tests share the same baseline shapes. Mock the boundary module, but keep assertions focused on returned tool output rather than mock call choreography.
+- `packages/device`: prefer transcript-driven connection fakes over method-by-method mocks for protocol flows.
+- `packages/core` and other pure logic packages: prefer explicit fixtures and direct input/output assertions. Avoid mocks unless the code crosses an I/O boundary.
+
 ---
 
 ## Migration Policy

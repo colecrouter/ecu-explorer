@@ -83,6 +83,11 @@ export interface GraphCompatibleWebviewPanel
 
 export type { MockWebview, MockWebviewPanel, MockWebviewMessage };
 
+type CreateMockWebviewPanelOptions = {
+	title?: string;
+	viewType?: string;
+};
+
 export function createMockWebview(): MockWebview {
 	const messageListeners: Array<(message: unknown) => void> = [];
 	const sentMessages: MockWebviewMessage[] = [];
@@ -124,8 +129,10 @@ export function createMockWebview(): MockWebview {
 }
 
 export function createMockWebviewPanel(
-	title: string = "Test Panel",
+	options: string | CreateMockWebviewPanelOptions = "Test Panel",
 ): GraphCompatibleWebviewPanel {
+	const resolvedOptions =
+		typeof options === "string" ? { title: options } : options;
 	const webview = createMockWebview();
 	const disposeListeners: Array<() => void> = [];
 	const disposeEvent: MockWebviewEvent<void> = (listener) => {
@@ -145,8 +152,8 @@ export function createMockWebviewPanel(
 	});
 
 	const panel: GraphCompatibleWebviewPanel = {
-		viewType: "test-view",
-		title,
+		viewType: resolvedOptions.viewType ?? "test-view",
+		title: resolvedOptions.title ?? "Test Panel",
 		iconPath: undefined,
 		webview,
 		options: {},
@@ -169,38 +176,5 @@ export function createMockPanel(
 	viewType: string,
 	title: string,
 ): GraphCompatibleWebviewPanel {
-	const webview = createMockWebview();
-	const disposeListeners: Array<() => void> = [];
-	const disposeEvent: MockWebviewEvent<void> = (listener) => {
-		disposeListeners.push(listener);
-		return { dispose: () => {} };
-	};
-	const viewStateEvent: MockWebviewEvent<
-		vscode.WebviewPanelOnDidChangeViewStateEvent
-	> = (_listener) => ({ dispose: () => {} });
-	const reveal: GraphCompatibleWebviewPanel["reveal"] = vi.fn(
-		async (_viewColumn?: vscode.ViewColumn, _preserveFocus?: boolean) => {},
-	);
-	const dispose = vi.fn(() => {
-		for (const listener of disposeListeners) {
-			listener();
-		}
-	});
-
-	const panel: GraphCompatibleWebviewPanel = {
-		viewType,
-		title,
-		iconPath: undefined,
-		webview,
-		options: {},
-		viewColumn: 1 as vscode.ViewColumn,
-		active: true,
-		visible: true,
-		onDidDispose: disposeEvent,
-		onDidChangeViewState: viewStateEvent,
-		reveal,
-		dispose,
-	};
-
-	return panel;
+	return createMockWebviewPanel({ title, viewType });
 }

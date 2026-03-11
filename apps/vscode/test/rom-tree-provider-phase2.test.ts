@@ -1,4 +1,4 @@
-import type { ROMDefinition, TableDefinition } from "@ecu-explorer/core";
+
 import type { Mock } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
@@ -6,6 +6,7 @@ import { RomDocument } from "../src/rom/document.js";
 import type { RomEditorProvider } from "../src/rom/editor-provider.js";
 import { RomExplorerTreeProvider } from "../src/tree/rom-tree-provider.js";
 import { WorkspaceState } from "../src/workspace-state.js";
+import { createTestDefinition, createTestTable } from "./mocks/rom-fixtures.js";
 
 type MockEditorProvider = Pick<RomEditorProvider, "onDidChangeCustomDocument">;
 
@@ -68,83 +69,6 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 		);
 	});
 
-	/**
-	 * Helper to create a mock table definition
-	 */
-	function createMockTable(
-		name: string,
-		category?: string,
-		kind: "table1d" | "table2d" | "table3d" = "table1d",
-	): TableDefinition {
-		if (kind === "table3d") {
-			const table = {
-				id: `${name}-table`,
-				name,
-				kind,
-				rows: 10,
-				cols: 10,
-				depth: 10,
-				z: {
-					id: `${name}-z`,
-					name: "z",
-					address: 0x1000,
-					dtype: "u8" as const,
-				},
-				...(category ? { category } : {}),
-			} satisfies TableDefinition;
-
-			return table;
-		}
-
-		if (kind === "table2d") {
-			const table = {
-				id: `${name}-table`,
-				name,
-				kind,
-				rows: 10,
-				cols: 10,
-				z: {
-					id: `${name}-z`,
-					name: "z",
-					address: 0x1000,
-					dtype: "u8" as const,
-				},
-				...(category ? { category } : {}),
-			} satisfies TableDefinition;
-
-			return table;
-		}
-
-		const table = {
-			id: `${name}-table`,
-			name,
-			kind,
-			rows: 10,
-			z: {
-				id: `${name}-z`,
-				name: "z",
-				address: 0x1000,
-				dtype: "u8" as const,
-			},
-			...(category ? { category } : {}),
-		} satisfies TableDefinition;
-
-		return table;
-	}
-
-	/**
-	 * Helper to create a mock ROM definition
-	 */
-	function createMockDefinition(tables: TableDefinition[]): ROMDefinition {
-		return {
-			uri: "file:///test/definition.xml",
-			name: "Test Definition",
-			fingerprints: [],
-			platform: {},
-			tables,
-		};
-	}
-
 	describe("Active Table Tracking", () => {
 		it("should set active table", () => {
 			const romUri = "file:///test/rom.hex";
@@ -172,16 +96,27 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 		});
 
 		it("should update active table when setActiveTable is called multiple times", () => {
-			treeProvider.setActiveTable("file:///test/rom1.hex", "Table1");
+			const firstActiveTable = { romUri: "file:///test/rom1.hex", tableName: "Table1" };
+			treeProvider.setActiveTable(
+				firstActiveTable.romUri,
+				firstActiveTable.tableName,
+			);
 			expect(treeProvider.getActiveTable()).toEqual({
-				romUri: "file:///test/rom1.hex",
-				tableName: "Table1",
+				romUri: firstActiveTable.romUri,
+				tableName: firstActiveTable.tableName,
 			});
 
-			treeProvider.setActiveTable("file:///test/rom2.hex", "Table2");
-			expect(treeProvider.getActiveTable()).toEqual({
+			const secondActiveTable = {
 				romUri: "file:///test/rom2.hex",
 				tableName: "Table2",
+			};
+			treeProvider.setActiveTable(
+				secondActiveTable.romUri,
+				secondActiveTable.tableName,
+			);
+			expect(treeProvider.getActiveTable()).toEqual({
+				romUri: secondActiveTable.romUri,
+				tableName: secondActiveTable.tableName,
 			});
 		});
 	});
@@ -192,12 +127,12 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
 			const tables = [
-				createMockTable("Table1", "Fuel"),
-				createMockTable("Table2", "Fuel"),
+				createTestTable({ name: "Table1", category: "Fuel" }),
+				createTestTable({ name: "Table2", category: "Fuel" }),
 			];
 			const [table1] = tables;
 			if (table1 == null) throw new Error("Expected first table to be defined");
-			const definition = createMockDefinition(tables);
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -217,8 +152,8 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const tableNodes = await treeProvider.getChildren(firstCategoryNode);
 
 			// Find Table1 and Table2
-			const table1Node = tableNodes.find((n) => n.label === "Table1");
-			const table2Node = tableNodes.find((n) => n.label === "Table2");
+			const table1Node = tableNodes.find((n) => n.label === table1.name);
+			const table2Node = tableNodes.find((n) => n.label === tables[1]?.name);
 
 			expect(table1Node?.data.type).toBe("table");
 			if (table1Node?.data.type === "table") {
@@ -235,10 +170,10 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const mockUri = vscode.Uri.file("/test/rom.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables = [createMockTable("Table1", "Fuel")];
+			const tables = [createTestTable({ name: "Table1", category: "Fuel" })];
 			const [table1] = tables;
 			if (table1 == null) throw new Error("Expected first table to be defined");
-			const definition = createMockDefinition(tables);
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -268,14 +203,14 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
 			const tables = [
-				createMockTable("Table1", "Fuel"),
-				createMockTable("Table2", "Fuel"),
+				createTestTable({ name: "Table1", category: "Fuel" }),
+				createTestTable({ name: "Table2", category: "Fuel" }),
 			];
 			const [table1, table2] = tables;
 			if (table1 == null || table2 == null) {
 				throw new Error("Expected tables to be defined");
 			}
-			const definition = createMockDefinition(tables);
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -293,7 +228,7 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 				throw new Error("Expected first category node to be defined");
 			let tableNodes = await treeProvider.getChildren(firstCategoryNode);
 
-			let table1Node = tableNodes.find((n) => n.label === "Table1");
+			let table1Node = tableNodes.find((n) => n.label === table1.name);
 			if (table1Node?.data.type === "table") {
 				expect(table1Node.data.isActive).toBe(true);
 			}
@@ -310,8 +245,8 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 				throw new Error("Expected category node to be defined");
 			tableNodes = await treeProvider.getChildren(secondCategoryNode);
 
-			table1Node = tableNodes.find((n) => n.label === "Table1");
-			const table2Node = tableNodes.find((n) => n.label === "Table2");
+			table1Node = tableNodes.find((n) => n.label === table1.name);
+			const table2Node = tableNodes.find((n) => n.label === table2.name);
 
 			if (table1Node?.data.type === "table") {
 				expect(table1Node.data.isActive).toBe(false);
@@ -326,13 +261,13 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const mockUri2 = vscode.Uri.file("/test/rom2.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables1 = [createMockTable("Table1", "Fuel")];
-			const tables2 = [createMockTable("Table2", "Boost")];
+			const tables1 = [createTestTable({ name: "Table1", category: "Fuel" })];
+			const tables2 = [createTestTable({ name: "Table2", category: "Boost" })];
 			const [table1] = tables1;
 			if (table1 == null) throw new Error("Expected ROM1 table to be defined");
 
-			const definition1 = createMockDefinition(tables1);
-			const definition2 = createMockDefinition(tables2);
+			const definition1 = createTestDefinition(tables1);
+			const definition2 = createTestDefinition(tables2);
 
 			const document1 = new RomDocument(mockUri1, mockBytes, definition1);
 			const document2 = new RomDocument(mockUri2, mockBytes, definition2);
@@ -345,7 +280,7 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 
 			// Get ROM1 tables
 			const romNodes = await treeProvider.getChildren();
-			const rom1Node = romNodes.find((n) => n.label === "rom1.hex");
+			const rom1Node = romNodes.find((n) => n.label === mockUri1.path.split("/").pop());
 			if (!rom1Node) throw new Error("rom1.hex node not found");
 			const rom1Categories = await treeProvider.getChildren(rom1Node);
 			const firstCategory = rom1Categories[0];
@@ -359,7 +294,7 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			}
 
 			// Get ROM2 tables (should not be active)
-			const rom2Node = romNodes.find((n) => n.label === "rom2.hex");
+			const rom2Node = romNodes.find((n) => n.label === mockUri2.path.split("/").pop());
 			if (!rom2Node) throw new Error("rom2.hex node not found");
 			const rom2Categories = await treeProvider.getChildren(rom2Node);
 			const firstCategory2 = rom2Categories[0];
@@ -377,10 +312,10 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const mockUri = vscode.Uri.file("/test/rom.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables = [createMockTable("Table1", "Fuel")];
+			const tables = [createTestTable({ name: "Table1", category: "Fuel" })];
 			const [table1] = tables;
 			if (table1 == null) throw new Error("Expected first table to be defined");
-			const definition = createMockDefinition(tables);
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -429,7 +364,8 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const refreshSpy = vi.fn();
 			setTreeRefreshSpy(treeProvider, refreshSpy);
 
-			treeProvider.setActiveTable("file:///test/rom.hex", "Table1");
+			const activeTable = { romUri: "file:///test/rom.hex", tableName: "Table1" };
+			treeProvider.setActiveTable(activeTable.romUri, activeTable.tableName);
 
 			expect(refreshSpy).toHaveBeenCalled();
 		});
@@ -438,12 +374,13 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const refreshSpy = vi.fn();
 			setTreeRefreshSpy(treeProvider, refreshSpy);
 
-			treeProvider.setActiveTable("file:///test/rom.hex", "Table1");
-			refreshSpy.mockClear();
+			const activeTable = { romUri: "file:///test/rom.hex", tableName: "Table1" };
+			treeProvider.setActiveTable(activeTable.romUri, activeTable.tableName);
+			const refreshCallCount = refreshSpy.mock.calls.length;
 
 			treeProvider.clearActiveTable();
 
-			expect(refreshSpy).toHaveBeenCalled();
+			expect(refreshSpy).toHaveBeenCalledTimes(refreshCallCount + 1);
 		});
 	});
 
@@ -464,8 +401,8 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const mockUri = vscode.Uri.file("/test/rom.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const tables = [createMockTable("Table1", "Fuel")];
-			const definition = createMockDefinition(tables);
+			const tables = [createTestTable({ name: "Table1", category: "Fuel" })];
+			const definition = createTestDefinition(tables);
 
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
@@ -502,7 +439,7 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const mockUri = vscode.Uri.file("/test/rom.hex");
 			const mockBytes = new Uint8Array([0x01, 0x02, 0x03]);
 
-			const definition = createMockDefinition([]);
+			const definition = createTestDefinition([]);
 			const document = new RomDocument(mockUri, mockBytes, definition);
 			treeProvider.addDocument(document);
 

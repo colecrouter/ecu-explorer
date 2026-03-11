@@ -4,7 +4,7 @@ import type {
 	Table2DDefinition,
 } from "@ecu-explorer/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { McpConfig } from "../config.js";
+import { createMcpConfig, createRomLoaderResult } from "../test/tool-test-support.js";
 import type { PatchTableOptions } from "./patch-table.js";
 import { handlePatchTable } from "./patch-table.js";
 
@@ -12,20 +12,15 @@ let definition: ROMDefinition;
 let romBytes: Uint8Array;
 let lastWrittenBytes: Uint8Array | null = null;
 
-const config: McpConfig = {
-	definitionsPaths: [],
-	logsDir: "/tmp",
-};
+const config = createMcpConfig();
 
 vi.mock("../rom-loader.js", () => {
 	return {
-		loadRom: vi.fn(async () => ({
-			romPath: "/tmp/transformed.rom",
-			romBytes,
-			definition,
-			fileSizeBytes: romBytes.length,
-			mtime: Date.now(),
-		})),
+		loadRom: vi.fn(async () =>
+			createRomLoaderResult(definition, romBytes, {
+				romPath: "/tmp/transformed.rom",
+			}),
+		),
 		invalidateRomCache: vi.fn(),
 	};
 });

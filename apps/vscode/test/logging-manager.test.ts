@@ -8,61 +8,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { LoggingManager, openLogsFolder } from "../src/logging-manager.js";
-
-type LoggingConfiguration = Pick<
-	vscode.WorkspaceConfiguration,
-	"get" | "has" | "inspect" | "update"
->;
+import {
+	createLoggingConfiguration,
+	createSamplePids,
+	createWorkspaceFolders,
+} from "./mocks/logging-fixtures.js";
 
 const OPEN_FOLDER_ACTION = "Open Folder";
-
-function createWorkspaceFolders(): readonly vscode.WorkspaceFolder[] {
-	return [{ uri: vscode.Uri.file("/workspace"), name: "workspace", index: 0 }];
-}
-
-function createLoggingConfiguration(
-	logsFolder: string,
-	columns: string[] | "all" = "all",
-): LoggingConfiguration {
-	return {
-		get: vi.fn((key: string) => {
-			if (key === "logsFolder") return logsFolder;
-			if (key === "logging.columns") return columns;
-			return undefined;
-		}),
-		has: vi.fn(() => true),
-		inspect: vi.fn(() => undefined),
-		update: vi.fn(async () => {}),
-	};
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function createSamplePids() {
-	return [
-		{
-			pid: 0x0c,
-			name: "Engine RPM",
-			unit: "rpm",
-			minValue: 0,
-			maxValue: 16383,
-		},
-		{
-			pid: 0x05,
-			name: "Coolant Temp",
-			unit: "°C",
-			minValue: -40,
-			maxValue: 215,
-		},
-		{
-			pid: 0x11,
-			name: "Throttle Position",
-			unit: "%",
-			minValue: 0,
-			maxValue: 100,
-		},
-	];
-}
 
 // ─── LoggingManager Tests ────────────────────────────────────────────────────
 
@@ -95,7 +47,7 @@ describe("LoggingManager", () => {
 	describe("startLog", () => {
 		it("should set state to recording after startLog", async () => {
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			await manager.startLog([...pids]);
 			expect(manager.loggingState).toBe("recording");
 		});
 
@@ -103,18 +55,18 @@ describe("LoggingManager", () => {
 			const stateChanges: string[] = [];
 			manager.onDidChangeState((state) => stateChanges.push(state));
 
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			expect(stateChanges).toContain("recording");
 		});
 
 		it("should create the logs directory", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			expect(vscode.workspace.fs.createDirectory).toHaveBeenCalled();
 		});
 
 		it("should build correct CSV header with PID names", async () => {
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			await manager.startLog([...pids]);
 
 			// Stop to write the file
 			await manager.stopLog();
@@ -122,25 +74,27 @@ describe("LoggingManager", () => {
 			const writeCall = vi.mocked(vscode.workspace.fs.writeFile).mock.calls[0];
 			expect(writeCall).toBeDefined();
 			const content = new TextDecoder().decode(writeCall?.[1]);
-			expect(content).toContain(
-				"Timestamp (ms),Engine RPM,Coolant Temp,Throttle Position",
+			const header = ["Timestamp (ms)", ...pids.map((pid) => pid.name)].join(
+				",",
 			);
+			expect(content).toContain(header);
 		});
 
 		it("should build correct units row", async () => {
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			await manager.startLog([...pids]);
 			await manager.stopLog();
 
 			const writeCall = vi.mocked(vscode.workspace.fs.writeFile).mock.calls[0];
 			const content = new TextDecoder().decode(writeCall?.[1]);
-			expect(content).toContain("Unit,rpm,°C,%");
+			const unitsRow = ["Unit", ...pids.map((pid) => pid.unit)].join(",");
+			expect(content).toContain(unitsRow);
 		});
 
 		it("should be idempotent when already recording", async () => {
 			const pids = createSamplePids();
-			await manager.startLog(pids);
-			await manager.startLog(pids); // second call should be no-op
+			await manager.startLog([...pids]);
+			await manager.startLog([...pids]); // second call should be no-op
 
 			expect(manager.loggingState).toBe("recording");
 			// createDirectory should only be called once
@@ -152,7 +106,7 @@ describe("LoggingManager", () => {
 				undefined,
 			);
 
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 
 			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
 				expect.stringContaining("No workspace folder is open"),
@@ -165,7 +119,7 @@ describe("LoggingManager", () => {
 				createLoggingConfiguration("data/logs"),
 			);
 
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 
 			const createDirCall = vi.mocked(vscode.workspace.fs.createDirectory).mock
 				.calls[0];
@@ -177,7 +131,7 @@ describe("LoggingManager", () => {
 				createLoggingConfiguration("/absolute/logs"),
 			);
 
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 
 			const createDirCall = vi.mocked(vscode.workspace.fs.createDirectory).mock
 				.calls[0];
@@ -188,7 +142,7 @@ describe("LoggingManager", () => {
 	describe("onFrame", () => {
 		it("should append row when recording", async () => {
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			await manager.startLog([...pids]);
 
 			manager.onFrame({ timestamp: 1000, pid: 0x0c, value: 850, unit: "rpm" });
 
@@ -202,10 +156,16 @@ describe("LoggingManager", () => {
 
 		it("should drop frame when paused", async () => {
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			const [activePid] = pids;
+			await manager.startLog([...pids]);
 			manager.pauseLog();
 
-			manager.onFrame({ timestamp: 1000, pid: 0x0c, value: 850, unit: "rpm" });
+			manager.onFrame({
+				timestamp: 1000,
+				pid: activePid.pid,
+				value: 850,
+				unit: activePid.unit,
+			});
 
 			manager.resumeLog();
 			await manager.stopLog();
@@ -218,23 +178,33 @@ describe("LoggingManager", () => {
 		});
 
 		it("should drop frame when idle", async () => {
+			const [pid] = createSamplePids();
 			// Don't start logging
-			manager.onFrame({ timestamp: 1000, pid: 0x0c, value: 850, unit: "rpm" });
+			manager.onFrame({
+				timestamp: 1000,
+				pid: pid.pid,
+				value: 850,
+				unit: pid.unit,
+			});
 
 			// No file should be written
 			expect(vscode.workspace.fs.writeFile).not.toHaveBeenCalled();
 		});
 
 		it("should drop frame for PID not in enabled columns", async () => {
-			vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
-				createLoggingConfiguration("logs", ["Engine RPM"]),
-			);
-
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			const [enabledPid, filteredPid] = pids;
+			vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
+				createLoggingConfiguration("logs", [enabledPid.name]),
+			);
+			await manager.startLog([...pids]);
 
-			// Send a frame for Coolant Temp (not in columns)
-			manager.onFrame({ timestamp: 1000, pid: 0x05, value: 82, unit: "°C" });
+			manager.onFrame({
+				timestamp: 1000,
+				pid: filteredPid.pid,
+				value: 82,
+				unit: filteredPid.unit,
+			});
 
 			await manager.stopLog();
 
@@ -248,7 +218,7 @@ describe("LoggingManager", () => {
 
 	describe("pauseLog / resumeLog", () => {
 		it("should set state to paused", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			manager.pauseLog();
 			expect(manager.loggingState).toBe("paused");
 		});
@@ -257,14 +227,14 @@ describe("LoggingManager", () => {
 			const stateChanges: string[] = [];
 			manager.onDidChangeState((state) => stateChanges.push(state));
 
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			manager.pauseLog();
 
 			expect(stateChanges).toContain("paused");
 		});
 
 		it("should set state back to recording on resumeLog", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			manager.pauseLog();
 			manager.resumeLog();
 			expect(manager.loggingState).toBe("recording");
@@ -274,7 +244,7 @@ describe("LoggingManager", () => {
 			const stateChanges: string[] = [];
 			manager.onDidChangeState((state) => stateChanges.push(state));
 
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			manager.pauseLog();
 			manager.resumeLog();
 
@@ -287,7 +257,7 @@ describe("LoggingManager", () => {
 		});
 
 		it("should be no-op if resumeLog called when not paused", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			manager.resumeLog(); // already recording
 			expect(manager.loggingState).toBe("recording");
 		});
@@ -295,7 +265,7 @@ describe("LoggingManager", () => {
 
 	describe("stopLog", () => {
 		it("should write CSV file on stopLog", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			manager.onFrame({ timestamp: 1000, pid: 0x0c, value: 850, unit: "rpm" });
 			await manager.stopLog();
 
@@ -303,7 +273,7 @@ describe("LoggingManager", () => {
 		});
 
 		it("should show information message with file path", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			await manager.stopLog();
 
 			expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
@@ -313,7 +283,7 @@ describe("LoggingManager", () => {
 		});
 
 		it("should reset state to idle after stopLog", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			await manager.stopLog();
 			expect(manager.loggingState).toBe("idle");
 		});
@@ -322,7 +292,7 @@ describe("LoggingManager", () => {
 			const stateChanges: string[] = [];
 			manager.onDidChangeState((state) => stateChanges.push(state));
 
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			await manager.stopLog();
 
 			expect(stateChanges).toContain("idle");
@@ -334,7 +304,7 @@ describe("LoggingManager", () => {
 		});
 
 		it("should return the saved URI", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			const uri = await manager.stopLog();
 			expect(uri).toBeDefined();
 			expect(uri?.fsPath).toContain("log-");
@@ -347,7 +317,7 @@ describe("LoggingManager", () => {
 					OPEN_FOLDER_ACTION) as typeof vscode.window.showInformationMessage,
 			);
 
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			await manager.stopLog();
 
 			expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
@@ -357,15 +327,23 @@ describe("LoggingManager", () => {
 		});
 
 		it("should allow starting a new log after stopping", async () => {
-			await manager.startLog(createSamplePids());
+			await manager.startLog([...createSamplePids()]);
 			await manager.stopLog();
+			const createDirectoryCallCount = vi.mocked(
+				vscode.workspace.fs.createDirectory,
+			).mock.calls.length;
+			const writeFileCallCount = vi.mocked(vscode.workspace.fs.writeFile).mock
+				.calls.length;
 
-			// Reset mocks for second call
-			vi.mocked(vscode.workspace.fs.createDirectory).mockClear();
-			vi.mocked(vscode.workspace.fs.writeFile).mockClear();
+			await manager.startLog([...createSamplePids()]);
 
-			await manager.startLog(createSamplePids());
 			expect(manager.loggingState).toBe("recording");
+			expect(vscode.workspace.fs.createDirectory).toHaveBeenCalledTimes(
+				createDirectoryCallCount + 1,
+			);
+			expect(vscode.workspace.fs.writeFile).toHaveBeenCalledTimes(
+				writeFileCallCount,
+			);
 		});
 	});
 
@@ -376,7 +354,7 @@ describe("LoggingManager", () => {
 			);
 
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			await manager.startLog([...pids]);
 			await manager.stopLog();
 
 			const writeCall = vi.mocked(vscode.workspace.fs.writeFile).mock.calls[0];
@@ -392,7 +370,7 @@ describe("LoggingManager", () => {
 			);
 
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			await manager.startLog([...pids]);
 			await manager.stopLog();
 
 			const writeCall = vi.mocked(vscode.workspace.fs.writeFile).mock.calls[0];
@@ -408,7 +386,7 @@ describe("LoggingManager", () => {
 			);
 
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			await manager.startLog([...pids]);
 			await manager.stopLog();
 
 			const writeCall = vi.mocked(vscode.workspace.fs.writeFile).mock.calls[0];
@@ -421,7 +399,7 @@ describe("LoggingManager", () => {
 	describe("CSV format", () => {
 		it("should write relative timestamps in data rows", async () => {
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			await manager.startLog([...pids]);
 
 			// The session start time is captured at startLog; frame.timestamp is ms since session start
 			// In our implementation, relativeTs = frame.timestamp - sessionStartMs
@@ -445,14 +423,15 @@ describe("LoggingManager", () => {
 
 		it("should produce sparse rows with empty cells for missing PIDs", async () => {
 			const pids = createSamplePids();
-			await manager.startLog(pids);
+			const [activePid] = pids;
+			await manager.startLog([...pids]);
 
 			// Only send Engine RPM frame
 			manager.onFrame({
 				timestamp: Date.now(),
-				pid: 0x0c,
+				pid: activePid.pid,
 				value: 850,
-				unit: "rpm",
+				unit: activePid.unit,
 			});
 
 			await manager.stopLog();
@@ -466,7 +445,7 @@ describe("LoggingManager", () => {
 				throw new Error("Expected first data row to exist");
 			}
 			const fields = dataRow.split(",");
-			expect(fields).toHaveLength(4); // timestamp + 3 PID columns
+			expect(fields).toHaveLength(pids.length + 1); // timestamp + PID columns
 			expect(fields[1]).toBe("850"); // Engine RPM value
 			expect(fields[2]).toBe(""); // Coolant Temp empty
 			expect(fields[3]).toBe(""); // Throttle Position empty

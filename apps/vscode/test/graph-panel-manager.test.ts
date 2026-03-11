@@ -4,11 +4,25 @@
  * Tests panel creation, lifecycle, snapshot broadcasting, and cell selection
  */
 
-import type { ROMDefinition, TableSnapshot } from "@ecu-explorer/core";
+import type { TableSnapshot } from "@ecu-explorer/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { GraphPanelManager } from "../src/graph-panel-manager.js";
 import type { RomDocument } from "../src/rom/document.js";
+import {
+	createGraphDocument,
+	createGraphSnapshot,
+	FIRST_GRAPH_PANEL_CASE,
+	GRAPH_PANEL_TITLE,
+	GRAPH_ROM_PATH,
+	GRAPH_TABLE_ID,
+	GRAPH_TABLE_NAME,
+	PRIMARY_GRAPH_ROM1_CASE,
+	PRIMARY_GRAPH_ROM2_CASE,
+	SECOND_GRAPH_PANEL_CASE,
+	SECOND_GRAPH_TABLE_ID,
+} from "./mocks/graph-fixtures.js";
+import { createExtensionContext } from "./mocks/vscode-harness.js";
 import {
 	createMockWebviewPanel,
 	type GraphCompatibleWebview,
@@ -37,11 +51,6 @@ type MockDocument = Pick<
 
 type CompatibleRomDocument = RomDocument & MockDocument;
 
-type MockRomDefinition = Pick<
-	ROMDefinition,
-	"name" | "platform" | "uri" | "fingerprints" | "tables"
->;
-
 function toWebviewPanel(
 	panel: GraphCompatibleWebviewPanel,
 ): vscode.WebviewPanel {
@@ -62,49 +71,12 @@ function toRomDocument(document: MockDocument): RomDocument {
 	return document as CompatibleRomDocument;
 }
 
-function createMockDefinition(): MockRomDefinition {
-	return {
-		name: "Test ROM",
-		platform: { make: "Subaru" },
-		uri: "file:///test/definition.xml",
-		fingerprints: [],
-		tables: [
-			{
-				id: "table1",
-				kind: "table2d",
-				name: "table1",
-				rows: 2,
-				cols: 2,
-				z: {
-					id: "table1-z",
-					name: "table1-z",
-					address: 0x1000,
-					dtype: "u8",
-				},
-			},
-		],
-	};
-}
-
 describe("GraphPanelManager", () => {
 	let manager: GraphPanelManager;
 	let mockContext: MockExtensionContext;
 	let mockGetDocument: GetDocument;
 	let mockOnCellSelect: CellSelectHandler;
-
-	const createMockSnapshot = (): TableSnapshot => ({
-		kind: "table2d",
-		name: "Test Table",
-		description: "Test description",
-		rows: 2,
-		cols: 2,
-		x: [0, 1],
-		y: [0, 1],
-		z: [
-			[10, 20],
-			[30, 40],
-		],
-	});
+	const createMockSnapshot = createGraphSnapshot;
 
 	beforeEach(() => {
 		// Mock vscode.window.createWebviewPanel
@@ -115,19 +87,12 @@ describe("GraphPanelManager", () => {
 		);
 
 		// Create mock context
-		mockContext = {
-			subscriptions: [],
-			extensionUri: vscode.Uri.file("/test/extension"),
-		};
+		mockContext = createExtensionContext();
 
 		// Create mock getDocument function
 		mockGetDocument = vi.fn((romPath: string): RomDocument | undefined => {
-			if (romPath === "/test/rom.hex") {
-				return toRomDocument({
-					uri: vscode.Uri.file(romPath),
-					onDidUpdateBytes: vi.fn(() => ({ dispose: vi.fn() })),
-					definition: createMockDefinition(),
-				});
+			if (romPath === GRAPH_ROM_PATH) {
+				return toRomDocument(createGraphDocument(romPath));
 			}
 			return undefined;
 		}) as GetDocument;
@@ -146,35 +111,35 @@ describe("GraphPanelManager", () => {
 
 	describe("Panel Creation", () => {
 		it("should create new panel with correct properties", () => {
-			const snapshot = createMockSnapshot();
+			const snapshot = createGraphSnapshot();
 			const panel = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
 				snapshot,
 			);
 
 			expect(panel).toBeDefined();
-			expect(panel.title).toBe("Graph: Test Table");
+			expect(panel.title).toBe(GRAPH_PANEL_TITLE);
 			// Verify panel was created (implementation detail)
 		});
 
 		it("should reuse existing panel for same ROM and table", () => {
-			const snapshot = createMockSnapshot();
+			const snapshot = createGraphSnapshot();
 
 			// Create panel first time
 			const panel1 = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
 				snapshot,
 			);
 
 			// Try to create again
 			const panel2 = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
 				snapshot,
 			);
 
@@ -184,18 +149,18 @@ describe("GraphPanelManager", () => {
 		});
 
 		it("should create separate panels for different tables", () => {
-			const snapshot = createMockSnapshot();
+			const snapshot = createGraphSnapshot();
 
 			const panel1 = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
 				"Test Table 1",
 				snapshot,
 			);
 
 			const panel2 = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table2",
+				GRAPH_ROM_PATH,
+				SECOND_GRAPH_TABLE_ID,
 				"Test Table 2",
 				snapshot,
 			);
@@ -204,19 +169,19 @@ describe("GraphPanelManager", () => {
 		});
 
 		it("should create separate panels for different ROMs", () => {
-			const snapshot = createMockSnapshot();
+			const snapshot = createGraphSnapshot();
 
 			const panel1 = manager.getOrCreatePanel(
-				"/test/rom1.hex",
-				"table1",
-				"Test Table",
+				PRIMARY_GRAPH_ROM1_CASE.romPath,
+				PRIMARY_GRAPH_ROM1_CASE.tableId,
+				PRIMARY_GRAPH_ROM1_CASE.tableName,
 				snapshot,
 			);
 
 			const panel2 = manager.getOrCreatePanel(
-				"/test/rom2.hex",
-				"table1",
-				"Test Table",
+				PRIMARY_GRAPH_ROM2_CASE.romPath,
+				PRIMARY_GRAPH_ROM2_CASE.tableId,
+				PRIMARY_GRAPH_ROM2_CASE.tableName,
 				snapshot,
 			);
 
@@ -224,24 +189,24 @@ describe("GraphPanelManager", () => {
 		});
 
 		it("should track panel in internal maps", () => {
-			const snapshot = createMockSnapshot();
+			const snapshot = createGraphSnapshot();
 			manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
 				snapshot,
 			);
 
-			const panel = manager.getPanel("/test/rom.hex", "table1");
+			const panel = manager.getPanel(GRAPH_ROM_PATH, GRAPH_TABLE_ID);
 			expect(panel).toBeDefined();
 		});
 
 		it("should generate webview HTML with correct script URI", () => {
-			const snapshot = createMockSnapshot();
+			const snapshot = createGraphSnapshot();
 			const panel = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
 				snapshot,
 			);
 
@@ -252,11 +217,11 @@ describe("GraphPanelManager", () => {
 		});
 
 		it("should send updated snapshot when revealing existing panel", () => {
-			const snapshot1 = createMockSnapshot();
+			const snapshot1 = createGraphSnapshot();
 			const panel = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
 				snapshot1,
 			);
 
@@ -280,9 +245,9 @@ describe("GraphPanelManager", () => {
 				],
 			};
 			manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
 				snapshot2,
 			);
 
@@ -316,15 +281,15 @@ describe("GraphPanelManager", () => {
 
 			// Create multiple panels
 			const panel1 = manager.getOrCreatePanel(
-				"/test/rom1.hex",
-				"table1",
-				"Test Table 1",
+				PRIMARY_GRAPH_ROM1_CASE.romPath,
+				PRIMARY_GRAPH_ROM1_CASE.tableId,
+				FIRST_GRAPH_PANEL_CASE.tableName,
 				snapshot,
 			);
 			const panel2 = manager.getOrCreatePanel(
-				"/test/rom2.hex",
-				"table2",
-				"Test Table 2",
+				PRIMARY_GRAPH_ROM2_CASE.romPath,
+				SECOND_GRAPH_PANEL_CASE.tableId,
+				SECOND_GRAPH_PANEL_CASE.tableName,
 				snapshot,
 			);
 
@@ -336,8 +301,18 @@ describe("GraphPanelManager", () => {
 			expect(panel2.dispose).toHaveBeenCalled();
 
 			// Registry should be empty
-			expect(manager.getPanel("/test/rom1.hex", "table1")).toBeUndefined();
-			expect(manager.getPanel("/test/rom2.hex", "table2")).toBeUndefined();
+			expect(
+				manager.getPanel(
+					PRIMARY_GRAPH_ROM1_CASE.romPath,
+					PRIMARY_GRAPH_ROM1_CASE.tableId,
+				),
+			).toBeUndefined();
+			expect(
+				manager.getPanel(
+					PRIMARY_GRAPH_ROM2_CASE.romPath,
+					SECOND_GRAPH_PANEL_CASE.tableId,
+				),
+			).toBeUndefined();
 		});
 
 		it("should close specific graph panel", () => {

@@ -3,7 +3,7 @@ import type {
 	ROMDefinition,
 	ROMDefinitionStub,
 } from "@ecu-explorer/core";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as vscode from "vscode";
 import { resolveRomDefinition } from "../src/rom/definition-resolver.js";
 import { WorkspaceState } from "../src/workspace-state.js";
@@ -47,13 +47,16 @@ describe("resolveRomDefinition", () => {
 	let mockMemento: MockMemento;
 
 	beforeEach(() => {
-		vi.restoreAllMocks();
 		mockMemento = {
 			get: vi.fn(() => undefined),
 			update: vi.fn(),
 			keys: vi.fn(() => []),
 		};
 		stateManager = new WorkspaceState(mockMemento);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
 	});
 
 	test("shows actionable include error when a saved definition has unresolved includes", async () => {

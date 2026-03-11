@@ -7,12 +7,21 @@
  * - Multiple graphs for same table stay in sync
  */
 
-import type { TableSnapshot } from "@ecu-explorer/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 // Import after mock
 import { GraphPanelManager } from "../src/graph-panel-manager.js";
 import type { RomDocument } from "../src/rom/document.js";
+import {
+	createGraphDocument,
+	createGraphSnapshot,
+	FIRST_GRAPH_PANEL_CASE,
+	PRIMARY_GRAPH_CASE,
+	PRIMARY_GRAPH_ROM1_CASE,
+	PRIMARY_GRAPH_ROM2_CASE,
+	SECOND_GRAPH_PANEL_CASE,
+} from "./mocks/graph-fixtures.js";
+import { createExtensionContext } from "./mocks/vscode-harness.js";
 import type {
 	GraphCompatibleWebview,
 	GraphCompatibleWebviewPanel,
@@ -31,10 +40,8 @@ type MinimalExtensionContext = Pick<
 
 type PostedGraphMessage = {
 	type: string;
-	snapshot?: TableSnapshot;
+	snapshot?: ReturnType<typeof createGraphSnapshot>;
 };
-
-type Table2DSnapshot = Extract<TableSnapshot, { kind: "table2d" }>;
 
 function asWebviewPanel(
 	panel: GraphCompatibleWebviewPanel,
@@ -58,13 +65,6 @@ function getMessages(panel: vscode.WebviewPanel) {
 	return asGraphWebview(panel.webview)._getMessages();
 }
 
-function createExtensionContext(): MinimalExtensionContext {
-	return {
-		subscriptions: [],
-		extensionUri: vscode.Uri.file("/test/extension"),
-	};
-}
-
 describe("Graph Panel Synchronization", () => {
 	let manager: GraphPanelManager;
 	let mockContext: MinimalExtensionContext;
@@ -81,19 +81,7 @@ describe("Graph Panel Synchronization", () => {
 		col: number,
 	) => void;
 
-	const createMockSnapshot = (value: number = 10): TableSnapshot => ({
-		kind: "table2d",
-		name: "Test Table",
-		description: "Test description",
-		rows: 2,
-		cols: 2,
-		x: [0, 1],
-		y: [0, 1],
-		z: [
-			[value, value + 10],
-			[value + 20, value + 30],
-		],
-	});
+	const createMockSnapshot = createGraphSnapshot;
 
 	beforeEach(() => {
 		// Mock vscode.window.createWebviewPanel
@@ -109,31 +97,7 @@ describe("Graph Panel Synchronization", () => {
 		// Create mock getDocument function
 		mockGetDocument = vi.fn((romPath: string): RomDocument | undefined => {
 			if (romPath.includes("test")) {
-				const document: MockRomDocument = {
-					uri: vscode.Uri.file(romPath),
-					onDidUpdateBytes: vi.fn(() => ({ dispose: vi.fn() })),
-					definition: {
-						uri: "file:///test/definition.xml",
-						name: "Test ROM",
-						fingerprints: [],
-						platform: {},
-						tables: [
-							{
-								id: "table1",
-								name: "table1",
-								kind: "table2d",
-								rows: 2,
-								cols: 2,
-								z: {
-									id: "table1-z",
-									name: "z",
-									address: 0x1000,
-									dtype: "u8",
-								},
-							},
-						],
-					},
-				};
+				const document: MockRomDocument = createGraphDocument(romPath);
 				return document as RomDocument;
 			}
 			return undefined;
@@ -160,9 +124,9 @@ describe("Graph Panel Synchronization", () => {
 		it("should update graph when table cell is edited", () => {
 			const initialSnapshot = createMockSnapshot(10);
 			const panel = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				PRIMARY_GRAPH_CASE.romPath,
+				PRIMARY_GRAPH_CASE.tableId,
+				PRIMARY_GRAPH_CASE.tableName,
 				initialSnapshot,
 			);
 
@@ -171,7 +135,11 @@ describe("Graph Panel Synchronization", () => {
 
 			// Simulate cell edit in table
 			const updatedSnapshot = createMockSnapshot(999);
-			manager.broadcastSnapshot("/test/rom.hex", "table1", updatedSnapshot);
+			manager.broadcastSnapshot(
+				PRIMARY_GRAPH_CASE.romPath,
+				PRIMARY_GRAPH_CASE.tableId,
+				updatedSnapshot,
+			);
 
 			// Graph should receive update
 			expect(panel.webview.postMessage).toHaveBeenCalledWith({
@@ -183,9 +151,9 @@ describe("Graph Panel Synchronization", () => {
 		it("should update graph when undo is performed", () => {
 			const snapshot = createMockSnapshot(10);
 			const panel = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table",
+				PRIMARY_GRAPH_CASE.romPath,
+				PRIMARY_GRAPH_CASE.tableId,
+				PRIMARY_GRAPH_CASE.tableName,
 				snapshot,
 			);
 
@@ -194,7 +162,11 @@ describe("Graph Panel Synchronization", () => {
 
 			// Simulate undo (snapshot with canUndo = true)
 			const undoSnapshot = createMockSnapshot(5);
-			manager.broadcastSnapshot("/test/rom.hex", "table1", undoSnapshot);
+			manager.broadcastSnapshot(
+				PRIMARY_GRAPH_CASE.romPath,
+				PRIMARY_GRAPH_CASE.tableId,
+				undoSnapshot,
+			);
 
 			expect(panel.webview.postMessage).toHaveBeenCalledWith({
 				type: "update",
@@ -256,15 +228,15 @@ describe("Graph Panel Synchronization", () => {
 
 			// Create panels for different tables
 			const panel1 = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table1",
-				"Test Table 1",
+				FIRST_GRAPH_PANEL_CASE.romPath,
+				FIRST_GRAPH_PANEL_CASE.tableId,
+				FIRST_GRAPH_PANEL_CASE.tableName,
 				snapshot,
 			);
 			const panel2 = manager.getOrCreatePanel(
-				"/test/rom.hex",
-				"table2",
-				"Test Table 2",
+				SECOND_GRAPH_PANEL_CASE.romPath,
+				SECOND_GRAPH_PANEL_CASE.tableId,
+				SECOND_GRAPH_PANEL_CASE.tableName,
 				snapshot,
 			);
 
@@ -274,7 +246,11 @@ describe("Graph Panel Synchronization", () => {
 
 			// Update only table1
 			const updatedSnapshot = createMockSnapshot(999);
-			manager.broadcastSnapshot("/test/rom.hex", "table1", updatedSnapshot);
+			manager.broadcastSnapshot(
+				PRIMARY_GRAPH_CASE.romPath,
+				PRIMARY_GRAPH_CASE.tableId,
+				updatedSnapshot,
+			);
 
 			// Only panel1 should receive update
 			expect(panel1.webview.postMessage).toHaveBeenCalledWith({
@@ -289,15 +265,15 @@ describe("Graph Panel Synchronization", () => {
 
 			// Create panels for different ROMs
 			const panel1 = manager.getOrCreatePanel(
-				"/test/rom1.hex",
-				"table1",
-				"Test Table",
+				PRIMARY_GRAPH_ROM1_CASE.romPath,
+				PRIMARY_GRAPH_ROM1_CASE.tableId,
+				PRIMARY_GRAPH_ROM1_CASE.tableName,
 				snapshot,
 			);
 			const panel2 = manager.getOrCreatePanel(
-				"/test/rom2.hex",
-				"table1",
-				"Test Table",
+				PRIMARY_GRAPH_ROM2_CASE.romPath,
+				PRIMARY_GRAPH_ROM2_CASE.tableId,
+				PRIMARY_GRAPH_ROM2_CASE.tableName,
 				snapshot,
 			);
 
@@ -307,7 +283,11 @@ describe("Graph Panel Synchronization", () => {
 
 			// Update only rom1
 			const updatedSnapshot = createMockSnapshot(999);
-			manager.broadcastSnapshot("/test/rom1.hex", "table1", updatedSnapshot);
+			manager.broadcastSnapshot(
+				PRIMARY_GRAPH_ROM1_CASE.romPath,
+				PRIMARY_GRAPH_ROM1_CASE.tableId,
+				updatedSnapshot,
+			);
 
 			// Only panel1 should receive update
 			expect(panel1.webview.postMessage).toHaveBeenCalledWith({
@@ -609,8 +589,8 @@ describe("Graph Panel Synchronization", () => {
 			// Each panel should receive only its update
 			const messages1 = getMessages(panel1) as PostedGraphMessage[];
 			const messages2 = getMessages(panel2) as PostedGraphMessage[];
-			const snapshot1 = messages1[0]?.snapshot as Table2DSnapshot | undefined;
-			const snapshot2 = messages2[0]?.snapshot as Table2DSnapshot | undefined;
+			const snapshot1 = messages1[0]?.snapshot;
+			const snapshot2 = messages2[0]?.snapshot;
 
 			expect(messages1).toHaveLength(1);
 			expect(snapshot1?.z[0]?.[0]).toBe(111);

@@ -34,7 +34,6 @@ describe("Chart Component", () => {
 
 	afterEach(() => {
 		window.getComputedStyle = originalGetComputedStyle;
-		vi.restoreAllMocks();
 	});
 
 	it("should render chart container", async () => {

@@ -8,32 +8,43 @@ import {
 	type TableUri,
 	validateTableUri,
 } from "../src/table-uri.js";
-
-/**
- * Normalizes a path to use forward slashes for platform-agnostic comparison
- */
-function normalizePath(p: string): string {
-	return p.replace(/\\/g, "/");
-}
+import {
+	COMPLEX_EDITOR_TABLE_URI,
+	createWorkspaceFolder,
+	EDITOR_TABLE_URI_WITH_DEFINITION,
+	normalizePath,
+	STANDARD_EDITOR_TABLE_URI,
+} from "./mocks/uri-fixtures.js";
 
 describe("table-uri", () => {
 	describe("createTableUri", () => {
 		it("creates valid table URI with encoded file path", () => {
-			const romPath = "/path/to/rom.hex";
-			const uri = createTableUri(romPath, "table1");
+			const uri = createTableUri(
+				STANDARD_EDITOR_TABLE_URI.romPath,
+				STANDARD_EDITOR_TABLE_URI.tableId,
+			);
 
 			expect(uri.scheme).toBe("ecu-explorer");
-			expect(normalizePath(uri.fsPath)).toBe(normalizePath(romPath));
-			expect(uri.query).toContain("table=table1");
+			expect(normalizePath(uri.fsPath)).toBe(
+				normalizePath(STANDARD_EDITOR_TABLE_URI.romPath),
+			);
+			expect(uri.query).toContain(`table=${STANDARD_EDITOR_TABLE_URI.tableId}`);
 		});
 
 		it("creates URI with definition parameter", () => {
-			const romPath = "/path/to/rom.hex";
-			const uri = createTableUri(romPath, "table1", "file:///def.xml");
+			const uri = createTableUri(
+				EDITOR_TABLE_URI_WITH_DEFINITION.romPath,
+				EDITOR_TABLE_URI_WITH_DEFINITION.tableId,
+				EDITOR_TABLE_URI_WITH_DEFINITION.definitionUri,
+			);
 
 			expect(uri.scheme).toBe("ecu-explorer");
-			expect(normalizePath(uri.fsPath)).toBe(normalizePath(romPath));
-			expect(uri.query).toContain("table=table1");
+			expect(normalizePath(uri.fsPath)).toBe(
+				normalizePath(EDITOR_TABLE_URI_WITH_DEFINITION.romPath),
+			);
+			expect(uri.query).toContain(
+				`table=${EDITOR_TABLE_URI_WITH_DEFINITION.tableId}`,
+			);
 			expect(uri.query).toContain("definition=");
 		});
 
@@ -93,11 +104,18 @@ describe("table-uri", () => {
 		});
 
 		it("encodes definition URI as base64", () => {
-			const definitionUri = "file:///path/to/def.xml";
-			const uri = createTableUri("/path/to/rom.hex", "table1", definitionUri);
+			const fixture = {
+				...EDITOR_TABLE_URI_WITH_DEFINITION,
+				definitionUri: "file:///path/to/def.xml",
+			} satisfies TableUri;
+			const uri = createTableUri(
+				fixture.romPath,
+				fixture.tableId,
+				fixture.definitionUri,
+			);
 
 			// Base64 encoding of the definition URI should be in the query
-			const expectedBase64 = btoa(definitionUri);
+			const expectedBase64 = btoa(fixture.definitionUri ?? "");
 			expect(uri.query).toContain(`definition=${expectedBase64}`);
 		});
 
@@ -113,30 +131,38 @@ describe("table-uri", () => {
 
 	describe("parseTableUri", () => {
 		it("parses valid table URI", () => {
-			const romPath = "/path/to/rom.hex";
-			const tableId = "table1";
-			const uri = createTableUri(romPath, tableId);
+			const uri = createTableUri(
+				STANDARD_EDITOR_TABLE_URI.romPath,
+				STANDARD_EDITOR_TABLE_URI.tableId,
+			);
 
 			const parsed = parseTableUri(uri);
 
 			expect(parsed).not.toBeNull();
-			expect(normalizePath(parsed?.romPath || "")).toBe(normalizePath(romPath));
-			expect(parsed?.tableId).toBe(tableId);
+			expect(normalizePath(parsed?.romPath || "")).toBe(
+				normalizePath(STANDARD_EDITOR_TABLE_URI.romPath),
+			);
+			expect(parsed?.tableId).toBe(STANDARD_EDITOR_TABLE_URI.tableId);
 			expect(parsed?.definitionUri).toBeUndefined();
 		});
 
 		it("parses URI with definition", () => {
-			const romPath = "/path/to/rom.hex";
-			const tableId = "table1";
-			const definitionUri = "file:///def.xml";
-			const uri = createTableUri(romPath, tableId, definitionUri);
+			const uri = createTableUri(
+				EDITOR_TABLE_URI_WITH_DEFINITION.romPath,
+				EDITOR_TABLE_URI_WITH_DEFINITION.tableId,
+				EDITOR_TABLE_URI_WITH_DEFINITION.definitionUri,
+			);
 
 			const parsed = parseTableUri(uri);
 
 			expect(parsed).not.toBeNull();
-			expect(normalizePath(parsed?.romPath || "")).toBe(normalizePath(romPath));
-			expect(parsed?.tableId).toBe(tableId);
-			expect(parsed?.definitionUri).toBe(definitionUri);
+			expect(normalizePath(parsed?.romPath || "")).toBe(
+				normalizePath(EDITOR_TABLE_URI_WITH_DEFINITION.romPath),
+			);
+			expect(parsed?.tableId).toBe(EDITOR_TABLE_URI_WITH_DEFINITION.tableId);
+			expect(parsed?.definitionUri).toBe(
+				EDITOR_TABLE_URI_WITH_DEFINITION.definitionUri,
+			);
 		});
 
 		it("returns null for invalid scheme", () => {
@@ -211,15 +237,10 @@ describe("table-uri", () => {
 		});
 
 		it("validates URI within workspace", () => {
-			const workspaceFolders = [
-				{
-					uri: vscode.Uri.file("/workspace"),
-					name: "workspace",
-					index: 0,
-				},
-			] as vscode.WorkspaceFolder[];
+			const workspaceFolder = createWorkspaceFolder();
+			const workspaceFolders = [workspaceFolder];
 
-			const uri = createTableUri("/workspace/rom.hex", "table1");
+			const uri = createTableUri(`${workspaceFolder.uri.fsPath}/rom.hex`, "table1");
 			expect(validateTableUri(uri, workspaceFolders)).toBe(true);
 		});
 
@@ -228,13 +249,8 @@ describe("table-uri", () => {
 				.spyOn(console, "warn")
 				.mockImplementation(() => {});
 
-			const workspaceFolders = [
-				{
-					uri: vscode.Uri.file("/workspace"),
-					name: "workspace",
-					index: 0,
-				},
-			] as vscode.WorkspaceFolder[];
+			const workspaceFolder = createWorkspaceFolder();
+			const workspaceFolders = [workspaceFolder];
 
 			const uri = createTableUri("/other/path/rom.hex", "table1");
 			const result = validateTableUri(uri, workspaceFolders);
@@ -251,15 +267,10 @@ describe("table-uri", () => {
 		});
 
 		it("validates URI within workspace", () => {
-			const workspaceFolders = [
-				{
-					uri: vscode.Uri.file("/workspace"),
-					name: "workspace",
-					index: 0,
-				},
-			] as vscode.WorkspaceFolder[];
+			const workspaceFolder = createWorkspaceFolder();
+			const workspaceFolders = [workspaceFolder];
 
-			const uri = createTableUri("/workspace/rom.hex", "table1");
+			const uri = createTableUri(`${workspaceFolder.uri.fsPath}/rom.hex`, "table1");
 			expect(validateTableUri(uri, workspaceFolders)).toBe(true);
 		});
 	});
@@ -288,11 +299,7 @@ describe("table-uri", () => {
 		});
 
 		it("handles complex paths and names", () => {
-			const original: TableUri = {
-				romPath: "/path/with spaces/and-special!@#$%/rom (v2).hex",
-				tableId: "Fuel Map (Primary) [High Load]",
-				definitionUri: "file:///defs/evo10 (2011).xml",
-			};
+			const original = COMPLEX_EDITOR_TABLE_URI;
 
 			const uri = createTableUri(
 				original.romPath,

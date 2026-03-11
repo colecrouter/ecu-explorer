@@ -387,10 +387,19 @@ describe("DeviceStatusBarManager", () => {
 	});
 
 	describe("updateLoggingState()", () => {
+		function clearStatusBarItemCallHistory() {
+			for (const item of createdItems) {
+				item.show.mockClear();
+				item.hide.mockClear();
+				item.dispose.mockClear();
+			}
+		}
+
 		beforeEach(async () => {
 			await manager.connect();
-			// Reset call counts after connect
-			vi.clearAllMocks();
+			// Ignore visibility work performed during connect(); each test asserts only the
+			// subsequent logging-state transition.
+			clearStatusBarItemCallHistory();
 		});
 
 		it("should show Pause + Stop items when recording", () => {
@@ -419,7 +428,7 @@ describe("DeviceStatusBarManager", () => {
 
 		it("should show Start Log when returning to idle", () => {
 			statusBarManager.updateLoggingState("recording");
-			vi.clearAllMocks();
+			clearStatusBarItemCallHistory();
 			statusBarManager.updateLoggingState("idle");
 
 			const startLogItem = getRequiredStatusBarItem(createdItems, 2);
@@ -502,17 +511,18 @@ describe("readRomFromDevice connection reuse", () => {
 	});
 
 	it("should reuse active connection when one exists", async () => {
+		const selectDeviceAndProtocol = vi.mocked(manager.selectDeviceAndProtocol);
+
 		// Pre-connect
 		await manager.connect();
-		const connectSpy = vi.spyOn(manager, "selectDeviceAndProtocol");
-		connectSpy.mockClear();
+		const selectionCallCount = selectDeviceAndProtocol.mock.calls.length;
 
 		// Simulate what readRomFromDevice does
 		const active = manager.activeConnection;
 		expect(active).toBeDefined();
 
 		// selectDeviceAndProtocol should NOT be called again
-		expect(connectSpy).not.toHaveBeenCalled();
+		expect(selectDeviceAndProtocol).toHaveBeenCalledTimes(selectionCallCount);
 	});
 
 	it("should call connect() when no active connection exists", async () => {

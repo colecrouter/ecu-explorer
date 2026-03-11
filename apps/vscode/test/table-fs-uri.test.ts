@@ -12,23 +12,29 @@ import {
 	isTableUri,
 	parseTableUri,
 } from "../src/table-fs-uri.js";
-
-/**
- * Normalizes a path to use forward slashes for platform-agnostic comparison
- */
-function normalizePath(p: string): string {
-	return p.replace(/\\/g, "/");
-}
+import {
+	normalizePath,
+	RESOLVED_DEFINITION_FS_TABLE_URI,
+	STANDARD_FS_TABLE_URI,
+	WINDOWS_FS_TABLE_URI,
+} from "./mocks/uri-fixtures.js";
 
 describe("table-fs-uri", () => {
 	describe("createTableUri", () => {
 		it("creates a valid table URI with absolute path", () => {
-			const romPath = "/Users/test/rom.hex";
-			const uri = createTableUri(romPath, "fuel-map-id", "Fuel Map");
+			const uri = createTableUri(
+				STANDARD_FS_TABLE_URI.romPath,
+				STANDARD_FS_TABLE_URI.tableId,
+				STANDARD_FS_TABLE_URI.tableName,
+			);
 			expect(uri.scheme).toBe("ecu-table");
-			expect(normalizePath(uri.path)).toContain(normalizePath(romPath));
+			expect(normalizePath(uri.path)).toContain(
+				normalizePath(STANDARD_FS_TABLE_URI.romPath),
+			);
 			// jest-mock-vscode might not encode spaces in path property depending on version/config
-			expect(uri.toString()).toContain("Fuel%20Map");
+			expect(uri.toString()).toContain(
+				encodeURIComponent(STANDARD_FS_TABLE_URI.tableName ?? ""),
+			);
 		});
 
 		it("creates a valid table URI with relative path", () => {
@@ -40,11 +46,14 @@ describe("table-fs-uri", () => {
 		});
 
 		it("preserves Windows absolute ROM paths without rebasing", () => {
-			const romPath = "E:\\ROM\\test.hex";
-			const uri = createTableUri(romPath, "fuel-map-id", "Fuel Map");
+			const uri = createTableUri(
+				WINDOWS_FS_TABLE_URI.romPath,
+				WINDOWS_FS_TABLE_URI.tableId,
+				WINDOWS_FS_TABLE_URI.tableName,
+			);
 
 			expect(uri.scheme).toBe("ecu-table");
-			expect(uri.path).toContain(vscode.Uri.file(romPath).path);
+			expect(uri.path).toContain(vscode.Uri.file(WINDOWS_FS_TABLE_URI.romPath).path);
 			expect(uri.toString()).not.toContain("/apps/vscode/");
 		});
 
@@ -157,32 +166,36 @@ describe("table-fs-uri", () => {
 		});
 
 		it("round-trips Windows drive paths", () => {
-			const romPath = "E:\\ROM\\test.hex";
-			const tableId = "fuel-map-id";
-			const tableName = "Fuel Map";
-
-			const uri = createTableUri(romPath, tableId, tableName);
+			const uri = createTableUri(
+				WINDOWS_FS_TABLE_URI.romPath,
+				WINDOWS_FS_TABLE_URI.tableId,
+				WINDOWS_FS_TABLE_URI.tableName,
+			);
 			const parsed = parseTableUri(uri);
 
 			expect(parsed).not.toBeNull();
-			expect(parsed?.romPath).toBe(vscode.Uri.file(romPath).fsPath);
-			expect(parsed?.tableId).toBe(tableId);
-			expect(parsed?.tableName).toBe(tableName);
+			expect(parsed?.romPath).toBe(vscode.Uri.file(WINDOWS_FS_TABLE_URI.romPath).fsPath);
+			expect(parsed?.tableId).toBe(WINDOWS_FS_TABLE_URI.tableId);
+			expect(parsed?.tableName).toBe(WINDOWS_FS_TABLE_URI.tableName);
 		});
 
 		it("preserves resolved definition identity in the query", () => {
-			const romPath = "/Users/test/rom.hex";
-			const tableId = "fuel-map-id";
-			const tableName = "Fuel Map";
-			const definitionUri = "file:///defs/resolved.xml";
-
-			const uri = createTableUri(romPath, tableId, tableName, definitionUri);
+			const uri = createTableUri(
+				RESOLVED_DEFINITION_FS_TABLE_URI.romPath,
+				RESOLVED_DEFINITION_FS_TABLE_URI.tableId,
+				RESOLVED_DEFINITION_FS_TABLE_URI.tableName,
+				RESOLVED_DEFINITION_FS_TABLE_URI.definitionUri,
+			);
 			const parsed = parseTableUri(uri);
 
 			expect(parsed).not.toBeNull();
-			expect(parsed?.tableId).toBe(tableId);
-			expect(parsed?.tableName).toBe(tableName);
-			expect(parsed?.definitionUri).toBe(definitionUri);
+			expect(parsed?.tableId).toBe(RESOLVED_DEFINITION_FS_TABLE_URI.tableId);
+			expect(parsed?.tableName).toBe(
+				RESOLVED_DEFINITION_FS_TABLE_URI.tableName,
+			);
+			expect(parsed?.definitionUri).toBe(
+				RESOLVED_DEFINITION_FS_TABLE_URI.definitionUri,
+			);
 			expect(uri.query).toContain("definition=");
 		});
 

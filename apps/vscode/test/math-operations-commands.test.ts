@@ -1,12 +1,4 @@
-import {
-	afterEach,
-	beforeAll,
-	beforeEach,
-	describe,
-	expect,
-	it,
-	vi,
-} from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { activate } from "../src/extension.js";
 import {
@@ -15,6 +7,11 @@ import {
 	UndoRedoManager,
 } from "../src/undo-redo-manager.js";
 import { WorkspaceState } from "../src/workspace-state.js";
+import {
+	createExtensionContext,
+	createMockFileSystemWatcher,
+	createMockWorkspaceState,
+} from "./mocks/vscode-harness.js";
 
 type RegisteredCommandHandler = (...args: readonly unknown[]) => unknown;
 
@@ -44,22 +41,6 @@ type ActivateContext = Pick<
 	};
 };
 
-type MockWorkspaceState = Pick<
-	vscode.ExtensionContext["workspaceState"],
-	"get" | "update" | "keys"
->;
-
-type MockFileSystemWatcher = Pick<
-	vscode.FileSystemWatcher,
-	| "onDidChange"
-	| "onDidCreate"
-	| "onDidDelete"
-	| "dispose"
-	| "ignoreCreateEvents"
-	| "ignoreChangeEvents"
-	| "ignoreDeleteEvents"
->;
-
 type ActiveTab = Pick<vscode.Tab, "input">;
 
 type ActiveTabGroupShape = Pick<
@@ -67,17 +48,8 @@ type ActiveTabGroupShape = Pick<
 	"activeTab" | "isActive" | "viewColumn" | "tabs"
 >;
 
-function createMockWorkspaceState(): MockWorkspaceState {
-	return {
-		get: vi.fn(),
-		update: vi.fn(),
-		keys: vi.fn().mockReturnValue([]),
-	};
-}
-
 function createMockExtensionContext(): ActivateContext {
-	return {
-		subscriptions: [],
+	return createExtensionContext({
 		extensionPath: "/test/path",
 		extensionUri: vscode.Uri.file("/test/path"),
 		extension: {
@@ -85,7 +57,7 @@ function createMockExtensionContext(): ActivateContext {
 		},
 		workspaceState: createMockWorkspaceState(),
 		globalStorageUri: vscode.Uri.file("/test/globalStorage"),
-	};
+	}) as ActivateContext;
 }
 
 function createTabGroupWithUri(uri: vscode.Uri): ActiveTabGroupShape {
@@ -124,21 +96,6 @@ vi.mock("node:fs/promises", () => ({
 	readFile: vi.fn().mockResolvedValue(new Uint8Array(0)),
 }));
 
-/**
- * Create a mock FileSystemWatcher that has onDidChange/onDidCreate/onDidDelete event handlers.
- */
-function createMockFileSystemWatcher() {
-	return {
-		onDidChange: vi.fn().mockReturnValue({ dispose: vi.fn() }),
-		onDidCreate: vi.fn().mockReturnValue({ dispose: vi.fn() }),
-		onDidDelete: vi.fn().mockReturnValue({ dispose: vi.fn() }),
-		dispose: vi.fn(),
-		ignoreCreateEvents: false,
-		ignoreChangeEvents: false,
-		ignoreDeleteEvents: false,
-	} satisfies MockFileSystemWatcher;
-}
-
 function getRequiredAddress(op: EditOperation): number {
 	if (op.address === undefined) {
 		throw new Error("Expected edit operation address to be defined");
@@ -153,7 +110,7 @@ function getRequiredAddress(op: EditOperation): number {
  * and can be executed through VSCode's command palette.
  */
 describe("Math Operations Commands", () => {
-	beforeAll(async () => {
+	beforeEach(async () => {
 		// Reset commands if possible
 		const registerCommand = getMockedRegisterCommand();
 		if (registerCommand.mock) {
@@ -214,10 +171,6 @@ describe("Math Operations Commands", () => {
 	});
 
 	describe("Definition Cache Clear Commands", () => {
-		afterEach(() => {
-			vi.restoreAllMocks();
-		});
-
 		function getRegisteredHandler(commandId: string): RegisteredCommandHandler {
 			const registerCalls = getMockedRegisterCommand().mock.calls;
 			const match = registerCalls.find((call) => call[0] === commandId);

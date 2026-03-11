@@ -1,5 +1,5 @@
 import type { DefinitionProvider, ROMDefinition } from "@ecu-explorer/core";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as vscode from "vscode";
 import { handleOpenTableFromTree } from "../src/commands/graph-commands.js";
 import {
@@ -43,13 +43,16 @@ describe("table open definition identity", () => {
 	let workspaceState: WorkspaceState;
 
 	beforeEach(() => {
-		vi.restoreAllMocks();
 		mockMemento = {
 			get: vi.fn(() => undefined),
 			update: vi.fn(),
 			keys: vi.fn(() => []),
 		};
 		workspaceState = new WorkspaceState(mockMemento);
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
 	});
 
 	test("`openTableInCustomEditor()` includes the saved definition URI and stable table id in the table URI", async () => {

@@ -1,23 +1,14 @@
 import type { ROMDefinition, Table2DDefinition } from "@ecu-explorer/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { McpConfig } from "../config.js";
+import { createMcpConfig, createRomLoaderResult } from "../test/tool-test-support.js";
 import { handleListTables } from "./list-tables.js";
 
 let definition: ROMDefinition;
 
-const config: McpConfig = {
-	definitionsPaths: [],
-	logsDir: "/tmp",
-};
+const config = createMcpConfig();
 
 vi.mock("../rom-loader.js", () => ({
-	loadRom: vi.fn(async () => ({
-		romPath: "/tmp/sample.hex",
-		romBytes: new Uint8Array(16),
-		definition,
-		fileSizeBytes: 16,
-		mtime: Date.now(),
-	})),
+	loadRom: vi.fn(async () => createRomLoaderResult(definition)),
 }));
 
 describe("handleListTables", () => {
