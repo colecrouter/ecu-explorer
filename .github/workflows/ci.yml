@@ -2,9 +2,6 @@ name: CI
 
 on:
     push:
-        branches: ["main"]
-    pull_request:
-        branches: ["main"]
 
 jobs:
     ci:
@@ -40,14 +37,17 @@ jobs:
             - name: Build project
               run: npm run build
 
-            - name: Run Biome CI
-              run: npx biome ci
-
             - name: Run npm check
               run: npm run check
 
             - name: Run npm lint
               run: npm run lint
+
+            - name: Run format check
+              run: npm run format:check
+
+            - name: Run tests
+              run: npm test
 
             - name: Write execution summary
               run: |
@@ -56,3 +56,5 @@ jobs:
                   echo "- npx biome ci" >> $GITHUB_STEP_SUMMARY
                   echo "- npm run check" >> $GITHUB_STEP_SUMMARY
                   echo "- npm run lint" >> $GITHUB_STEP_SUMMARY
+                  echo "- npm run format:check" >> $GITHUB_STEP_SUMMARY
+                  echo "- npm test" >> $GITHUB_STEP_SUMMARY

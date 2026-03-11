@@ -45,8 +45,9 @@
 		"tools:list-logs": "npm run list-logs -w @ecu-explorer/tools --",
 		"tools:read-log": "npm run read-log -w @ecu-explorer/tools --",
 		"tools:inspect-device": "npm run inspect-device -w @ecu-explorer/tools --",
-		"lint": "biome check",
+		"lint": "biome check --formatter-enabled false",
 		"format": "biome format --write && biome check --write --linter-enabled false && prettier --write . -l",
+		"format:check": "biome format && biome check --linter-enabled false && prettier . -l",
 		"test": "vitest run",
 		"test:ui": "vitest run --ui",
 		"test:coverage": "vitest run --coverage"
