@@ -8,6 +8,8 @@
 	import { createEventDispatcher, tick } from "svelte";
 	import { getStepForDataType, getRangeForDataType } from "./table.js";
 
+	const MAX_DISPLAY_DECIMALS = 2;
+
 	const dispatch = createEventDispatcher<{
 		commit: { bytes: Uint8Array };
 		cancel: void;
@@ -97,14 +99,14 @@
 		const scaleStr = scale.toString();
 		if (scaleStr.includes(".")) {
 			const decimals = scaleStr.split(".")[1]?.length || 0;
-			return Math.min(decimals, 4);
+			return Math.min(decimals, MAX_DISPLAY_DECIMALS);
 		}
 
 		if (scale < 1) {
-			return 4;
+			return MAX_DISPLAY_DECIMALS;
 		}
 
-		return dtype === "f32" ? 2 : 0;
+		return dtype === "f32" ? MAX_DISPLAY_DECIMALS : 0;
 	}
 
 	function format(source: Uint8Array): string {
