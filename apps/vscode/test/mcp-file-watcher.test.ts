@@ -278,6 +278,7 @@ describe("ROM File Watcher – per-document watchRomDocument logic", () => {
 		activeRomRef: { romUri: string; bytes: Uint8Array } | null,
 		activePanel: { webview: { postMessage: (msg: unknown) => unknown } } | null,
 		activeTableDef: { name: string } | null,
+		pendingSavedRomBytes = new Map<string, Uint8Array>(),
 	) {
 		const uri = romDoc.uri;
 		const uriStr = uri.toString();
@@ -298,6 +299,16 @@ describe("ROM File Watcher – per-document watchRomDocument logic", () => {
 				const newBytes = new Uint8Array(
 					await vscode.workspace.fs.readFile(uri),
 				);
+				const pendingSavedBytes = pendingSavedRomBytes.get(uriStr);
+				if (
+					pendingSavedBytes &&
+					pendingSavedBytes.length === newBytes.length &&
+					pendingSavedBytes.every((byte, index) => byte === newBytes[index])
+				) {
+					pendingSavedRomBytes.delete(uriStr);
+					return;
+				}
+
 				// External update — do NOT mark document dirty (matches real watchRomDocument)
 				romDoc.updateBytes(newBytes, undefined, undefined, false);
 				if (activeRomRef && activeRomRef.romUri === uriStr) {
@@ -411,6 +422,33 @@ describe("ROM File Watcher – per-document watchRomDocument logic", () => {
 			undefined,
 			false,
 		);
+	});
+
+	it("ignores the delayed watcher event for a self-save when bytes match the saved ROM", async () => {
+		const uri = vscode.Uri.file("/roms/self-saved.hex");
+		const savedBytes = new Uint8Array([0x10, 0x20, 0x30]);
+		const mockDoc = createMockRomDocument(uri, new Uint8Array([0x00]));
+		const pendingSavedRomBytes = new Map<string, Uint8Array>([
+			[uri.toString(), savedBytes],
+		]);
+
+		vi.mocked(vscode.workspace.fs.readFile).mockResolvedValue(
+			mockReadFileResult(savedBytes),
+		);
+
+		const { fireChange } = simulateWatchRomDocument(
+			mockDoc,
+			null,
+			null,
+			null,
+			pendingSavedRomBytes,
+		);
+
+		fireChange(uri);
+		await new Promise((r) => setTimeout(r, 20));
+
+		expect(mockDoc.updateBytes).not.toHaveBeenCalled();
+		expect(pendingSavedRomBytes.has(uri.toString())).toBe(false);
 	});
 
 	it("calls updateBytes with new file contents when onDidCreate fires (rename scenario)", async () => {

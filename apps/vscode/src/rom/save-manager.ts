@@ -79,8 +79,10 @@ export class RomSaveManager {
 				try {
 					// Recompute checksum value
 					const checksumValue = recomputeChecksum(romData, checksumDef);
-					// Write checksum to ROM data (make a copy first)
-					finalData = new Uint8Array(romData); // Ensure we have a mutable copy
+					// Write checksum to a copy first so a failed save does not mutate the
+					// in-memory document. On success we copy the persisted bytes back into
+					// the caller's buffer to keep all live references in sync with disk.
+					finalData = new Uint8Array(romData);
 					writeChecksum(finalData, checksumValue, checksumDef);
 				} catch (error) {
 					return {
@@ -130,6 +132,11 @@ export class RomSaveManager {
 					ok: false,
 					error: `Failed to save ROM: ${writeError instanceof Error ? writeError.message : String(writeError)}`,
 				};
+			}
+
+			// Keep the in-memory ROM bytes aligned with what was persisted.
+			if (finalData !== romData) {
+				romData.set(finalData);
 			}
 
 			// Validate checksums after save if definition provided

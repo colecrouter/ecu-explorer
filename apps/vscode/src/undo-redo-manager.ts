@@ -36,12 +36,29 @@ export function isBatchEdit(entry: StackEntry): entry is BatchEditOperation {
 export class UndoRedoManager {
 	private undoStack: StackEntry[] = [];
 	private redoStack: StackEntry[] = [];
+	private readonly stateIds = new WeakMap<StackEntry, number>();
+	private nextStateId = 1;
+	private savePointStateId = 0;
+
+	private assignStateId(entry: StackEntry): void {
+		this.stateIds.set(entry, this.nextStateId++);
+	}
+
+	private getCurrentStateId(): number {
+		const entry = this.undoStack.at(-1);
+		if (!entry) {
+			return 0;
+		}
+
+		return this.stateIds.get(entry) ?? 0;
+	}
 
 	/**
 	 * Push an edit operation to the undo stack
 	 * Clears redo stack when new edit is made
 	 */
 	push(op: EditOperation): void {
+		this.assignStateId(op);
 		this.undoStack.push(op);
 		this.redoStack = [];
 	}
@@ -53,7 +70,9 @@ export class UndoRedoManager {
 	 */
 	pushBatch(ops: EditOperation[], label?: string): void {
 		if (ops.length === 0) return;
-		this.undoStack.push({ ops, timestamp: Date.now(), label });
+		const batch = { ops, timestamp: Date.now(), label };
+		this.assignStateId(batch);
+		this.undoStack.push(batch);
 		this.redoStack = [];
 	}
 
@@ -98,10 +117,25 @@ export class UndoRedoManager {
 	}
 
 	/**
+	 * Mark the current history state as the persisted save point.
+	 */
+	markSavePoint(): void {
+		this.savePointStateId = this.getCurrentStateId();
+	}
+
+	/**
+	 * Check if the current history state matches the last persisted save point.
+	 */
+	isAtSavePoint(): boolean {
+		return this.getCurrentStateId() === this.savePointStateId;
+	}
+
+	/**
 	 * Clear all history
 	 */
 	clear(): void {
 		this.undoStack = [];
 		this.redoStack = [];
+		this.savePointStateId = 0;
 	}
 }

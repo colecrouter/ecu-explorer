@@ -591,7 +591,7 @@ export class RomEditorProvider
 					// Mark document as clean
 					document.makeClean();
 
-					// Notify caller (extension.ts) so it can clear undo/redo history
+					// Notify caller (extension.ts) so it can update the undo/redo save point
 					this.onAfterSave?.(document);
 
 					// Clear all dirty tables for this ROM
@@ -663,6 +663,9 @@ export class RomEditorProvider
 
 					// Mark document as clean
 					document.makeClean();
+
+					// Saving-as also establishes a new persisted baseline.
+					this.onAfterSave?.(document);
 				} else {
 					vscode.window.showErrorMessage(`Failed to save ROM: ${result.error}`);
 					throw new Error(result.error);

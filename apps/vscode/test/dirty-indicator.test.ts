@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { RomDocument } from "../src/rom/document.js";
 import { TableDocument } from "../src/table-document.js";
+import { UndoRedoManager } from "../src/undo-redo-manager.js";
 
 // Minimal vscode.Uri-compatible object
 function makeUri(path: string): vscode.Uri {
@@ -97,6 +98,98 @@ describe("RomDocument dirty-state tracking", () => {
 			doc.makeClean();
 
 			expect(doc.isDirty).toBe(false);
+		});
+	});
+
+	describe("Save-point dirty tracking", () => {
+		it("undoing back to the last saved state clears dirty after a post-save edit", () => {
+			const manager = new UndoRedoManager();
+
+			// Pre-save edit
+			doc.updateBytes(new Uint8Array([0xff, 0x02, 0x03, 0x04]));
+			manager.push({
+				row: 0,
+				col: 0,
+				oldValue: new Uint8Array([0x01]),
+				newValue: new Uint8Array([0xff]),
+				timestamp: Date.now(),
+			});
+
+			// Save current bytes
+			doc.makeClean();
+			manager.markSavePoint();
+			expect(doc.isDirty).toBe(false);
+			expect(manager.isAtSavePoint()).toBe(true);
+
+			// Post-save edit
+			doc.updateBytes(new Uint8Array([0xff, 0xee, 0x03, 0x04]), 1, 1, true);
+			manager.push({
+				row: 0,
+				col: 1,
+				oldValue: new Uint8Array([0x02]),
+				newValue: new Uint8Array([0xee]),
+				timestamp: Date.now(),
+			});
+			expect(doc.isDirty).toBe(true);
+			expect(manager.isAtSavePoint()).toBe(false);
+
+			// Undo the post-save edit: should return to the saved ROM state and clear dirty.
+			manager.undo();
+			if (manager.isAtSavePoint()) {
+				doc.makeClean();
+			}
+			doc.updateBytes(new Uint8Array([0xff, 0x02, 0x03, 0x04]), 1, 1, !manager.isAtSavePoint());
+
+			expect(doc.isDirty).toBe(false);
+		});
+
+		it("redoing away from the save point marks the document dirty again", () => {
+			const manager = new UndoRedoManager();
+
+			doc.updateBytes(new Uint8Array([0xff, 0x02, 0x03, 0x04]));
+			manager.push({
+				row: 0,
+				col: 0,
+				oldValue: new Uint8Array([0x01]),
+				newValue: new Uint8Array([0xff]),
+				timestamp: Date.now(),
+			});
+			doc.makeClean();
+			manager.markSavePoint();
+
+			doc.updateBytes(new Uint8Array([0xff, 0xee, 0x03, 0x04]), 1, 1, true);
+			manager.push({
+				row: 0,
+				col: 1,
+				oldValue: new Uint8Array([0x02]),
+				newValue: new Uint8Array([0xee]),
+				timestamp: Date.now(),
+			});
+
+			manager.undo();
+			if (manager.isAtSavePoint()) {
+				doc.makeClean();
+			}
+			doc.updateBytes(
+				new Uint8Array([0xff, 0x02, 0x03, 0x04]),
+				1,
+				1,
+				!manager.isAtSavePoint(),
+			);
+			expect(doc.isDirty).toBe(false);
+
+			manager.redo();
+			if (manager.isAtSavePoint()) {
+				doc.makeClean();
+			}
+			doc.updateBytes(
+				new Uint8Array([0xff, 0xee, 0x03, 0x04]),
+				1,
+				1,
+				!manager.isAtSavePoint(),
+			);
+
+			expect(doc.isDirty).toBe(true);
 		});
 	});
 

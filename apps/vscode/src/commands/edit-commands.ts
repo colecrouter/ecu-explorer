@@ -80,15 +80,15 @@ export function handleUndo(): void {
 			maxAddress = Math.max(maxAddress, address + op.oldValue.length);
 		}
 		if (document) {
-			const atInitial = state.undoRedoManager.isAtInitialState();
-			if (atInitial) {
+			const atSavePoint = state.undoRedoManager.isAtSavePoint();
+			if (atSavePoint) {
 				document.makeClean();
 			}
 			document.updateBytes(
 				state.activeRom.bytes,
 				minAddress,
 				maxAddress - minAddress,
-				!atInitial,
+				!atSavePoint,
 			);
 		}
 	} else {
@@ -102,22 +102,21 @@ export function handleUndo(): void {
 		state.activeRom.bytes.set(entry.oldValue, address);
 
 		if (document) {
-			// Check if we're back to the initial state (no changes)
-			const atInitial = state.undoRedoManager.isAtInitialState();
-			if (atInitial) {
-				// Clear dirty state when back to initial state
+			const atSavePoint = state.undoRedoManager.isAtSavePoint();
+			if (atSavePoint) {
+				// Clear dirty state when back at the last saved state.
 				document.makeClean();
 			}
-			// Fire update event even if we're back to initial state, so other views sync
+			// Fire update event even if we're back at the save point, so other views sync.
 			document.updateBytes(
 				state.activeRom.bytes,
 				address,
 				entry.oldValue.length,
-				!atInitial,
+				!atSavePoint,
 			);
 		}
 	}
-	// Note: If not at initial state, document remains dirty (no action needed)
+	// Note: If not at the save point, document remains dirty (no action needed)
 
 	// Notify the active webview panel so its UI reflects the undo
 	if (state.activePanel && state.activeTableDef && state.activeRom) {
@@ -167,12 +166,15 @@ export function handleRedo(): void {
 			maxAddress = Math.max(maxAddress, address + op.newValue.length);
 		}
 		if (document) {
-			// Always mark as dirty on redo (redo applies changes)
+			const atSavePoint = state.undoRedoManager.isAtSavePoint();
+			if (atSavePoint) {
+				document.makeClean();
+			}
 			document.updateBytes(
 				state.activeRom.bytes,
 				minAddress,
 				maxAddress - minAddress,
-				true,
+				!atSavePoint,
 			);
 		}
 	} else {
@@ -185,13 +187,16 @@ export function handleRedo(): void {
 		// Apply ROM bytes
 		state.activeRom.bytes.set(entry.newValue, address);
 
-		// Mark the RomDocument as dirty (redo modifies the ROM)
 		if (document) {
+			const atSavePoint = state.undoRedoManager.isAtSavePoint();
+			if (atSavePoint) {
+				document.makeClean();
+			}
 			document.updateBytes(
 				state.activeRom.bytes,
 				address,
 				entry.newValue.length,
-				true,
+				!atSavePoint,
 			);
 		}
 	}

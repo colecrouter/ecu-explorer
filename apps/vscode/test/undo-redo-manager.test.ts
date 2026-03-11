@@ -146,6 +146,46 @@ describe("UndoRedoManager", () => {
 		});
 	});
 
+	describe("save points", () => {
+		it("starts at the save point", () => {
+			expect(manager.isAtSavePoint()).toBe(true);
+		});
+
+		it("is at the save point after marking the current state as saved", () => {
+			manager.push(makeOp(0, 0, 0x10, 0x20));
+			expect(manager.isAtSavePoint()).toBe(false);
+
+			manager.markSavePoint();
+
+			expect(manager.isAtSavePoint()).toBe(true);
+		});
+
+		it("returns to the save point after undoing a post-save edit", () => {
+			manager.push(makeOp(0, 0, 0x10, 0x20));
+			manager.markSavePoint();
+			manager.push(makeOp(0, 1, 0x30, 0x40));
+
+			expect(manager.isAtSavePoint()).toBe(false);
+
+			manager.undo();
+
+			expect(manager.isAtSavePoint()).toBe(true);
+		});
+
+		it("does not confuse a branched history with the saved state", () => {
+			manager.push(makeOp(0, 0, 0x10, 0x20));
+			manager.push(makeOp(0, 1, 0x30, 0x40));
+			manager.markSavePoint();
+
+			manager.undo();
+			expect(manager.isAtSavePoint()).toBe(false);
+
+			manager.push(makeOp(0, 2, 0x50, 0x60));
+
+			expect(manager.isAtSavePoint()).toBe(false);
+		});
+	});
+
 	// -------------------------------------------------------------------------
 	// pushBatch
 	// -------------------------------------------------------------------------
@@ -296,6 +336,16 @@ describe("UndoRedoManager", () => {
 			expect(manager.canUndo()).toBe(false);
 			expect(manager.canRedo()).toBe(false);
 			expect(manager.isAtInitialState()).toBe(true);
+		});
+
+		it("resets the save point to the initial state", () => {
+			manager.push(makeOp(0, 0, 0x10, 0x20));
+			manager.markSavePoint();
+			manager.push(makeOp(0, 1, 0x30, 0x40));
+
+			manager.clear();
+
+			expect(manager.isAtSavePoint()).toBe(true);
 		});
 	});
 

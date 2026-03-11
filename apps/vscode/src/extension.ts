@@ -83,6 +83,20 @@ let deviceManager: DeviceManagerImpl | null = null;
 let editorProvider: RomEditorProvider | null = null; // Will be set during activation
 let workspaceState: WorkspaceState | null = null; // Workspace state manager
 
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.length !== b.length) {
+		return false;
+	}
+
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 function getActiveRomPathForCacheClear(): string | null {
 	if (activeRom) {
 		return vscode.Uri.parse(activeRom.romUri).fsPath;
@@ -1069,6 +1083,10 @@ export async function activate(
 	// Set of URI strings currently being saved by the extension.
 	// Used to suppress spurious file watcher callbacks for self-initiated saves.
 	const savingRomUris = new Set<string>();
+	// Tracks the exact bytes written by the most recent self-save for each ROM.
+	// The next watcher event carrying these bytes is ignored even if it arrives
+	// after the coarse save-in-progress suppression window has expired.
+	const pendingSavedRomBytes = new Map<string, Uint8Array>();
 
 	// Register CustomEditorProvider for native dirty marker support
 	const newEditorProvider = new RomEditorProvider(
@@ -1079,11 +1097,18 @@ export async function activate(
 		},
 		savingRomUris,
 		(savedDocument) => {
-			// Clear undo/redo history for all table tabs belonging to this ROM
-			// so the post-save state becomes the new baseline
+			pendingSavedRomBytes.set(
+				savedDocument.uri.toString(),
+				new Uint8Array(savedDocument.romBytes),
+			);
+
+			// Mark the current history position as the clean baseline for all
+			// open table tabs backed by this ROM. Undo/redo must remain available
+			// across saves, but dirty tracking should now compare against this
+			// persisted state instead of the original open state.
 			for (const [key, manager] of undoRedoManagers.entries()) {
 				if (key.includes(savedDocument.uri.fsPath)) {
-					manager.clear();
+					manager.markSavePoint();
 				}
 			}
 		},
@@ -1161,6 +1186,12 @@ export async function activate(
 				const newBytes = new Uint8Array(
 					await vscode.workspace.fs.readFile(uri),
 				);
+				const pendingSavedBytes = pendingSavedRomBytes.get(uriStr);
+				if (pendingSavedBytes && bytesEqual(newBytes, pendingSavedBytes)) {
+					pendingSavedRomBytes.delete(uriStr);
+					return;
+				}
+
 				// External update — bytes are already on disk, do NOT mark document dirty
 				romDoc.updateBytes(newBytes, undefined, undefined, false);
 
@@ -1395,15 +1426,15 @@ function handleUndo(): void {
 			maxAddress = Math.max(maxAddress, address + op.oldValue.length);
 		}
 		if (document) {
-			const atInitial = undoRedoManager.isAtInitialState();
-			if (atInitial) {
+			const atSavePoint = undoRedoManager.isAtSavePoint();
+			if (atSavePoint) {
 				document.makeClean();
 			}
 			document.updateBytes(
 				activeRom.bytes,
 				minAddress,
 				maxAddress - minAddress,
-				!atInitial,
+				!atSavePoint,
 			);
 		}
 	} else {
@@ -1417,22 +1448,21 @@ function handleUndo(): void {
 		activeRom.bytes.set(entry.oldValue, address);
 
 		if (document) {
-			// Check if we're back to the initial state (no changes)
-			const atInitial = undoRedoManager.isAtInitialState();
-			if (atInitial) {
-				// Clear dirty state when back to initial state
+			const atSavePoint = undoRedoManager.isAtSavePoint();
+			if (atSavePoint) {
+				// Clear dirty state when we're back at the last saved state.
 				document.makeClean();
 			}
-			// Fire update event even if we're back to initial state, so other views sync
+			// Fire update event even if we're back at the save point so other views sync.
 			document.updateBytes(
 				activeRom.bytes,
 				address,
 				entry.oldValue.length,
-				!atInitial,
+				!atSavePoint,
 			);
 		}
 	}
-	// Note: If not at initial state, document remains dirty (no action needed)
+	// Note: If not at the save point, document remains dirty (no action needed)
 
 	// Notify the active webview panel so its UI reflects the undo
 	if (activePanel && activeTableDef && activeRom) {
@@ -1471,10 +1501,15 @@ function handleRedo(): void {
 			maxAddress = Math.max(maxAddress, address + op.newValue.length);
 		}
 		if (document) {
+			const atSavePoint = undoRedoManager.isAtSavePoint();
+			if (atSavePoint) {
+				document.makeClean();
+			}
 			document.updateBytes(
 				activeRom.bytes,
 				minAddress,
 				maxAddress - minAddress,
+				!atSavePoint,
 			);
 		}
 	} else {
@@ -1487,9 +1522,17 @@ function handleRedo(): void {
 		// Apply ROM bytes
 		activeRom.bytes.set(entry.newValue, address);
 
-		// Mark the RomDocument as dirty (redo modifies the ROM)
 		if (document) {
-			document.updateBytes(activeRom.bytes, address, entry.newValue.length);
+			const atSavePoint = undoRedoManager.isAtSavePoint();
+			if (atSavePoint) {
+				document.makeClean();
+			}
+			document.updateBytes(
+				activeRom.bytes,
+				address,
+				entry.newValue.length,
+				!atSavePoint,
+			);
 		}
 	}
 

@@ -105,6 +105,37 @@ describe("ROM Save Integration Test", () => {
 		expect(savedValidation.valid).toBe(true);
 	});
 
+	it("keeps the in-memory ROM bytes aligned with the checksum-adjusted saved bytes", async () => {
+		const originalData = await fs.readFile(testRomPath);
+		const romData = new Uint8Array(originalData);
+		const checksumDef: ChecksumDefinition = {
+			algorithm: "crc32",
+			regions: [
+				{ start: 0, end: 0x7fffc },
+			],
+			storage: {
+				offset: 0x7fffc,
+				size: 4,
+				endianness: "be",
+			},
+		};
+		const editOffset = 0x1000;
+
+		const currentByte = romData[editOffset] ?? 0;
+		romData[editOffset] = currentByte === 0xff ? 0x00 : currentByte + 1;
+
+		const result = await saveManager.save({
+			romPath: testRomPath,
+			romData,
+			checksumDef,
+		});
+
+		expect(result.ok).toBe(true);
+
+		const savedData = new Uint8Array(await fs.readFile(testRomPath));
+		expect(Array.from(romData)).toEqual(Array.from(savedData));
+	});
+
 	it("should handle save errors gracefully", async () => {
 		// Try to save to invalid path
 		const result = await saveManager.save({

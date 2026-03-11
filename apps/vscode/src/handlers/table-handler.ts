@@ -503,15 +503,15 @@ export async function handleTableOpen(
 						}
 						const document = getRomDocumentForPanel(panel);
 						if (document) {
-							const atInitial = undoRedoManager.isAtInitialState();
-							if (atInitial) {
+							const atSavePoint = undoRedoManager.isAtSavePoint();
+							if (atSavePoint) {
 								document.makeClean();
 							}
 							document.updateBytes(
 								rom.bytes,
 								minAddress,
 								maxAddress - minAddress,
-								!atInitial,
+								!atSavePoint,
 							);
 						}
 					} else {
@@ -523,15 +523,15 @@ export async function handleTableOpen(
 						rom.bytes.set(entry.oldValue, address);
 						const document = getRomDocumentForPanel(panel);
 						if (document) {
-							const atInitial = undoRedoManager.isAtInitialState();
-							if (atInitial) {
+							const atSavePoint = undoRedoManager.isAtSavePoint();
+							if (atSavePoint) {
 								document.makeClean();
 							}
 							document.updateBytes(
 								rom.bytes,
 								address,
 								entry.oldValue.length,
-								!atInitial,
+								!atSavePoint,
 							);
 						}
 					}
@@ -570,11 +570,15 @@ export async function handleTableOpen(
 						}
 						const document = getRomDocumentForPanel(panel);
 						if (document) {
+							const atSavePoint = undoRedoManager.isAtSavePoint();
+							if (atSavePoint) {
+								document.makeClean();
+							}
 							document.updateBytes(
 								rom.bytes,
 								minAddress,
 								maxAddress - minAddress,
-								true,
+								!atSavePoint,
 							);
 						}
 					} else {
@@ -586,11 +590,15 @@ export async function handleTableOpen(
 						rom.bytes.set(entry.newValue, address);
 						const document = getRomDocumentForPanel(panel);
 						if (document) {
+							const atSavePoint = undoRedoManager.isAtSavePoint();
+							if (atSavePoint) {
+								document.makeClean();
+							}
 							document.updateBytes(
 								rom.bytes,
 								address,
 								entry.newValue.length,
-								true,
+								!atSavePoint,
 							);
 						}
 					}
