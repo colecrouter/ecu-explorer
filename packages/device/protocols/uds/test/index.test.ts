@@ -583,7 +583,7 @@ describe("UdsProtocol", () => {
 			}
 		});
 
-		it("stopHeartbeat emits heartbeat_stopped", () => {
+		it("stopHeartbeat emits HEARTBEAT_STOPPED", () => {
 			const protocol = new UdsProtocol();
 			const connection = makeMockConnection(
 				"openport2",
@@ -595,7 +595,7 @@ describe("UdsProtocol", () => {
 			protocol.stopHeartbeat();
 
 			expect(onEvent).toHaveBeenCalledWith(
-				expect.objectContaining({ type: "heartbeat_stopped" }),
+				expect.objectContaining({ type: "HEARTBEAT_STOPPED" }),
 			);
 		});
 	});
@@ -640,17 +640,17 @@ describe("UdsProtocol", () => {
 					frames.some((f) => f[0] === UDS_SERVICES.DIAGNOSTIC_SESSION_CONTROL),
 				).toBe(true);
 				expect(onEvent).toHaveBeenCalledWith(
-					expect.objectContaining({ type: "ecu_reset_acknowledged" }),
+					expect.objectContaining({ type: "ECU_RESET_ACKNOWLEDGED" }),
 				);
 				expect(onEvent).toHaveBeenCalledWith(
-					expect.objectContaining({ type: "ecu_reset_reconnected" }),
+					expect.objectContaining({ type: "ECU_RESET_RECONNECTED" }),
 				);
 			} finally {
 				vi.useRealTimers();
 			}
 		});
 
-		it("ecuReset emits ecu_reset_failed on negative response", async () => {
+		it("ecuReset emits ECU_RESET_FAILED on negative response", async () => {
 			const protocol = new UdsProtocol();
 			const connection = makeMockConnection(
 				"openport2",
@@ -668,7 +668,7 @@ describe("UdsProtocol", () => {
 			).rejects.toThrow(/ECU reset failed/i);
 
 			expect(onEvent).toHaveBeenCalledWith(
-				expect.objectContaining({ type: "ecu_reset_failed" }),
+				expect.objectContaining({ type: "ECU_RESET_FAILED" }),
 			);
 		});
 	});

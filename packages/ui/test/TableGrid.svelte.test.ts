@@ -219,7 +219,7 @@ describe("TableGrid Component", () => {
 		const view = new TableView(romForScale, def);
 		const screen = render(TableGrid, { view, definition: def });
 
-		const display = screen.getByText("5.0302");
+		const display = screen.getByText("5.03");
 		await expect.element(display).toBeVisible();
 	});
 
