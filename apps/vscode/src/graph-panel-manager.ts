@@ -358,7 +358,11 @@ export class GraphPanelManager {
 			`[GraphPanelManager] Sending initial snapshot for table: ${context.tableName}`,
 		);
 
-		// Use the snapshot stored in context (set when panel was created)
+		// Restored panels do not carry an in-memory snapshot, so rebuild it on demand.
+		if (!context.snapshot && this.getSnapshot) {
+			context.snapshot = this.getSnapshot(context.romPath, context.tableId);
+		}
+
 		if (!context.snapshot) {
 			console.error(
 				`[GraphPanelManager] No snapshot available for table: ${context.tableName}`,

@@ -328,7 +328,12 @@ export async function activate(
 	graphPanelManager = new GraphPanelManager(
 		ctx,
 		(romPath: string) => {
-			// Find RomDocument by ROM path
+			const directDocument = editorProvider?.getDocument(vscode.Uri.file(romPath));
+			if (directDocument) {
+				return directDocument;
+			}
+
+			// Fallback to panel mapping for already-associated editors
 			for (const [_panel, doc] of panelToDocument.entries()) {
 				if (doc.uri.fsPath === romPath) {
 					return doc;
@@ -337,23 +342,27 @@ export async function activate(
 			return undefined;
 		},
 		(romPath: string, tableId: string) => {
-			// Find the table definition and ROM bytes to create a snapshot
-			// We can use the activeRom if it matches, or find the document
-			let romBytes: Uint8Array | undefined;
-			let tableDef: TableDefinition | undefined;
-
-			for (const [_panel, doc] of panelToDocument.entries()) {
-				if (doc.uri.fsPath === romPath) {
-					romBytes = doc.romBytes;
-					if (doc.definition?.tables) {
-						tableDef = doc.definition.tables.find((t) => t.name === tableId);
+			const document =
+				editorProvider?.getDocument(vscode.Uri.file(romPath)) ??
+				(() => {
+					for (const [_panel, doc] of panelToDocument.entries()) {
+						if (doc.uri.fsPath === romPath) {
+							return doc;
+						}
 					}
-					break;
-				}
+					return undefined;
+				})();
+
+			if (!document?.definition?.tables) {
+				return undefined;
 			}
 
-			if (romBytes && tableDef) {
-				return snapshotTable(tableDef, romBytes);
+			const tableDef: TableDefinition | undefined =
+				document.definition.tables.find((t) => t.id === tableId) ??
+				document.definition.tables.find((t) => t.name === tableId);
+
+			if (tableDef) {
+				return snapshotTable(tableDef, document.romBytes);
 			}
 			return undefined;
 		},

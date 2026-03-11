@@ -75,6 +75,7 @@ describe("GraphPanelManager", () => {
 	let manager: GraphPanelManager;
 	let mockContext: MockExtensionContext;
 	let mockGetDocument: GetDocument;
+	let mockGetSnapshot: (romPath: string, tableId: string) => TableSnapshot | undefined;
 	let mockOnCellSelect: CellSelectHandler;
 	const createMockSnapshot = createGraphSnapshot;
 
@@ -97,6 +98,15 @@ describe("GraphPanelManager", () => {
 			return undefined;
 		}) as GetDocument;
 
+		mockGetSnapshot = vi.fn(
+			(romPath: string, tableId: string): TableSnapshot | undefined => {
+				if (romPath === GRAPH_ROM_PATH && tableId === GRAPH_TABLE_ID) {
+					return createMockSnapshot();
+				}
+				return undefined;
+			},
+		);
+
 		// Create mock onCellSelect callback
 		mockOnCellSelect = vi.fn<CellSelectHandler>();
 
@@ -104,7 +114,7 @@ describe("GraphPanelManager", () => {
 		manager = new GraphPanelManager(
 			toExtensionContext(mockContext),
 			mockGetDocument,
-			undefined,
+			mockGetSnapshot,
 			mockOnCellSelect,
 		);
 	});
@@ -646,6 +656,37 @@ describe("GraphPanelManager", () => {
 			// Should be removed from registry
 			const retrievedPanel = manager.getPanel("/test/rom.hex", "table1");
 			expect(retrievedPanel).toBeUndefined();
+		});
+
+		it("should rebuild snapshot for restored panel when webview is ready", () => {
+			const restoredPanel = toWebviewPanel(createMockWebviewPanel("Graph: Test Table"));
+
+			manager.registerRestoredPanel(
+				restoredPanel,
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
+			);
+
+			asMockWebview(restoredPanel.webview)._simulateMessage({ type: "ready" });
+
+			expect(mockGetSnapshot).toHaveBeenCalledWith(
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+			);
+			expect(restoredPanel.webview.postMessage).toHaveBeenCalledWith({
+				type: "init",
+				snapshot: createMockSnapshot(),
+				tableId: GRAPH_TABLE_ID,
+				tableName: GRAPH_TABLE_NAME,
+				romPath: GRAPH_ROM_PATH,
+				preferredChartType: undefined,
+				themeColors: expect.objectContaining({
+					gradient: expect.any(Object),
+					ui: expect.any(Object),
+					isHighContrast: expect.any(Boolean),
+				}),
+			});
 		});
 	});
 

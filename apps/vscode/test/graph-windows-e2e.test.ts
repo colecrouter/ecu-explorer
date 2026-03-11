@@ -35,6 +35,15 @@ describe("Graph Windows E2E", () => {
 	let serializer: GraphPanelSerializer;
 	let mockContext: vscode.ExtensionContext;
 	let mockGetDocument: (romPath: string) => RomDocument | undefined;
+	let mockOpenCustomDocument: ReturnType<
+		typeof vi.fn<
+			(
+				uri: vscode.Uri,
+				openContext: vscode.CustomDocumentOpenContext,
+				token: vscode.CancellationToken,
+			) => Promise<RomDocument>
+		>
+	>;
 	let mockRomEditorProvider: RomEditorProvider;
 	let cellSelectionCallback: (
 		romPath: string,
@@ -93,10 +102,23 @@ describe("Graph Windows E2E", () => {
 			return undefined;
 		};
 
+		mockOpenCustomDocument = vi.fn(
+			async (uri: vscode.Uri): Promise<RomDocument> => {
+				if (uri.fsPath.includes("test")) {
+					return createMockDocument(uri.fsPath);
+				}
+				throw new Error(`ROM file not loaded (${uri.fsPath})`);
+			},
+		);
+
 		// Create mock RomEditorProvider
-		mockRomEditorProvider = {
-			getDocument: (uri: vscode.Uri) => mockGetDocument(uri.fsPath),
-		} satisfies Pick<RomEditorProvider, "getDocument"> as RomEditorProvider;
+		mockRomEditorProvider = Object.assign(
+			Object.create({}) as RomEditorProvider,
+			{
+				getDocument: (uri: vscode.Uri) => mockGetDocument(uri.fsPath),
+				openCustomDocument: mockOpenCustomDocument,
+			},
+		);
 
 		// Create cell selection callback
 		cellSelectionCallback = vi.fn(
@@ -615,6 +637,38 @@ describe("Graph Windows E2E", () => {
 			// Panel should be registered
 			const panel = manager.getPanel("/test/rom.hex", "table1");
 			expect(panel).toBe(restoredPanel);
+		});
+
+		it("should reopen ROM document when it is not already loaded", async () => {
+			const savedState = {
+				romPath: "/test/reload.hex",
+				tableId: "table1",
+				tableName: "Test Table",
+			};
+
+			mockGetDocument = () => undefined;
+
+			const restoredPanel = getRestoredPanel();
+			restoredPanel.iconPath = vscode.Uri.file("/test/icon.svg");
+
+			await serializer.deserializeWebviewPanel(restoredPanel, savedState);
+
+			expect(mockOpenCustomDocument).toHaveBeenCalledWith(
+				expect.objectContaining({
+					scheme: "file",
+					path: "/test/reload.hex",
+					fsPath: "/test/reload.hex",
+				}),
+				{
+					backupId: undefined,
+					untitledDocumentData: undefined,
+				},
+				expect.objectContaining({
+					isCancellationRequested: false,
+					onCancellationRequested: expect.any(Function),
+				}),
+			);
+			expect(manager.getPanel("/test/reload.hex", "table1")).toBe(restoredPanel);
 		});
 
 		it("should handle deserialization with missing ROM", async () => {

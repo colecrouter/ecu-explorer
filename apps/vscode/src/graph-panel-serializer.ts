@@ -10,8 +10,10 @@
  * 5. Registers the restored panel with GraphPanelManager
  */
 
+import type { CancellationToken } from "vscode";
 import * as vscode from "vscode";
 import type { GraphPanelManager } from "./graph-panel-manager.js";
+import type { RomDocument } from "./rom/document.js";
 import type { RomEditorProvider } from "./rom/editor-provider.js";
 
 /**
@@ -25,6 +27,17 @@ interface GraphPanelState {
 	zoom?: number;
 	pan?: { x: number; y: number };
 	layer?: number;
+}
+
+const NON_CANCELLABLE_TOKEN: CancellationToken = {
+	isCancellationRequested: false,
+	onCancellationRequested: () => ({ dispose() {} }),
+};
+
+function isRomDocument(
+	document: RomDocument | Awaited<ReturnType<RomEditorProvider["openCustomDocument"]>>,
+): document is RomDocument {
+	return "definition" in document && "romBytes" in document;
 }
 
 /**
@@ -72,9 +85,21 @@ export class GraphPanelSerializer implements vscode.WebviewPanelSerializer {
 		}
 
 		try {
-			// Load ROM document
 			const romUri = vscode.Uri.file(romPath);
-			const document = this.romEditorProvider.getDocument(romUri);
+			const document =
+				this.romEditorProvider.getDocument(romUri) ??
+				(await this.romEditorProvider.openCustomDocument(
+					romUri,
+					{
+						backupId: undefined,
+						untitledDocumentData: undefined,
+					},
+					NON_CANCELLABLE_TOKEN,
+				));
+
+			if (!isRomDocument(document)) {
+				throw new Error(`Expected ROM document for ${romPath}`);
+			}
 
 			if (!document) {
 				console.error(
