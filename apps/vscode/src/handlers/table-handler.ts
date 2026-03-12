@@ -6,11 +6,12 @@ import {
 	type TableDefinition,
 } from "@ecu-explorer/core";
 import * as vscode from "vscode";
+import type { TableEditSession } from "../history/table-edit-session.js";
 import type { RomDocument } from "../rom/document.js";
 import { TableDocument } from "../table-document.js";
 import { getThemeColors } from "../theme-colors.js";
 import type { RomExplorerTreeProvider } from "../tree/rom-tree-provider.js";
-import type { EditOperation, UndoRedoManager } from "../undo-redo-manager.js";
+import type { EditOperation } from "../undo-redo-manager.js";
 import { isBatchEdit } from "../undo-redo-manager.js";
 
 /**
@@ -35,7 +36,7 @@ let getStateRefs:
 			activeTableDef: TableDefinition | null;
 			activePanel: vscode.WebviewPanel | null;
 			panelToDocument: Map<vscode.WebviewPanel, RomDocument>;
-			undoRedoManagers: Map<string, UndoRedoManager>;
+			tableSessions: Map<string, TableEditSession>;
 			treeProvider: RomExplorerTreeProvider | null;
 			getRomDocumentForPanel: (
 				panel: vscode.WebviewPanel,
@@ -312,16 +313,30 @@ export async function handleTableOpen(
 
 	// Initialize per-tab undo/redo manager (reuse existing instance if present)
 	const tableUriKey = document.uri.toString();
-	const undoRedoManagers = state.undoRedoManagers;
-	if (!undoRedoManagers.has(tableUriKey)) {
-		// Create new UndoRedoManager with lazy import
-		const { UndoRedoManager } = await import("../undo-redo-manager.js");
-		undoRedoManagers.set(tableUriKey, new UndoRedoManager());
+	const tableSessions = state.tableSessions;
+	if (!tableSessions.has(tableUriKey)) {
+		const { TableEditSession, createTableSessionId } = await import(
+			"../history/table-edit-session.js"
+		);
+		const romDocument =
+			document instanceof TableDocument ? document.romDocument : document;
+		tableSessions.set(
+			tableUriKey,
+			new TableEditSession({
+				id: createTableSessionId(document.uri),
+				tableUri: document.uri,
+				tableDef: selectedTable,
+				romDocument,
+				panel,
+			}),
+		);
 	}
-	const undoRedoManager = undoRedoManagers.get(tableUriKey);
-	if (!undoRedoManager) {
-		throw new Error("Failed to get undo/redo manager for table");
+	const tableSession = tableSessions.get(tableUriKey);
+	if (!tableSession) {
+		throw new Error("Failed to get table edit session for table");
 	}
+	tableSession.setPanel(panel);
+	const undoRedoManager = tableSession.undoRedoManager;
 
 	// Compute snapshot
 	const snapshot = snapshotTable(selectedTable, rom.bytes);
@@ -334,8 +349,8 @@ export async function handleTableOpen(
 
 	// Clean up when panel is closed
 	panel.onDidDispose(() => {
-		// Remove per-tab manager from map to avoid memory leaks
-		undoRedoManagers.delete(tableUriKey);
+		// Remove per-tab session from map to avoid memory leaks
+		tableSessions.delete(tableUriKey);
 		// Note: panelToDocument cleanup is handled by registerPanel()
 
 		// Clear context keys

@@ -32,6 +32,7 @@ import {
 	setCellEditHandlerContext,
 	setTableHandlerContext,
 } from "./handlers/index.js";
+import { type TableEditSession } from "./history/table-edit-session.js";
 import { LiveDataPanelManager } from "./live-data-panel-manager.js";
 import { LoggingManager, openLogsFolder } from "./logging-manager.js";
 import { resolveRomDefinition } from "./rom/definition-resolver.js";
@@ -68,8 +69,9 @@ const registry = new ProviderRegistry();
 let activeRom: RomInstance | null = null;
 let activeTableName: string | null = null;
 let activeTableDef: TableDefinition | null = null;
-/** Per-tab undo/redo managers keyed by table URI string */
-const undoRedoManagers = new Map<string, UndoRedoManager>();
+/** Per-tab edit sessions keyed by table URI string */
+const tableSessions = new Map<string, TableEditSession>();
+let activeTableSession: TableEditSession | null = null;
 /** The active undo/redo manager for the currently focused tab */
 let undoRedoManager: UndoRedoManager | null = null;
 /** Key (table URI string) used to look up the active undoRedoManager in the map */
@@ -406,7 +408,7 @@ export async function activate(
 		activeTableDef,
 		activePanel,
 		panelToDocument,
-		undoRedoManagers,
+		tableSessions,
 		treeProvider,
 		getRomDocumentForPanel: (panel: vscode.WebviewPanel) =>
 			panelToDocument.get(panel),
@@ -1108,9 +1110,9 @@ export async function activate(
 			// open table tabs backed by this ROM. Undo/redo must remain available
 			// across saves, but dirty tracking should now compare against this
 			// persisted state instead of the original open state.
-			for (const [key, manager] of undoRedoManagers.entries()) {
-				if (key.includes(savedDocument.uri.fsPath)) {
-					manager.markSavePoint();
+			for (const session of tableSessions.values()) {
+				if (session.tableUri.toString().includes(savedDocument.uri.fsPath)) {
+					session.markSaved();
 				}
 			}
 		},
@@ -1307,9 +1309,10 @@ export async function activate(
 					activePanel =
 						editorProvider?.getPanelForDocument(tableDoc.romDocument) || null;
 
-					// Switch to the per-tab UndoRedoManager for the newly-active tab
+					// Switch to the per-tab session for the newly-active tab
 					const tabKey = activeTab.input.uri.toString();
-					undoRedoManager = undoRedoManagers.get(tabKey) ?? null;
+					activeTableSession = tableSessions.get(tabKey) ?? null;
+					undoRedoManager = activeTableSession?.undoRedoManager ?? null;
 
 					// Update tree to show active table
 					if (treeProvider) {
