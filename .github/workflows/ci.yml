@@ -46,6 +46,9 @@ jobs:
             - name: Run format check
               run: npm run format:check
 
+            - name: Install Playwright
+              run: npx playwright install --with-deps chromium
+
             - name: Run tests
               run: npm test
 
