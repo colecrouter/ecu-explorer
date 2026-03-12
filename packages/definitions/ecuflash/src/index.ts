@@ -1511,7 +1511,17 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 				.map((d) => Number.parseFloat(String(d)))
 				.filter((n) => Number.isFinite(n));
 			const inheritedValues = values.length ? values : template?.data;
-			if (!inheritedValues?.length) return undefined;
+			if (!inheritedValues?.length) {
+				if (elements !== undefined && elements > 0) {
+					return {
+						id: `${axisNode.name ?? "Axis"}::static::${elements}`,
+						kind: "static",
+						name: axisNode.name ?? "Axis",
+						values: Array.from({ length: elements }, (_, index) => index),
+					};
+				}
+				return undefined;
+			}
 			const unit = unitFromScaling(scaling);
 			return {
 				id: `${axisNode.name ?? "Axis"}::static`,

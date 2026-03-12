@@ -2051,4 +2051,74 @@ describe("EcuFlashProvider", () => {
 			await fs.rm(tmpDir, { recursive: true, force: true });
 		}
 	});
+
+	it("regression: inherited static axis with non-numeric labels resolves length from elements", async () => {
+		const provider = new EcuFlashProvider();
+
+		const tmpDir = await fs.mkdtemp(
+			path.join(os.tmpdir(), "ecuflash-inherited-nonnumeric-static-axis-"),
+		);
+		try {
+			const baseXmlPath = path.join(tmpDir, "base.xml");
+			const romXmlPath = path.join(tmpDir, "rom.xml");
+
+			const baseXml = `<?xml version="1.0"?>
+<rom>
+	<romid>
+		<xmlid>base</xmlid>
+		<internalidaddress>0</internalidaddress>
+	</romid>
+	<scaling name="BlobBits" storagetype="uint8" endian="big" toexpr="x" />
+	<table name="Text Axis Template" type="3D" scaling="BlobBits">
+		<table name="Columns" type="Static X Axis" elements="2">
+			<data>bit.0</data>
+			<data>bit.1</data>
+		</table>
+		<table name="Rows" type="Static Y Axis" elements="3">
+			<data>row.a</data>
+			<data>row.b</data>
+			<data>row.c</data>
+		</table>
+	</table>
+</rom>
+`;
+
+			const romXml = `<?xml version="1.0"?>
+<rom>
+	<romid>
+		<xmlid>rom</xmlid>
+		<internalidaddress>0</internalidaddress>
+		<internalidhex>CAFEBEEF</internalidhex>
+	</romid>
+	<include>base</include>
+	<table name="Text Axis Template" address="1000" />
+</rom>
+`;
+
+			await fs.writeFile(baseXmlPath, baseXml, "utf8");
+			await fs.writeFile(romXmlPath, romXml, "utf8");
+
+			const def = await provider.parse(pathToFileURL(romXmlPath).toString());
+			const table = def.tables.find((x) => x.name === "Text Axis Template");
+
+			expect(table).toBeTruthy();
+			expect(table?.kind).toBe("table2d");
+			if (!table || table.kind !== "table2d") {
+				throw new Error("expected table2d");
+			}
+			expect(table.rows).toBe(3);
+			expect(table.cols).toBe(2);
+			expect(table.x?.kind).toBe("static");
+			if (table.x?.kind === "static") {
+				expect(table.x.values).toEqual([0, 1]);
+			}
+			expect(table.y?.kind).toBe("static");
+			if (table.y?.kind === "static") {
+				expect(table.y.values).toEqual([0, 1, 2]);
+			}
+			expect(table.z.length).toBe(6);
+		} finally {
+			await fs.rm(tmpDir, { recursive: true, force: true });
+		}
+	});
 });
