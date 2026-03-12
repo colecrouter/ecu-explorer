@@ -32,6 +32,23 @@ export interface HistoryMoveResult<
 	snapshot: HistorySnapshot<TTransaction>;
 }
 
+export interface HistoryByteRange {
+	offset: number;
+	length: number;
+}
+
+export interface HistoryExecutionResult {
+	range: HistoryByteRange | null;
+}
+
+export interface HistoryExecutor<
+	TTransaction extends EditTransaction = EditTransaction,
+	TResult = HistoryExecutionResult,
+> {
+	apply(transaction: TTransaction): TResult;
+	revert(transaction: TTransaction): TResult;
+}
+
 type HistoryNode<TTransaction extends EditTransaction> = {
 	id: number;
 	transaction: TTransaction;
@@ -129,4 +146,26 @@ export class HistoryStack<
 	private currentStateId(): number {
 		return this.past.at(-1)?.id ?? 0;
 	}
+}
+
+export function getTransactionByteRange<
+	TTransaction extends EditTransaction = EditTransaction,
+>(transaction: TTransaction): HistoryByteRange | null {
+	if (transaction.edits.length === 0) {
+		return null;
+	}
+
+	let minOffset = Number.MAX_SAFE_INTEGER;
+	let maxOffset = 0;
+
+	for (const edit of transaction.edits) {
+		const width = Math.max(edit.before.length, edit.after.length);
+		minOffset = Math.min(minOffset, edit.address);
+		maxOffset = Math.max(maxOffset, edit.address + width);
+	}
+
+	return {
+		offset: minOffset,
+		length: maxOffset - minOffset,
+	};
 }

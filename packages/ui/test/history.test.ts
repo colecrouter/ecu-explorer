@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	type Edit,
 	type EditTransaction,
+	getTransactionByteRange,
 	HistoryStack,
 } from "../src/lib/history.js";
 
@@ -138,5 +139,41 @@ describe("HistoryStack", () => {
 		expect(snapshot.canRedo).toBe(false);
 		expect(snapshot.atInitialState).toBe(true);
 		expect(snapshot.atSavePoint).toBe(true);
+	});
+
+	it("computes the affected byte range for a transaction", () => {
+		const transaction: EditTransaction<TestEdit> = {
+			label: "batch",
+			timestamp: Date.now(),
+			edits: [
+				{
+					address: 10,
+					before: new Uint8Array([0x10]),
+					after: new Uint8Array([0x20]),
+					cell: { row: 0, col: 0 },
+				},
+				{
+					address: 20,
+					before: new Uint8Array([0x30, 0x40]),
+					after: new Uint8Array([0x50, 0x60]),
+					cell: { row: 0, col: 1 },
+				},
+			],
+		};
+
+		expect(getTransactionByteRange(transaction)).toEqual({
+			offset: 10,
+			length: 12,
+		});
+	});
+
+	it("returns null for an empty transaction range", () => {
+		const transaction: EditTransaction<TestEdit> = {
+			label: "empty",
+			timestamp: Date.now(),
+			edits: [],
+		};
+
+		expect(getTransactionByteRange(transaction)).toBeNull();
 	});
 });
