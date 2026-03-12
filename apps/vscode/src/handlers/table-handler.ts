@@ -12,7 +12,6 @@ import { TableDocument } from "../table-document.js";
 import { getThemeColors } from "../theme-colors.js";
 import type { RomExplorerTreeProvider } from "../tree/rom-tree-provider.js";
 import type { EditOperation } from "../undo-redo-manager.js";
-import { isBatchEdit } from "../undo-redo-manager.js";
 
 /**
  * Cell edit message from webview
@@ -497,134 +496,30 @@ export async function handleTableOpen(
 				console.log(
 					`[DEBUG] undo message received, canUndo=${undoRedoManager.canUndo()}`,
 				);
-				const entry = undoRedoManager.undo();
+				const result = tableSession.undo();
 				console.log(
-					`[DEBUG] undoRedoManager.undo() returned`,
-					entry ? "entry" : "null",
+					`[DEBUG] tableSession.undo() returned`,
+					result ? "entry" : "null",
 				);
-				if (entry) {
-					if (isBatchEdit(entry)) {
-						// Batch undo: revert all ops in reverse order
-						let minAddress = Number.MAX_SAFE_INTEGER;
-						let maxAddress = 0;
-						for (const op of [...entry.ops].reverse()) {
-							const address =
-								op.address !== undefined
-									? op.address
-									: calculateCellAddress(selectedTable, op.row, op.col);
-							rom.bytes.set(op.oldValue, address);
-							minAddress = Math.min(minAddress, address);
-							maxAddress = Math.max(maxAddress, address + op.oldValue.length);
-						}
-						const document = getRomDocumentForPanel(panel);
-						if (document) {
-							const atSavePoint = undoRedoManager.isAtSavePoint();
-							if (atSavePoint) {
-								document.makeClean();
-							}
-							document.updateBytes(
-								rom.bytes,
-								minAddress,
-								maxAddress - minAddress,
-								!atSavePoint,
-							);
-						}
-					} else {
-						// Single op undo
-						const address =
-							entry.address !== undefined
-								? entry.address
-								: calculateCellAddress(selectedTable, entry.row, entry.col);
-						rom.bytes.set(entry.oldValue, address);
-						const document = getRomDocumentForPanel(panel);
-						if (document) {
-							const atSavePoint = undoRedoManager.isAtSavePoint();
-							if (atSavePoint) {
-								document.makeClean();
-							}
-							document.updateBytes(
-								rom.bytes,
-								address,
-								entry.oldValue.length,
-								!atSavePoint,
-							);
-						}
-					}
+				if (result) {
+					rom.bytes = tableSession.romDocument.romBytes;
+					await panel.webview.postMessage(result.message);
 				}
-				const newSnapshot = snapshotTable(selectedTable, rom.bytes);
-				await panel.webview.postMessage({
-					type: "update",
-					snapshot: newSnapshot,
-					rom: Array.from(rom.bytes),
-					reason: "undo",
-				});
 				return;
 			}
 			if (type === "redo") {
 				console.log(
 					`[DEBUG] redo message received, canRedo=${undoRedoManager.canRedo()}`,
 				);
-				const entry = undoRedoManager.redo();
+				const result = tableSession.redo();
 				console.log(
-					`[DEBUG] undoRedoManager.redo() returned`,
-					entry ? "entry" : "null",
+					`[DEBUG] tableSession.redo() returned`,
+					result ? "entry" : "null",
 				);
-				if (entry) {
-					if (isBatchEdit(entry)) {
-						// Batch redo: apply all ops in forward order
-						let minAddress = Number.MAX_SAFE_INTEGER;
-						let maxAddress = 0;
-						for (const op of entry.ops) {
-							const address =
-								op.address !== undefined
-									? op.address
-									: calculateCellAddress(selectedTable, op.row, op.col);
-							rom.bytes.set(op.newValue, address);
-							minAddress = Math.min(minAddress, address);
-							maxAddress = Math.max(maxAddress, address + op.newValue.length);
-						}
-						const document = getRomDocumentForPanel(panel);
-						if (document) {
-							const atSavePoint = undoRedoManager.isAtSavePoint();
-							if (atSavePoint) {
-								document.makeClean();
-							}
-							document.updateBytes(
-								rom.bytes,
-								minAddress,
-								maxAddress - minAddress,
-								!atSavePoint,
-							);
-						}
-					} else {
-						// Single op redo
-						const address =
-							entry.address !== undefined
-								? entry.address
-								: calculateCellAddress(selectedTable, entry.row, entry.col);
-						rom.bytes.set(entry.newValue, address);
-						const document = getRomDocumentForPanel(panel);
-						if (document) {
-							const atSavePoint = undoRedoManager.isAtSavePoint();
-							if (atSavePoint) {
-								document.makeClean();
-							}
-							document.updateBytes(
-								rom.bytes,
-								address,
-								entry.newValue.length,
-								!atSavePoint,
-							);
-						}
-					}
+				if (result) {
+					rom.bytes = tableSession.romDocument.romBytes;
+					await panel.webview.postMessage(result.message);
 				}
-				const newSnapshot = snapshotTable(selectedTable, rom.bytes);
-				await panel.webview.postMessage({
-					type: "update",
-					snapshot: newSnapshot,
-					rom: Array.from(rom.bytes),
-					reason: "redo",
-				});
 				return;
 			}
 			if (type === "triggerSave") {

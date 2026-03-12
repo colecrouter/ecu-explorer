@@ -1,7 +1,17 @@
-import type { TableDefinition } from "@ecu-explorer/core";
+import {
+	calculateCellAddress,
+	snapshotTable,
+	type TableDefinition,
+} from "@ecu-explorer/core";
+import type { EditTransaction } from "@ecu-explorer/ui";
 import * as vscode from "vscode";
 import type { RomDocument } from "../rom/document.js";
-import { UndoRedoManager } from "../undo-redo-manager.js";
+import {
+	type EditOperation,
+	isBatchEdit,
+	type StackEntry,
+	UndoRedoManager,
+} from "../undo-redo-manager.js";
 import { VsCodeHistoryExecutor } from "./vscode-history-executor.js";
 
 export type TableSessionId = string;
@@ -18,6 +28,18 @@ export interface TableEditSessionOptions {
 	tableDef: TableDefinition;
 	romDocument: RomDocument;
 	panel?: vscode.WebviewPanel | null;
+}
+
+export interface TableSessionUpdateMessage {
+	type: "update";
+	snapshot: ReturnType<typeof snapshotTable>;
+	rom: number[];
+	reason: "undo" | "redo";
+}
+
+export interface TableSessionMoveResult {
+	entry: StackEntry;
+	message: TableSessionUpdateMessage;
 }
 
 export class TableEditSession {
@@ -64,5 +86,86 @@ export class TableEditSession {
 
 	isForRom(romDocument: RomDocument): boolean {
 		return this.romDocument === romDocument;
+	}
+
+	undo(): TableSessionMoveResult | null {
+		const entry = this.undoRedoManager.undo();
+		if (!entry) {
+			return null;
+		}
+
+		const transaction = this.toTransaction(entry, "Undo");
+		this.createExecutor().revert(transaction, {
+			atSavePoint: this.undoRedoManager.isAtSavePoint(),
+		});
+
+		return {
+			entry,
+			message: this.createUpdateMessage("undo"),
+		};
+	}
+
+	redo(): TableSessionMoveResult | null {
+		const entry = this.undoRedoManager.redo();
+		if (!entry) {
+			return null;
+		}
+
+		const transaction = this.toTransaction(entry, "Redo");
+		this.createExecutor().apply(transaction, {
+			atSavePoint: this.undoRedoManager.isAtSavePoint(),
+		});
+
+		return {
+			entry,
+			message: this.createUpdateMessage("redo"),
+		};
+	}
+
+	private toTransaction(
+		entry: StackEntry,
+		fallbackLabel: string,
+	): EditTransaction {
+		if (isBatchEdit(entry)) {
+			return {
+				label: entry.label ?? fallbackLabel,
+				timestamp: entry.timestamp,
+				edits: entry.ops.map((op) => this.toEdit(op)),
+			};
+		}
+
+		return {
+			label: entry.label ?? fallbackLabel,
+			timestamp: entry.timestamp,
+			edits: [this.toEdit(entry)],
+		};
+	}
+
+	private toEdit(operation: EditOperation) {
+		return {
+			address: this.resolveAddress(operation),
+			before: operation.oldValue,
+			after: operation.newValue,
+			...(operation.label !== undefined ? { label: operation.label } : {}),
+		};
+	}
+
+	private resolveAddress(operation: EditOperation): number {
+		return (
+			operation.address ??
+			calculateCellAddress(this.tableDef, operation.row, operation.col)
+		);
+	}
+
+	private createUpdateMessage(
+		reason: TableSessionUpdateMessage["reason"],
+	): TableSessionUpdateMessage {
+		const romBytes = this.romDocument.romBytes;
+		return {
+			type: "update",
+			snapshot: snapshotTable(this.tableDef, romBytes),
+			rom: Array.from(romBytes),
+			reason,
+		};
 	}
 }

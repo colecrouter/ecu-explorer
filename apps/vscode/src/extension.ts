@@ -1,5 +1,4 @@
 import {
-	calculateCellAddress,
 	type DefinitionProvider,
 	decodeScalarBytes,
 	type RomInstance,
@@ -47,7 +46,7 @@ import { createTableUri, parseTableUri } from "./table-fs-uri.js";
 import { getThemeColors } from "./theme-colors.js";
 import type { RomTreeItem } from "./tree/rom-tree-item.js";
 import { RomExplorerTreeProvider } from "./tree/rom-tree-provider.js";
-import { isBatchEdit, type UndoRedoManager } from "./undo-redo-manager.js";
+import type { UndoRedoManager } from "./undo-redo-manager.js";
 import { WorkspaceState } from "./workspace-state.js";
 
 type ActivationOptions = {
@@ -474,6 +473,7 @@ export async function activate(
 		activeRom,
 		activePanel,
 		activeTableDef,
+		activeTableSession,
 		undoRedoManager,
 		getRomDocumentForPanel: (panel: vscode.WebviewPanel) =>
 			panelToDocument.get(panel),
@@ -1408,76 +1408,22 @@ export async function activate(
  * Integrates with VSCode's undo/redo system
  */
 function handleUndo(): void {
-	if (!undoRedoManager || !activeRom || !activePanel || !activeTableDef) {
+	if (!activeTableSession) {
 		return;
 	}
 
-	const entry = undoRedoManager.undo();
-	if (!entry) return;
-
-	const document = panelToDocument.get(activePanel);
-
-	if (isBatchEdit(entry)) {
-		// Batch undo: revert all ops in reverse order
-		let minAddress = Number.MAX_SAFE_INTEGER;
-		let maxAddress = 0;
-		for (const op of [...entry.ops].reverse()) {
-			const address =
-				op.address !== undefined
-					? op.address
-					: calculateCellAddress(activeTableDef, op.row, op.col);
-			activeRom.bytes.set(op.oldValue, address);
-			minAddress = Math.min(minAddress, address);
-			maxAddress = Math.max(maxAddress, address + op.oldValue.length);
-		}
-		if (document) {
-			const atSavePoint = undoRedoManager.isAtSavePoint();
-			if (atSavePoint) {
-				document.makeClean();
-			}
-			document.updateBytes(
-				activeRom.bytes,
-				minAddress,
-				maxAddress - minAddress,
-				!atSavePoint,
-			);
-		}
-	} else {
-		// Single op undo
-		const address =
-			entry.address !== undefined
-				? entry.address
-				: calculateCellAddress(activeTableDef, entry.row, entry.col);
-
-		// Revert ROM bytes
-		activeRom.bytes.set(entry.oldValue, address);
-
-		if (document) {
-			const atSavePoint = undoRedoManager.isAtSavePoint();
-			if (atSavePoint) {
-				// Clear dirty state when we're back at the last saved state.
-				document.makeClean();
-			}
-			// Fire update event even if we're back at the save point so other views sync.
-			document.updateBytes(
-				activeRom.bytes,
-				address,
-				entry.oldValue.length,
-				!atSavePoint,
-			);
-		}
+	const result = activeTableSession.undo();
+	if (!result) {
+		return;
 	}
-	// Note: If not at the save point, document remains dirty (no action needed)
 
-	// Notify the active webview panel so its UI reflects the undo
-	if (activePanel && activeTableDef && activeRom) {
-		const newSnapshot = snapshotTable(activeTableDef, activeRom.bytes);
-		activePanel.webview.postMessage({
-			type: "update",
-			snapshot: newSnapshot,
-			rom: Array.from(activeRom.bytes),
-			reason: "undo",
-		});
+	activeRom = activeRom
+		? { ...activeRom, bytes: activeTableSession.romDocument.romBytes }
+		: activeRom;
+
+	const panel = activeTableSession.activePanel ?? activePanel;
+	if (panel) {
+		panel.webview.postMessage(result.message);
 	}
 }
 
@@ -1486,70 +1432,22 @@ function handleUndo(): void {
  * Integrates with VSCode's undo/redo system
  */
 function handleRedo(): void {
-	if (!undoRedoManager || !activeRom || !activePanel || !activeTableDef) return;
-	const entry = undoRedoManager.redo();
-	if (!entry) return;
-
-	const document = panelToDocument.get(activePanel);
-
-	if (isBatchEdit(entry)) {
-		// Batch redo: apply all ops in forward order
-		let minAddress = Number.MAX_SAFE_INTEGER;
-		let maxAddress = 0;
-		for (const op of entry.ops) {
-			const address =
-				op.address !== undefined
-					? op.address
-					: calculateCellAddress(activeTableDef, op.row, op.col);
-			activeRom.bytes.set(op.newValue, address);
-			minAddress = Math.min(minAddress, address);
-			maxAddress = Math.max(maxAddress, address + op.newValue.length);
-		}
-		if (document) {
-			const atSavePoint = undoRedoManager.isAtSavePoint();
-			if (atSavePoint) {
-				document.makeClean();
-			}
-			document.updateBytes(
-				activeRom.bytes,
-				minAddress,
-				maxAddress - minAddress,
-				!atSavePoint,
-			);
-		}
-	} else {
-		// Single op redo
-		const address =
-			entry.address !== undefined
-				? entry.address
-				: calculateCellAddress(activeTableDef, entry.row, entry.col);
-
-		// Apply ROM bytes
-		activeRom.bytes.set(entry.newValue, address);
-
-		if (document) {
-			const atSavePoint = undoRedoManager.isAtSavePoint();
-			if (atSavePoint) {
-				document.makeClean();
-			}
-			document.updateBytes(
-				activeRom.bytes,
-				address,
-				entry.newValue.length,
-				!atSavePoint,
-			);
-		}
+	if (!activeTableSession) {
+		return;
 	}
 
-	// Notify the active webview panel so its UI reflects the redo
-	if (activePanel && activeTableDef && activeRom) {
-		const newSnapshot = snapshotTable(activeTableDef, activeRom.bytes);
-		activePanel.webview.postMessage({
-			type: "update",
-			snapshot: newSnapshot,
-			rom: Array.from(activeRom.bytes),
-			reason: "redo",
-		});
+	const result = activeTableSession.redo();
+	if (!result) {
+		return;
+	}
+
+	activeRom = activeRom
+		? { ...activeRom, bytes: activeTableSession.romDocument.romBytes }
+		: activeRom;
+
+	const panel = activeTableSession.activePanel ?? activePanel;
+	if (panel) {
+		panel.webview.postMessage(result.message);
 	}
 }
 

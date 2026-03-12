@@ -119,6 +119,7 @@ function setMathCommandState(options?: {
 		activeRom: null,
 		activePanel: options?.activePanel ?? null,
 		activeTableDef: options?.activeTableDef ?? null,
+		activeTableSession: null,
 		undoRedoManager: null,
 		getRomDocumentForPanel: () => undefined,
 	}));

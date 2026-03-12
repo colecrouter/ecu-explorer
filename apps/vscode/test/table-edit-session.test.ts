@@ -15,7 +15,7 @@ const TABLE_DEF: TableDefinition = {
 	z: {
 		id: "test-table-z",
 		name: "Values",
-		address: 0x1000,
+		address: 0,
 		dtype: "u8",
 	},
 } as TableDefinition;
@@ -96,5 +96,28 @@ describe("TableEditSession", () => {
 			0x10, 0xee, 0x30, 0x40,
 		]);
 		expect(result.range).toEqual({ offset: 1, length: 1 });
+	});
+
+	it("undoes through the session and returns an update message", () => {
+		const session = makeSession();
+
+		session.undoRedoManager.push({
+			row: 0,
+			col: 0,
+			address: 1,
+			oldValue: new Uint8Array([0x20]),
+			newValue: new Uint8Array([0xee]),
+			timestamp: Date.now(),
+			label: "Edit cell",
+		});
+		session.romDocument.romBytes.set(new Uint8Array([0xee]), 1);
+		session.romDocument.updateBytes(session.romDocument.romBytes, 1, 1, true);
+
+		const result = session.undo();
+
+		expect(result?.message.reason).toBe("undo");
+		expect(Array.from(session.romDocument.romBytes)).toEqual([
+			0x10, 0x20, 0x30, 0x40,
+		]);
 	});
 });
