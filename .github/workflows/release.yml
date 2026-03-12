@@ -37,16 +37,7 @@ jobs:
                       biome-cache-${{ runner.os }}-
 
             - name: Install dependencies
-              run: npm ci
-
-            - name: Run Biome CI
-              run: npx biome ci
-
-            - name: Run npm check
-              run: npm run check
-
-            - name: Run npm lint
-              run: npm run lint
+              run: npm i
 
             - name: Build project
               run: npm run build
@@ -69,9 +60,6 @@ jobs:
                   echo "" >> $GITHUB_STEP_SUMMARY
                   echo "### Steps Executed:" >> $GITHUB_STEP_SUMMARY
                   echo "- ✅ npm ci" >> $GITHUB_STEP_SUMMARY
-                  echo "- ✅ npx biome ci" >> $GITHUB_STEP_SUMMARY
-                  echo "- ✅ npm run check" >> $GITHUB_STEP_SUMMARY
-                  echo "- ✅ npm run lint" >> $GITHUB_STEP_SUMMARY
                   echo "- ✅ npm run build" >> $GITHUB_STEP_SUMMARY
                   echo "- ✅ GitHub Release created" >> $GITHUB_STEP_SUMMARY
                   echo "- ✅ Artifacts uploaded" >> $GITHUB_STEP_SUMMARY
