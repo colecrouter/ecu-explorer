@@ -5,20 +5,26 @@ import { validateChecksum } from "@ecu-explorer/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RomSaveManager } from "../src/rom/save-manager.js";
 
+function createFixtureRom(size = 0x80000): Uint8Array {
+	const rom = new Uint8Array(size);
+	rom[0] = 0x56;
+	rom[1] = 0x89;
+	rom[2] = 0x00;
+	rom[3] = 0x09;
+	return rom;
+}
+
 describe("ROM Save Integration Test", () => {
 	const testDir = path.join(__dirname, "..", "..", "..", "test-output");
-	const romFileName = "56890009_2011_USDM_5MT.hex";
-	const originalRomPath = path.join(__dirname, "..", "..", "..", romFileName);
+	const romFileName = "sample.rom.hex";
 	let testRomPath: string;
 	let saveManager: RomSaveManager;
 
 	beforeEach(async () => {
 		// Create test output directory
 		await fs.mkdir(testDir, { recursive: true });
-
-		// Copy original ROM to test directory
 		testRomPath = path.join(testDir, romFileName);
-		await fs.copyFile(originalRomPath, testRomPath);
+		await fs.writeFile(testRomPath, createFixtureRom());
 
 		// Initialize save manager
 		saveManager = new RomSaveManager();

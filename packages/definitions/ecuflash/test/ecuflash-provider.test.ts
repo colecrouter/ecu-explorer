@@ -765,6 +765,7 @@ describe("EcuFlashProvider", () => {
 				tmpDir,
 				"56890013 2011 USDM Lancer Evolution X 5MT.xml",
 			);
+			const baseXmlAliasPath = path.join(tmpDir, "56890013.xml");
 			const topLevelPath = path.join(tmpDir, "TephraMOD-56890313.xml");
 
 			const baseXml = `<?xml version="1.0"?>
@@ -791,6 +792,7 @@ describe("EcuFlashProvider", () => {
 `;
 
 			await fs.writeFile(baseXmlPath, baseXml, "utf8");
+			await fs.writeFile(baseXmlAliasPath, baseXml, "utf8");
 			await fs.writeFile(topLevelPath, topLevelXml, "utf8");
 
 			const def = await provider.parse(pathToFileURL(topLevelPath).toString());
