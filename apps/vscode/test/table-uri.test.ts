@@ -240,7 +240,10 @@ describe("table-uri", () => {
 			const workspaceFolder = createWorkspaceFolder();
 			const workspaceFolders = [workspaceFolder];
 
-			const uri = createTableUri(`${workspaceFolder.uri.fsPath}/rom.hex`, "table1");
+			const uri = createTableUri(
+				`${workspaceFolder.uri.fsPath}/rom.hex`,
+				"table1",
+			);
 			expect(validateTableUri(uri, workspaceFolders)).toBe(true);
 		});
 
@@ -270,7 +273,10 @@ describe("table-uri", () => {
 			const workspaceFolder = createWorkspaceFolder();
 			const workspaceFolders = [workspaceFolder];
 
-			const uri = createTableUri(`${workspaceFolder.uri.fsPath}/rom.hex`, "table1");
+			const uri = createTableUri(
+				`${workspaceFolder.uri.fsPath}/rom.hex`,
+				"table1",
+			);
 			expect(validateTableUri(uri, workspaceFolders)).toBe(true);
 		});
 	});

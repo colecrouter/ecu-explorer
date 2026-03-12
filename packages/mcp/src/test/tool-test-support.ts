@@ -1,9 +1,7 @@
 import type { ROMDefinition } from "@ecu-explorer/core";
 import type { McpConfig } from "../config.js";
 
-export function createMcpConfig(
-	overrides: Partial<McpConfig> = {},
-): McpConfig {
+export function createMcpConfig(overrides: Partial<McpConfig> = {}): McpConfig {
 	return {
 		definitionsPaths: [],
 		logsDir: "/tmp",

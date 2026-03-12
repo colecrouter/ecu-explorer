@@ -53,7 +53,9 @@ describe("table-fs-uri", () => {
 			);
 
 			expect(uri.scheme).toBe("ecu-table");
-			expect(uri.path).toContain(vscode.Uri.file(WINDOWS_FS_TABLE_URI.romPath).path);
+			expect(uri.path).toContain(
+				vscode.Uri.file(WINDOWS_FS_TABLE_URI.romPath).path,
+			);
 			expect(uri.toString()).not.toContain("/apps/vscode/");
 		});
 
@@ -174,7 +176,9 @@ describe("table-fs-uri", () => {
 			const parsed = parseTableUri(uri);
 
 			expect(parsed).not.toBeNull();
-			expect(parsed?.romPath).toBe(vscode.Uri.file(WINDOWS_FS_TABLE_URI.romPath).fsPath);
+			expect(parsed?.romPath).toBe(
+				vscode.Uri.file(WINDOWS_FS_TABLE_URI.romPath).fsPath,
+			);
 			expect(parsed?.tableId).toBe(WINDOWS_FS_TABLE_URI.tableId);
 			expect(parsed?.tableName).toBe(WINDOWS_FS_TABLE_URI.tableName);
 		});

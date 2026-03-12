@@ -1,4 +1,3 @@
-
 import type { Mock } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
@@ -96,7 +95,10 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 		});
 
 		it("should update active table when setActiveTable is called multiple times", () => {
-			const firstActiveTable = { romUri: "file:///test/rom1.hex", tableName: "Table1" };
+			const firstActiveTable = {
+				romUri: "file:///test/rom1.hex",
+				tableName: "Table1",
+			};
 			treeProvider.setActiveTable(
 				firstActiveTable.romUri,
 				firstActiveTable.tableName,
@@ -280,7 +282,9 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 
 			// Get ROM1 tables
 			const romNodes = await treeProvider.getChildren();
-			const rom1Node = romNodes.find((n) => n.label === mockUri1.path.split("/").pop());
+			const rom1Node = romNodes.find(
+				(n) => n.label === mockUri1.path.split("/").pop(),
+			);
 			if (!rom1Node) throw new Error("rom1.hex node not found");
 			const rom1Categories = await treeProvider.getChildren(rom1Node);
 			const firstCategory = rom1Categories[0];
@@ -294,7 +298,9 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			}
 
 			// Get ROM2 tables (should not be active)
-			const rom2Node = romNodes.find((n) => n.label === mockUri2.path.split("/").pop());
+			const rom2Node = romNodes.find(
+				(n) => n.label === mockUri2.path.split("/").pop(),
+			);
 			if (!rom2Node) throw new Error("rom2.hex node not found");
 			const rom2Categories = await treeProvider.getChildren(rom2Node);
 			const firstCategory2 = rom2Categories[0];
@@ -364,7 +370,10 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const refreshSpy = vi.fn();
 			setTreeRefreshSpy(treeProvider, refreshSpy);
 
-			const activeTable = { romUri: "file:///test/rom.hex", tableName: "Table1" };
+			const activeTable = {
+				romUri: "file:///test/rom.hex",
+				tableName: "Table1",
+			};
 			treeProvider.setActiveTable(activeTable.romUri, activeTable.tableName);
 
 			expect(refreshSpy).toHaveBeenCalled();
@@ -374,7 +383,10 @@ describe("RomExplorerTreeProvider - Phase 2: Active Table Tracking", () => {
 			const refreshSpy = vi.fn();
 			setTreeRefreshSpy(treeProvider, refreshSpy);
 
-			const activeTable = { romUri: "file:///test/rom.hex", tableName: "Table1" };
+			const activeTable = {
+				romUri: "file:///test/rom.hex",
+				tableName: "Table1",
+			};
 			treeProvider.setActiveTable(activeTable.romUri, activeTable.tableName);
 			const refreshCallCount = refreshSpy.mock.calls.length;
 

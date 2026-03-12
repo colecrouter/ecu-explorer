@@ -193,7 +193,9 @@ describe("RomExplorerTreeProvider", () => {
 		// Check category names
 		const categoryLabels = categoryNodes.map((n) => n.label).sort();
 		expect(categoryLabels).toEqual(
-			[...new Set(tables.map((table) => table.category ?? "Uncategorized"))].sort(),
+			[
+				...new Set(tables.map((table) => table.category ?? "Uncategorized")),
+			].sort(),
 		);
 	});
 
@@ -221,7 +223,9 @@ describe("RomExplorerTreeProvider", () => {
 		const expectedFuelTables = tables.filter(
 			(table) => table.category === fuelCategoryName,
 		);
-		const fuelCategory = categoryNodes.find((n) => n.label === fuelCategoryName);
+		const fuelCategory = categoryNodes.find(
+			(n) => n.label === fuelCategoryName,
+		);
 		if (!fuelCategory) throw new Error("Fuel category not found");
 		expect(fuelCategory).toBeDefined();
 		expect(fuelCategory.description).toBe(
@@ -259,7 +263,9 @@ describe("RomExplorerTreeProvider", () => {
 		expect(categoryNodes).toHaveLength(2);
 		const categoryLabels = categoryNodes.map((n) => n.label).sort();
 		expect(categoryLabels).toEqual(
-			[...new Set(tables.map((table) => table.category ?? "Uncategorized"))].sort(),
+			[
+				...new Set(tables.map((table) => table.category ?? "Uncategorized")),
+			].sort(),
 		);
 
 		// Check Uncategorized count
@@ -292,7 +298,9 @@ describe("RomExplorerTreeProvider", () => {
 
 		const categoryLabels = categoryNodes.map((n) => n.label);
 		expect(categoryLabels).toEqual(
-			[...new Set(tables.map((table) => table.category ?? "Uncategorized"))].sort(),
+			[
+				...new Set(tables.map((table) => table.category ?? "Uncategorized")),
+			].sort(),
 		);
 	});
 
@@ -579,7 +587,9 @@ describe("RomExplorerTreeProvider", () => {
 		expect(categoryNodes).toHaveLength(3);
 		const categoryLabels = categoryNodes.map((n) => n.label).sort();
 		expect(categoryLabels).toEqual(
-			[...new Set(tables.map((table) => table.category ?? "Uncategorized"))].sort(),
+			[
+				...new Set(tables.map((table) => table.category ?? "Uncategorized")),
+			].sort(),
 		);
 	});
 
@@ -624,7 +634,10 @@ describe("RomExplorerTreeProvider", () => {
 		for (let i = 0; i < 100; i++) {
 			const categoryIndex = Math.floor(i / 10);
 			tables.push(
-				createTestTable({ name: `Table${i}`, category: `Category${categoryIndex}` }),
+				createTestTable({
+					name: `Table${i}`,
+					category: `Category${categoryIndex}`,
+				}),
 			);
 		}
 

@@ -668,7 +668,9 @@ describe("Graph Windows E2E", () => {
 					onCancellationRequested: expect.any(Function),
 				}),
 			);
-			expect(manager.getPanel("/test/reload.hex", "table1")).toBe(restoredPanel);
+			expect(manager.getPanel("/test/reload.hex", "table1")).toBe(
+				restoredPanel,
+			);
 		});
 
 		it("should handle deserialization with missing ROM", async () => {

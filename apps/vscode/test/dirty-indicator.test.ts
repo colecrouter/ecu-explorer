@@ -138,7 +138,12 @@ describe("RomDocument dirty-state tracking", () => {
 			if (manager.isAtSavePoint()) {
 				doc.makeClean();
 			}
-			doc.updateBytes(new Uint8Array([0xff, 0x02, 0x03, 0x04]), 1, 1, !manager.isAtSavePoint());
+			doc.updateBytes(
+				new Uint8Array([0xff, 0x02, 0x03, 0x04]),
+				1,
+				1,
+				!manager.isAtSavePoint(),
+			);
 
 			expect(doc.isDirty).toBe(false);
 		});

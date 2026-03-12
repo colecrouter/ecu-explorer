@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import * as logReader from "../log-reader.js";
-import { createLogFileMeta, createMcpConfig } from "../test/tool-test-support.js";
+import {
+	createLogFileMeta,
+	createMcpConfig,
+} from "../test/tool-test-support.js";
 import { handleListLogs } from "./list-logs.js";
 
 vi.mock("../log-reader.js", async () => {

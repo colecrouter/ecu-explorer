@@ -110,9 +110,7 @@ describe("ROM Save Integration Test", () => {
 		const romData = new Uint8Array(originalData);
 		const checksumDef: ChecksumDefinition = {
 			algorithm: "crc32",
-			regions: [
-				{ start: 0, end: 0x7fffc },
-			],
+			regions: [{ start: 0, end: 0x7fffc }],
 			storage: {
 				offset: 0x7fffc,
 				size: 4,

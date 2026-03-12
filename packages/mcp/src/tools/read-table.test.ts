@@ -1,6 +1,9 @@
 import type { ROMDefinition, Table2DDefinition } from "@ecu-explorer/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createMcpConfig, createRomLoaderResult } from "../test/tool-test-support.js";
+import {
+	createMcpConfig,
+	createRomLoaderResult,
+} from "../test/tool-test-support.js";
 import { handleReadTable } from "./read-table.js";
 
 let definition: ROMDefinition;

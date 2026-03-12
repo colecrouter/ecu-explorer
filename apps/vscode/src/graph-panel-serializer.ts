@@ -35,7 +35,9 @@ const NON_CANCELLABLE_TOKEN: CancellationToken = {
 };
 
 function isRomDocument(
-	document: RomDocument | Awaited<ReturnType<RomEditorProvider["openCustomDocument"]>>,
+	document:
+		| RomDocument
+		| Awaited<ReturnType<RomEditorProvider["openCustomDocument"]>>,
 ): document is RomDocument {
 	return "definition" in document && "romBytes" in document;
 }

@@ -40,9 +40,7 @@ export function createLiveDataPids() {
 	];
 }
 
-export function createLiveDataFrame(
-	overrides: Partial<LiveDataFrame> = {},
-) {
+export function createLiveDataFrame(overrides: Partial<LiveDataFrame> = {}) {
 	const [engineRpm] = createLiveDataPids();
 	return {
 		timestamp: 100,

@@ -88,7 +88,10 @@ export function createGraphDefinition() {
 	} satisfies ROMDefinition;
 }
 
-export function createGraphSnapshot(value: number = 10, tableName = GRAPH_TABLE_NAME) {
+export function createGraphSnapshot(
+	value: number = 10,
+	tableName = GRAPH_TABLE_NAME,
+) {
 	return {
 		kind: "table2d",
 		name: tableName,

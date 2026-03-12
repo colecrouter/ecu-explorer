@@ -342,7 +342,9 @@ export async function activate(
 	graphPanelManager = new GraphPanelManager(
 		ctx,
 		(romPath: string) => {
-			const directDocument = editorProvider?.getDocument(vscode.Uri.file(romPath));
+			const directDocument = editorProvider?.getDocument(
+				vscode.Uri.file(romPath),
+			);
 			if (directDocument) {
 				return directDocument;
 			}

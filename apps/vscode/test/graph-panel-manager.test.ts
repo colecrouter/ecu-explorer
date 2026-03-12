@@ -75,7 +75,10 @@ describe("GraphPanelManager", () => {
 	let manager: GraphPanelManager;
 	let mockContext: MockExtensionContext;
 	let mockGetDocument: GetDocument;
-	let mockGetSnapshot: (romPath: string, tableId: string) => TableSnapshot | undefined;
+	let mockGetSnapshot: (
+		romPath: string,
+		tableId: string,
+	) => TableSnapshot | undefined;
 	let mockOnCellSelect: CellSelectHandler;
 	const createMockSnapshot = createGraphSnapshot;
 
@@ -659,7 +662,9 @@ describe("GraphPanelManager", () => {
 		});
 
 		it("should rebuild snapshot for restored panel when webview is ready", () => {
-			const restoredPanel = toWebviewPanel(createMockWebviewPanel("Graph: Test Table"));
+			const restoredPanel = toWebviewPanel(
+				createMockWebviewPanel("Graph: Test Table"),
+			);
 
 			manager.registerRestoredPanel(
 				restoredPanel,
