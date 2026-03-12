@@ -12,6 +12,11 @@
 	import { TableView, TableGrid } from "@ecu-explorer/ui";
 	import type { ThemeColors } from "@ecu-explorer/ui";
 	import { onMount } from "svelte";
+	import {
+		postRedoIntent,
+		postUndoIntent,
+		rebuildTableViewFromHostUpdate,
+	} from "./table-host-sync.js";
 
 	type TableGridInstance = {
 		focusActiveCell: () => void;
@@ -227,18 +232,9 @@
 
 		// Reload table view from updated ROM
 		if (tableView && definition) {
-			// Preserve transaction history when recreating TableView
-			const savedTransactions = [...tableView.history];
-			const savedUndone = [...tableView.redoHistory];
-
 			// Use updated ROM bytes if provided, otherwise use existing ROM
 			const rom = msg.rom ? new Uint8Array(msg.rom) : tableView["rom"];
-			tableView = new TableView(
-				rom,
-				definition,
-				savedTransactions,
-				savedUndone,
-			);
+			tableView = rebuildTableViewFromHostUpdate(TableView, definition, rom);
 		}
 	}
 
@@ -390,20 +386,12 @@
 	// Handle undo/redo from UI
 	function handleUndo() {
 		if (!tableView) return;
-		const transaction = tableView.undo();
-		if (transaction) {
-			// Notify extension for persistence
-			vscode.postMessage({ type: "undo" });
-		}
+		postUndoIntent(vscode);
 	}
 
 	function handleRedo() {
 		if (!tableView) return;
-		const transaction = tableView.redo();
-		if (transaction) {
-			// Notify extension for persistence
-			vscode.postMessage({ type: "redo" });
-		}
+		postRedoIntent(vscode);
 	}
 
 	// Handle cell edits - commit to host (reactive approach)

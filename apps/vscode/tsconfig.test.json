@@ -12,7 +12,9 @@
 	},
 	"include": ["src/**/*.ts", "test/**/*.ts"],
 	"exclude": [
-		"src/webview/**/*",
+		"src/webview/main.ts",
+		"src/webview/chart-main.ts",
+		"src/webview/live-data.ts",
 		"./**/*.svelte.test.ts",
 		"./**/*.svelte.spec.ts",
 		"node_modules/**"
