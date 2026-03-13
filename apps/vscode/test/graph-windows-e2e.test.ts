@@ -656,8 +656,9 @@ describe("Graph Windows E2E", () => {
 
 			expect(mockOpenCustomDocument).toHaveBeenCalledWith(
 				expect.objectContaining({
-					scheme: "file",
-					fsPath: path.normalize("/test/reload.hex"),
+					scheme: "ecu-table",
+					fsPath: path.normalize("/test/reload.hex/Test Table"),
+					query: "table=table1&name=Test+Table",
 				}),
 				{
 					backupId: undefined,

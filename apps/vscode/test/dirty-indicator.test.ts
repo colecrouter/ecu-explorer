@@ -12,11 +12,11 @@
  */
 
 import type { TableDefinition } from "@ecu-explorer/core";
+import { type EditTransaction, HistoryStack } from "@ecu-explorer/ui";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { RomDocument } from "../src/rom/document.js";
 import { TableDocument } from "../src/table-document.js";
-import { UndoRedoManager } from "../src/undo-redo-manager.js";
 
 // Minimal vscode.Uri-compatible object
 function makeUri(path: string): vscode.Uri {
@@ -103,95 +103,111 @@ describe("RomDocument dirty-state tracking", () => {
 
 	describe("Save-point dirty tracking", () => {
 		it("undoing back to the last saved state clears dirty after a post-save edit", () => {
-			const manager = new UndoRedoManager();
+			const history = new HistoryStack<EditTransaction>();
 
 			// Pre-save edit
 			doc.updateBytes(new Uint8Array([0xff, 0x02, 0x03, 0x04]));
-			manager.push({
-				row: 0,
-				col: 0,
-				oldValue: new Uint8Array([0x01]),
-				newValue: new Uint8Array([0xff]),
+			history.record({
+				label: "Edit cell",
 				timestamp: Date.now(),
+				edits: [
+					{
+						address: 0,
+						before: new Uint8Array([0x01]),
+						after: new Uint8Array([0xff]),
+					},
+				],
 			});
 
 			// Save current bytes
 			doc.makeClean();
-			manager.markSavePoint();
+			history.markSavePoint();
 			expect(doc.isDirty).toBe(false);
-			expect(manager.isAtSavePoint()).toBe(true);
+			expect(history.getSnapshot().atSavePoint).toBe(true);
 
 			// Post-save edit
 			doc.updateBytes(new Uint8Array([0xff, 0xee, 0x03, 0x04]), 1, 1, true);
-			manager.push({
-				row: 0,
-				col: 1,
-				oldValue: new Uint8Array([0x02]),
-				newValue: new Uint8Array([0xee]),
+			history.record({
+				label: "Edit cell",
 				timestamp: Date.now(),
+				edits: [
+					{
+						address: 1,
+						before: new Uint8Array([0x02]),
+						after: new Uint8Array([0xee]),
+					},
+				],
 			});
 			expect(doc.isDirty).toBe(true);
-			expect(manager.isAtSavePoint()).toBe(false);
+			expect(history.getSnapshot().atSavePoint).toBe(false);
 
 			// Undo the post-save edit: should return to the saved ROM state and clear dirty.
-			manager.undo();
-			if (manager.isAtSavePoint()) {
+			history.undo();
+			if (history.getSnapshot().atSavePoint) {
 				doc.makeClean();
 			}
 			doc.updateBytes(
 				new Uint8Array([0xff, 0x02, 0x03, 0x04]),
 				1,
 				1,
-				!manager.isAtSavePoint(),
+				!history.getSnapshot().atSavePoint,
 			);
 
 			expect(doc.isDirty).toBe(false);
 		});
 
 		it("redoing away from the save point marks the document dirty again", () => {
-			const manager = new UndoRedoManager();
+			const history = new HistoryStack<EditTransaction>();
 
 			doc.updateBytes(new Uint8Array([0xff, 0x02, 0x03, 0x04]));
-			manager.push({
-				row: 0,
-				col: 0,
-				oldValue: new Uint8Array([0x01]),
-				newValue: new Uint8Array([0xff]),
+			history.record({
+				label: "Edit cell",
 				timestamp: Date.now(),
+				edits: [
+					{
+						address: 0,
+						before: new Uint8Array([0x01]),
+						after: new Uint8Array([0xff]),
+					},
+				],
 			});
 			doc.makeClean();
-			manager.markSavePoint();
+			history.markSavePoint();
 
 			doc.updateBytes(new Uint8Array([0xff, 0xee, 0x03, 0x04]), 1, 1, true);
-			manager.push({
-				row: 0,
-				col: 1,
-				oldValue: new Uint8Array([0x02]),
-				newValue: new Uint8Array([0xee]),
+			history.record({
+				label: "Edit cell",
 				timestamp: Date.now(),
+				edits: [
+					{
+						address: 1,
+						before: new Uint8Array([0x02]),
+						after: new Uint8Array([0xee]),
+					},
+				],
 			});
 
-			manager.undo();
-			if (manager.isAtSavePoint()) {
+			history.undo();
+			if (history.getSnapshot().atSavePoint) {
 				doc.makeClean();
 			}
 			doc.updateBytes(
 				new Uint8Array([0xff, 0x02, 0x03, 0x04]),
 				1,
 				1,
-				!manager.isAtSavePoint(),
+				!history.getSnapshot().atSavePoint,
 			);
 			expect(doc.isDirty).toBe(false);
 
-			manager.redo();
-			if (manager.isAtSavePoint()) {
+			history.redo();
+			if (history.getSnapshot().atSavePoint) {
 				doc.makeClean();
 			}
 			doc.updateBytes(
 				new Uint8Array([0xff, 0xee, 0x03, 0x04]),
 				1,
 				1,
-				!manager.isAtSavePoint(),
+				!history.getSnapshot().atSavePoint,
 			);
 
 			expect(doc.isDirty).toBe(true);

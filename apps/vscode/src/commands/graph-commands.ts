@@ -69,6 +69,7 @@ export async function handleOpenGraph(
 	let tableName: string | null = state.activeTableDef?.name ?? null;
 	let tableDef: TableDefinition | null = state.activeTableDef;
 	let panel: vscode.WebviewPanel | null = state.activePanel;
+	let definitionUri: string | undefined;
 
 	if (activeTab?.input instanceof vscode.TabInputCustom) {
 		const uri = activeTab.input.uri;
@@ -82,6 +83,7 @@ export async function handleOpenGraph(
 			tableId = tableDoc.tableId;
 			tableName = tableDoc.tableDef.name;
 			tableDef = tableDoc.tableDef;
+			definitionUri = tableDoc.romDocument.definition.uri;
 			rom = {
 				id: tableDoc.romDocument.uri.toString(),
 				romUri: tableDoc.romDocument.uri.toString(),
@@ -114,6 +116,7 @@ export async function handleOpenGraph(
 			tableName,
 			snapshot,
 			chartType,
+			definitionUri,
 		);
 	} catch (error) {
 		vscode.window.showErrorMessage(
@@ -169,6 +172,7 @@ export async function handleOpenGraphParameterized(
 				tableName,
 				snapshot,
 				chartType,
+				document.definition.uri,
 			);
 		} catch (error) {
 			vscode.window.showErrorMessage(

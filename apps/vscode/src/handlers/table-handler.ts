@@ -335,8 +335,6 @@ export async function handleTableOpen(
 		throw new Error("Failed to get table edit session for table");
 	}
 	tableSession.setPanel(panel);
-	const undoRedoManager = tableSession.undoRedoManager;
-
 	// Compute snapshot
 	const snapshot = snapshotTable(selectedTable, rom.bytes);
 	let didInit = false;
@@ -404,9 +402,9 @@ export async function handleTableOpen(
 					value: Uint8Array;
 					label?: string;
 				};
-				// Handle cell edits directly with per-tab undo/redo manager
-				if (!activeRom || !undoRedoManager) {
-					console.log("[DEBUG] cellEdit: Missing activeRom or undoRedoManager");
+				// Handle cell edits directly with per-tab session
+				if (!activeRom) {
+					console.log("[DEBUG] cellEdit: Missing activeRom");
 					return;
 				}
 
@@ -497,7 +495,7 @@ export async function handleTableOpen(
 					snapshot: newSnapshot,
 				});
 				console.log(
-					`[DEBUG] cellEdit handled, canUndo=${undoRedoManager.canUndo()}`,
+					`[DEBUG] cellEdit handled, canUndo=${tableSession.canUndo}`,
 				);
 				return;
 			}

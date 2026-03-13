@@ -1,22 +1,13 @@
-import type { RomInstance, TableDefinition } from "@ecu-explorer/core";
 import * as vscode from "vscode";
 import type { TableEditSession } from "../history/table-edit-session.js";
-import type { RomDocument } from "../rom/document.js";
-import type { UndoRedoManager } from "../undo-redo-manager.js";
 
 /**
  * Get references to extension state
  */
 let getStateRefs:
 	| (() => {
-			activeRom: RomInstance | null;
 			activePanel: vscode.WebviewPanel | null;
-			activeTableDef: TableDefinition | null;
 			activeTableSession: TableEditSession | null;
-			undoRedoManager: UndoRedoManager | null;
-			getRomDocumentForPanel: (
-				panel: vscode.WebviewPanel,
-			) => RomDocument | undefined;
 	  })
 	| null = null;
 
@@ -199,7 +190,10 @@ export async function handleMathOpSmooth(): Promise<void> {
 		return;
 	}
 
-	if (!state.activeTableDef || state.activeTableDef.kind === "table1d") {
+	if (
+		!state.activeTableSession ||
+		state.activeTableSession.tableDef.kind === "table1d"
+	) {
 		vscode.window.showErrorMessage(
 			"Smooth operation is only available for 2D and 3D tables",
 		);

@@ -46,7 +46,6 @@ import { createTableUri, parseTableUri } from "./table-fs-uri.js";
 import { getThemeColors } from "./theme-colors.js";
 import type { RomTreeItem } from "./tree/rom-tree-item.js";
 import { RomExplorerTreeProvider } from "./tree/rom-tree-provider.js";
-import type { UndoRedoManager } from "./undo-redo-manager.js";
 import { WorkspaceState } from "./workspace-state.js";
 
 type ActivationOptions = {
@@ -71,9 +70,7 @@ let activeTableDef: TableDefinition | null = null;
 /** Per-tab edit sessions keyed by table URI string */
 const tableSessions = new Map<string, TableEditSession>();
 let activeTableSession: TableEditSession | null = null;
-/** The active undo/redo manager for the currently focused tab */
-let undoRedoManager: UndoRedoManager | null = null;
-/** Key (table URI string) used to look up the active undoRedoManager in the map */
+/** Active table panel for the currently focused table session */
 let activePanel: vscode.WebviewPanel | null = null;
 // statusBarItem removed - using VSCode's built-in dirty state indicator
 let treeProvider: RomExplorerTreeProvider | null = null;
@@ -452,7 +449,6 @@ export async function activate(
 	setCellEditHandlerContext(() => ({
 		activeRom,
 		activeTableSession,
-		undoRedoManager,
 		getRomDocumentForPanel: (panel: vscode.WebviewPanel) =>
 			panelToDocument.get(panel),
 		decodeScalarBytes,
@@ -471,13 +467,8 @@ export async function activate(
 	}));
 
 	setEditCommandsContext(() => ({
-		activeRom,
 		activePanel,
-		activeTableDef,
 		activeTableSession,
-		undoRedoManager,
-		getRomDocumentForPanel: (panel: vscode.WebviewPanel) =>
-			panelToDocument.get(panel),
 	}));
 
 	setGraphCommandsContext(() => ({
@@ -1311,7 +1302,6 @@ export async function activate(
 					// Switch to the per-tab session for the newly-active tab
 					const tabKey = activeTab.input.uri.toString();
 					activeTableSession = tableSessions.get(tabKey) ?? null;
-					undoRedoManager = activeTableSession?.undoRedoManager ?? null;
 
 					// Update tree to show active table
 					if (treeProvider) {
@@ -1664,6 +1654,7 @@ async function handleOpenGraph(chartType?: "line" | "heatmap"): Promise<void> {
 	try {
 		// Get ROM path from active ROM
 		const romPath = vscode.Uri.parse(rom.romUri).fsPath;
+		const definitionUri = activeTableSession?.romDocument.definition?.uri;
 
 		// Get current snapshot
 		const snapshot = snapshotTable(tableDef, rom.bytes);
@@ -1675,6 +1666,7 @@ async function handleOpenGraph(chartType?: "line" | "heatmap"): Promise<void> {
 			tableName,
 			snapshot,
 			chartType,
+			definitionUri,
 		);
 	} catch (error) {
 		vscode.window.showErrorMessage(
@@ -1728,6 +1720,7 @@ async function handleOpenGraphParameterized(
 				tableName,
 				snapshot,
 				chartType,
+				document.definition.uri,
 			);
 		} catch (error) {
 			vscode.window.showErrorMessage(

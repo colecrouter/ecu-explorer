@@ -8,7 +8,6 @@ import type { EditTransaction } from "@ecu-explorer/ui";
 import type * as vscode from "vscode";
 import type { TableEditSession } from "../history/table-edit-session.js";
 import type { RomDocument } from "../rom/document.js";
-import type { UndoRedoManager } from "../undo-redo-manager.js";
 
 /**
  * Get references to extension state
@@ -17,7 +16,6 @@ let getStateRefs:
 	| (() => {
 			activeRom: RomInstance | null;
 			activeTableSession: TableEditSession | null;
-			undoRedoManager: UndoRedoManager | null;
 			getRomDocumentForPanel: (
 				panel: vscode.WebviewPanel,
 			) => RomDocument | undefined;
@@ -108,8 +106,10 @@ export function handleCellEdit(
 ): void {
 	const state = getState();
 
-	if (!state.activeRom || !state.undoRedoManager) {
-		console.log("[DEBUG] handleCellEdit: Missing activeRom or undoRedoManager");
+	if (!state.activeRom || !state.activeTableSession) {
+		console.log(
+			"[DEBUG] handleCellEdit: Missing activeRom or activeTableSession",
+		);
 		return;
 	}
 
@@ -161,9 +161,9 @@ export function handleCellEdit(
 			},
 		],
 	};
-	state.activeTableSession?.recordTransaction(transaction);
+	state.activeTableSession.recordTransaction(transaction);
 	console.log(
-		`[DEBUG] handleCellEdit: Pushed to undo stack, canUndo=${state.activeTableSession?.canUndo ?? state.undoRedoManager.canUndo()}`,
+		`[DEBUG] handleCellEdit: Pushed to undo stack, canUndo=${state.activeTableSession.canUndo}`,
 	);
 
 	// Apply change to ROM

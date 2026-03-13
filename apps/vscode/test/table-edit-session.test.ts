@@ -49,14 +49,19 @@ describe("TableEditSession", () => {
 	it("owns an undo manager and can mark the current state as saved", () => {
 		const session = makeSession();
 
-		session.undoRedoManager.push({
-			row: 0,
-			col: 0,
-			oldValue: new Uint8Array([0x10]),
-			newValue: new Uint8Array([0xee]),
+		session.recordTransaction({
+			label: "Edit cell",
 			timestamp: Date.now(),
+			edits: [
+				{
+					address: 0,
+					before: new Uint8Array([0x10]),
+					after: new Uint8Array([0xee]),
+					metadata: { row: 0, col: 0 },
+				},
+			],
 		});
-		expect(session.undoRedoManager.isAtSavePoint()).toBe(false);
+		expect(session.isAtSavePoint()).toBe(false);
 
 		session.markSaved();
 
@@ -70,12 +75,17 @@ describe("TableEditSession", () => {
 			new Uint8Array([0x10]),
 		);
 
-		session.undoRedoManager.push({
-			row: 0,
-			col: 0,
-			oldValue: new Uint8Array([0x10]),
-			newValue: new Uint8Array([0xee]),
+		session.recordTransaction({
+			label: "Edit cell",
 			timestamp: Date.now(),
+			edits: [
+				{
+					address: 0,
+					before: new Uint8Array([0x10]),
+					after: new Uint8Array([0xee]),
+					metadata: { row: 0, col: 0 },
+				},
+			],
 		});
 
 		expect(session.markSavedIfForRom(otherRomDocument)).toBe(false);
@@ -136,22 +146,23 @@ describe("TableEditSession", () => {
 			],
 		});
 
-		expect(session.undoRedoManager.canUndo()).toBe(true);
-		const entry = session.undoRedoManager.undo();
-		expect(entry).not.toBeNull();
+		expect(session.canUndo).toBe(true);
 	});
 
 	it("undoes through the session and returns an update message", () => {
 		const session = makeSession();
 
-		session.undoRedoManager.push({
-			row: 0,
-			col: 0,
-			address: 1,
-			oldValue: new Uint8Array([0x20]),
-			newValue: new Uint8Array([0xee]),
-			timestamp: Date.now(),
+		session.recordTransaction({
 			label: "Edit cell",
+			timestamp: Date.now(),
+			edits: [
+				{
+					address: 1,
+					before: new Uint8Array([0x20]),
+					after: new Uint8Array([0xee]),
+					metadata: { row: 0, col: 0 },
+				},
+			],
 		});
 		session.romDocument.romBytes.set(new Uint8Array([0xee]), 1);
 		session.romDocument.updateBytes(session.romDocument.romBytes, 1, 1, true);

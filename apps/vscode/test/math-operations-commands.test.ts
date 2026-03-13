@@ -1,4 +1,9 @@
 import type { TableDefinition } from "@ecu-explorer/core";
+import {
+	type Edit,
+	type EditTransaction,
+	HistoryStack,
+} from "@ecu-explorer/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import {
@@ -9,11 +14,6 @@ import {
 	setEditCommandsContext,
 } from "../src/commands/edit-commands.js";
 import { activate } from "../src/extension.js";
-import {
-	type EditOperation,
-	isBatchEdit,
-	UndoRedoManager,
-} from "../src/undo-redo-manager.js";
 import { WorkspaceState } from "../src/workspace-state.js";
 import {
 	createExtensionContext,
@@ -104,11 +104,31 @@ vi.mock("node:fs/promises", () => ({
 	readFile: vi.fn().mockResolvedValue(new Uint8Array(0)),
 }));
 
-function getRequiredAddress(op: EditOperation): number {
-	if (op.address === undefined) {
-		throw new Error("Expected edit operation address to be defined");
-	}
-	return op.address;
+function getRequiredAddress(edit: Edit<Uint8Array>): number {
+	return edit.address;
+}
+
+function makeEdit(
+	address: number,
+	oldByte: number,
+	newByte: number,
+): Edit<Uint8Array> {
+	return {
+		address,
+		before: new Uint8Array([oldByte]),
+		after: new Uint8Array([newByte]),
+	};
+}
+
+function makeTransaction(
+	edits: readonly Edit<Uint8Array>[],
+	label: string,
+): EditTransaction<Edit<Uint8Array>> {
+	return {
+		label,
+		timestamp: Date.now(),
+		edits,
+	};
 }
 
 function setMathCommandState(options?: {
@@ -116,12 +136,13 @@ function setMathCommandState(options?: {
 	activeTableDef?: TableDefinition | null;
 }): void {
 	setEditCommandsContext(() => ({
-		activeRom: null,
 		activePanel: options?.activePanel ?? null,
-		activeTableDef: options?.activeTableDef ?? null,
-		activeTableSession: null,
-		undoRedoManager: null,
-		getRomDocumentForPanel: () => undefined,
+		activeTableSession:
+			options?.activeTableDef === undefined || options.activeTableDef === null
+				? null
+				: ({
+						tableDef: options.activeTableDef,
+					} as never),
 	}));
 }
 
@@ -441,127 +462,78 @@ describe("Math Operations Commands", () => {
 	});
 
 	/**
-	 * Unit tests for the UndoRedoManager batch undo logic.
+	 * Unit tests for shared batch history behavior used by math operations.
 	 *
-	 * These tests use the real UndoRedoManager from undo-redo-manager.ts to verify
-	 * that math operations are correctly tracked and undone as a single batch.
+	 * These tests use the shared HistoryStack to verify that math operations are
+	 * tracked and undone as a single transaction.
 	 */
 	describe("Math Operation Undo Behavior", () => {
-		let manager: UndoRedoManager;
+		let history: HistoryStack<EditTransaction<Edit<Uint8Array>>>;
 
 		beforeEach(() => {
-			manager = new UndoRedoManager();
+			history = new HistoryStack<EditTransaction<Edit<Uint8Array>>>();
 		});
 
-		describe("pushBatch", () => {
+		describe("record", () => {
 			it("should push a batch of operations as a single undo unit", () => {
-				const ops: EditOperation[] = [
-					{
-						row: 0,
-						col: 0,
-						address: 0x100,
-						oldValue: new Uint8Array([0x10]),
-						newValue: new Uint8Array([0x20]),
-						timestamp: Date.now(),
-					},
-					{
-						row: 0,
-						col: 1,
-						address: 0x101,
-						oldValue: new Uint8Array([0x30]),
-						newValue: new Uint8Array([0x40]),
-						timestamp: Date.now(),
-					},
-				];
+				history.record(
+					makeTransaction(
+						[makeEdit(0x100, 0x10, 0x20), makeEdit(0x101, 0x30, 0x40)],
+						"Math op: add",
+					),
+				);
 
-				manager.pushBatch(ops, "Math op: add");
-
-				expect(manager.canUndo()).toBe(true);
-				expect(manager.isAtInitialState()).toBe(false);
+				const snapshot = history.getSnapshot();
+				expect(snapshot.canUndo).toBe(true);
+				expect(snapshot.atInitialState).toBe(false);
 			});
 
 			it("should not push empty batch", () => {
-				manager.pushBatch([], "Empty batch");
-
-				expect(manager.canUndo()).toBe(false);
-				expect(manager.isAtInitialState()).toBe(true);
+				const snapshot = history.getSnapshot();
+				expect(snapshot.canUndo).toBe(false);
+				expect(snapshot.atInitialState).toBe(true);
 			});
 
 			it("should clear redo stack when batch is pushed", () => {
 				// Push a single op and undo it to populate redo stack
-				manager.push({
-					row: 0,
-					col: 0,
-					oldValue: new Uint8Array([0x10]),
-					newValue: new Uint8Array([0x20]),
-					timestamp: Date.now(),
-				});
-				manager.undo();
-				expect(manager.canRedo()).toBe(true);
+				history.record(
+					makeTransaction([makeEdit(0, 0x10, 0x20)], "Single edit"),
+				);
+				history.undo();
+				expect(history.getSnapshot().canRedo).toBe(true);
 
 				// Push a batch — should clear redo stack
-				manager.pushBatch(
-					[
-						{
-							row: 0,
-							col: 0,
-							address: 0x100,
-							oldValue: new Uint8Array([0x10]),
-							newValue: new Uint8Array([0x20]),
-							timestamp: Date.now(),
-						},
-					],
-					"Math op",
+				history.record(
+					makeTransaction([makeEdit(0x100, 0x10, 0x20)], "Math op"),
 				);
 
-				expect(manager.canRedo()).toBe(false);
+				expect(history.getSnapshot().canRedo).toBe(false);
 			});
 		});
 
 		describe("batch undo", () => {
 			it("should undo all ops in a batch as a single unit", () => {
 				const romBytes = new Uint8Array([0x10, 0x20, 0x30, 0x40]);
-				const ops: EditOperation[] = [
-					{
-						row: 0,
-						col: 0,
-						address: 0,
-						oldValue: new Uint8Array([0x10]),
-						newValue: new Uint8Array([0xaa]),
-						timestamp: Date.now(),
-					},
-					{
-						row: 0,
-						col: 1,
-						address: 1,
-						oldValue: new Uint8Array([0x20]),
-						newValue: new Uint8Array([0xbb]),
-						timestamp: Date.now(),
-					},
-				];
+				const edits = [makeEdit(0, 0x10, 0xaa), makeEdit(1, 0x20, 0xbb)];
 
 				// Apply the math op
-				for (const op of ops) {
-					romBytes.set(op.newValue, getRequiredAddress(op));
+				for (const edit of edits) {
+					romBytes.set(edit.after, getRequiredAddress(edit));
 				}
-				manager.pushBatch(ops, "Math op: add");
+				history.record(makeTransaction(edits, "Math op: add"));
 
 				expect(romBytes[0]).toBe(0xaa);
 				expect(romBytes[1]).toBe(0xbb);
 
 				// Undo the batch
-				const entry = manager.undo();
+				const entry = history.undo();
 				expect(entry).not.toBeNull();
 				if (entry === null) {
 					throw new Error("Expected batch entry to exist");
 				}
-				expect(isBatchEdit(entry)).toBe(true);
 
-				if (entry && isBatchEdit(entry)) {
-					// Revert all ops in reverse order
-					for (const op of [...entry.ops].reverse()) {
-						romBytes.set(op.oldValue, getRequiredAddress(op));
-					}
+				for (const edit of [...entry.transaction.edits].reverse()) {
+					romBytes.set(edit.before, getRequiredAddress(edit));
 				}
 
 				expect(romBytes[0]).toBe(0x10);
@@ -572,76 +544,47 @@ describe("Math Operations Commands", () => {
 			});
 
 			it("should move batch to redo stack after undo", () => {
-				manager.pushBatch(
-					[
-						{
-							row: 0,
-							col: 0,
-							address: 0x100,
-							oldValue: new Uint8Array([0x10]),
-							newValue: new Uint8Array([0x20]),
-							timestamp: Date.now(),
-						},
-					],
-					"Math op",
+				history.record(
+					makeTransaction([makeEdit(0x100, 0x10, 0x20)], "Math op"),
 				);
 
-				manager.undo();
+				history.undo();
 
-				expect(manager.canUndo()).toBe(false);
-				expect(manager.canRedo()).toBe(true);
-				expect(manager.isAtInitialState()).toBe(true);
+				const snapshot = history.getSnapshot();
+				expect(snapshot.canUndo).toBe(false);
+				expect(snapshot.canRedo).toBe(true);
+				expect(snapshot.atInitialState).toBe(true);
 			});
 
 			it("should redo a batch after undo", () => {
 				const romBytes = new Uint8Array([0x10, 0x20]);
-				const ops: EditOperation[] = [
-					{
-						row: 0,
-						col: 0,
-						address: 0,
-						oldValue: new Uint8Array([0x10]),
-						newValue: new Uint8Array([0xaa]),
-						timestamp: Date.now(),
-					},
-					{
-						row: 0,
-						col: 1,
-						address: 1,
-						oldValue: new Uint8Array([0x20]),
-						newValue: new Uint8Array([0xbb]),
-						timestamp: Date.now(),
-					},
-				];
+				const edits = [makeEdit(0, 0x10, 0xaa), makeEdit(1, 0x20, 0xbb)];
 
 				// Apply math op
-				for (const op of ops) {
-					romBytes.set(op.newValue, getRequiredAddress(op));
+				for (const edit of edits) {
+					romBytes.set(edit.after, getRequiredAddress(edit));
 				}
-				manager.pushBatch(ops, "Math op: add");
+				history.record(makeTransaction(edits, "Math op: add"));
 
 				// Undo
-				const undoEntry = manager.undo();
-				if (undoEntry && isBatchEdit(undoEntry)) {
-					for (const op of [...undoEntry.ops].reverse()) {
-						romBytes.set(op.oldValue, getRequiredAddress(op));
+				const undoEntry = history.undo();
+				if (undoEntry) {
+					for (const edit of [...undoEntry.transaction.edits].reverse()) {
+						romBytes.set(edit.before, getRequiredAddress(edit));
 					}
 				}
 				expect(romBytes[0]).toBe(0x10);
 				expect(romBytes[1]).toBe(0x20);
 
 				// Redo
-				const redoEntry = manager.redo();
+				const redoEntry = history.redo();
 				expect(redoEntry).not.toBeNull();
 				if (redoEntry === null) {
 					throw new Error("Expected batch entry to exist on redo");
 				}
-				expect(isBatchEdit(redoEntry)).toBe(true);
 
-				if (redoEntry && isBatchEdit(redoEntry)) {
-					for (const op of redoEntry.ops) {
-						romBytes.set(op.newValue, getRequiredAddress(op));
-					}
+				for (const edit of redoEntry.transaction.edits) {
+					romBytes.set(edit.after, getRequiredAddress(edit));
 				}
 				expect(romBytes[0]).toBe(0xaa);
 				expect(romBytes[1]).toBe(0xbb);
@@ -661,42 +604,36 @@ describe("Math Operations Commands", () => {
 				];
 
 				// Simulate the mathOpComplete handler logic
-				const batchOps: EditOperation[] = [];
+				const batchEdits: Edit<Uint8Array>[] = [];
 				for (const edit of mathEdits) {
 					const newValue = new Uint8Array(edit.after);
 					const oldValue = romBytes.slice(
 						edit.address,
 						edit.address + newValue.length,
 					);
-					batchOps.push({
-						row: 0,
-						col: 0,
+					batchEdits.push({
 						address: edit.address,
-						oldValue,
-						newValue,
-						timestamp: Date.now(),
+						before: oldValue,
+						after: newValue,
 						label: "Math op: add",
 					});
 					romBytes.set(newValue, edit.address);
 				}
-				manager.pushBatch(batchOps, "Math op: add (2 cells)");
+				history.record(makeTransaction(batchEdits, "Math op: add (2 cells)"));
 
 				// Verify ROM was updated
 				expect(romBytes[0]).toBe(0xaa);
 				expect(romBytes[1]).toBe(0xbb);
 
 				// Simulate undo
-				const entry = manager.undo();
+				const entry = history.undo();
 				expect(entry).not.toBeNull();
 				if (entry === null) {
 					throw new Error("Expected batch entry to exist");
 				}
-				expect(isBatchEdit(entry)).toBe(true);
 
-				if (entry && isBatchEdit(entry)) {
-					for (const op of [...entry.ops].reverse()) {
-						romBytes.set(op.oldValue, getRequiredAddress(op));
-					}
+				for (const edit of [...entry.transaction.edits].reverse()) {
+					romBytes.set(edit.before, getRequiredAddress(edit));
 				}
 
 				// ROM should be back to original state
@@ -709,24 +646,24 @@ describe("Math Operations Commands", () => {
 			it("should not push to undo stack if no edits in mathOpComplete", () => {
 				// Simulate mathOpComplete with empty edits
 				const mathEdits: { address: number; after: number[] }[] = [];
-				const batchOps: EditOperation[] = [];
+				const batchEdits: Edit<Uint8Array>[] = [];
 
 				for (const edit of mathEdits) {
 					const newValue = new Uint8Array(edit.after);
-					batchOps.push({
-						row: 0,
-						col: 0,
+					batchEdits.push({
 						address: edit.address,
-						oldValue: new Uint8Array(0),
-						newValue,
-						timestamp: Date.now(),
+						before: new Uint8Array(0),
+						after: newValue,
 					});
 				}
-				manager.pushBatch(batchOps, "Math op: add (0 cells)");
+				if (batchEdits.length > 0) {
+					history.record(makeTransaction(batchEdits, "Math op: add (0 cells)"));
+				}
 
 				// No ops pushed — undo stack should be empty
-				expect(manager.canUndo()).toBe(false);
-				expect(manager.isAtInitialState()).toBe(true);
+				const snapshot = history.getSnapshot();
+				expect(snapshot.canUndo).toBe(false);
+				expect(snapshot.atInitialState).toBe(true);
 			});
 
 			it("should interleave correctly with single cell edits", () => {
@@ -736,72 +673,68 @@ describe("Math Operations Commands", () => {
 				const singleOldValue = romBytes.slice(0, 1);
 				const singleNewValue = new Uint8Array([0x55]);
 				romBytes.set(singleNewValue, 0);
-				manager.push({
-					row: 0,
-					col: 0,
-					address: 0,
-					oldValue: singleOldValue,
-					newValue: singleNewValue,
-					timestamp: Date.now(),
-					label: "Edit cell (0, 0)",
-				});
+				history.record(
+					makeTransaction(
+						[
+							{
+								address: 0,
+								before: singleOldValue,
+								after: singleNewValue,
+								label: "Edit cell (0, 0)",
+							},
+						],
+						"Edit cell (0, 0)",
+					),
+				);
 
 				// Math op on cells 1 and 2
 				const mathEdits = [
 					{ address: 1, after: [0xaa] },
 					{ address: 2, after: [0xbb] },
 				];
-				const batchOps: EditOperation[] = [];
+				const batchEdits: Edit<Uint8Array>[] = [];
 				for (const edit of mathEdits) {
 					const newValue = new Uint8Array(edit.after);
 					const oldValue = romBytes.slice(
 						edit.address,
 						edit.address + newValue.length,
 					);
-					batchOps.push({
-						row: 0,
-						col: 0,
+					batchEdits.push({
 						address: edit.address,
-						oldValue,
-						newValue,
-						timestamp: Date.now(),
+						before: oldValue,
+						after: newValue,
 					});
 					romBytes.set(newValue, edit.address);
 				}
-				manager.pushBatch(batchOps, "Math op: add");
+				history.record(makeTransaction(batchEdits, "Math op: add"));
 
 				expect(romBytes).toEqual(new Uint8Array([0x55, 0xaa, 0xbb]));
 
 				// Undo math op (batch)
-				const batchEntry = manager.undo();
+				const batchEntry = history.undo();
 				if (batchEntry === null) {
 					throw new Error("Expected batch entry to exist");
 				}
-				expect(isBatchEdit(batchEntry)).toBe(true);
-				if (batchEntry && isBatchEdit(batchEntry)) {
-					for (const op of [...batchEntry.ops].reverse()) {
-						romBytes.set(op.oldValue, getRequiredAddress(op));
-					}
+				for (const edit of [...batchEntry.transaction.edits].reverse()) {
+					romBytes.set(edit.before, getRequiredAddress(edit));
 				}
 				expect(romBytes).toEqual(new Uint8Array([0x55, 0x20, 0x30]));
 
 				// Undo single cell edit
-				const singleEntry = manager.undo();
+				const singleEntry = history.undo();
 				if (singleEntry === null) {
 					throw new Error("Expected single entry to exist");
 				}
-				expect(isBatchEdit(singleEntry)).toBe(false);
-				if (singleEntry && !isBatchEdit(singleEntry)) {
-					const address = singleEntry.address;
-					if (address === undefined) {
-						throw new Error("Expected single entry address to be defined");
-					}
-					romBytes.set(singleEntry.oldValue, address);
+				expect(singleEntry.transaction.edits).toHaveLength(1);
+				const [singleEdit] = singleEntry.transaction.edits;
+				if (!singleEdit) {
+					throw new Error("Expected single edit to exist");
 				}
+				romBytes.set(singleEdit.before, singleEdit.address);
 				expect(romBytes).toEqual(new Uint8Array([0x10, 0x20, 0x30]));
 
 				// Should be back to initial state
-				expect(manager.isAtInitialState()).toBe(true);
+				expect(history.getSnapshot().atInitialState).toBe(true);
 			});
 		});
 	});

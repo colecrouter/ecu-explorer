@@ -32,6 +32,7 @@ interface PanelContext {
 	romPath: string;
 	tableId: string;
 	tableName: string;
+	definitionUri?: string;
 	snapshot?: TableSnapshot;
 	preferredChartType?: "line" | "heatmap" | undefined;
 	disposables: vscode.Disposable[];
@@ -103,6 +104,7 @@ export class GraphPanelManager {
 		tableName: string,
 		snapshot: TableSnapshot,
 		preferredChartType?: "line" | "heatmap",
+		definitionUri?: string,
 	): vscode.WebviewPanel {
 		// Check if panel already exists
 		const existing = this.panels.get(romPath)?.get(tableId);
@@ -112,6 +114,9 @@ export class GraphPanelManager {
 			const context = this.panelContext.get(existing);
 			if (context) {
 				context.preferredChartType = preferredChartType;
+				if (definitionUri !== undefined) {
+					context.definitionUri = definitionUri;
+				}
 			}
 
 			// Send updated snapshot and preferred type to existing panel
@@ -148,6 +153,7 @@ export class GraphPanelManager {
 			tableName,
 			snapshot,
 			preferredChartType,
+			definitionUri,
 		);
 
 		// Set up message handler
@@ -183,13 +189,22 @@ export class GraphPanelManager {
 		romPath: string,
 		tableId: string,
 		tableName: string,
+		definitionUri?: string,
 	): void {
 		console.log(
 			`[GraphPanelManager] Registering restored panel: ROM=${romPath}, table=${tableId}`,
 		);
 
 		// Track panel
-		this.trackPanel(panel, romPath, tableId, tableName);
+		this.trackPanel(
+			panel,
+			romPath,
+			tableId,
+			tableName,
+			undefined,
+			undefined,
+			definitionUri,
+		);
 
 		// Set up message handler
 		panel.webview.onDidReceiveMessage(
@@ -381,6 +396,9 @@ export class GraphPanelManager {
 			tableId: context.tableId,
 			tableName: context.tableName,
 			romPath: context.romPath,
+			...(context.definitionUri
+				? { definitionUri: context.definitionUri }
+				: {}),
 			preferredChartType: context.preferredChartType,
 			themeColors,
 		});
@@ -419,6 +437,7 @@ export class GraphPanelManager {
 		tableName: string,
 		snapshot?: TableSnapshot,
 		preferredChartType?: "line" | "heatmap",
+		definitionUri?: string,
 	): void {
 		let romPanels = this.panels.get(romPath);
 		if (!romPanels) {
@@ -453,6 +472,7 @@ export class GraphPanelManager {
 			romPath,
 			tableId,
 			tableName,
+			...(definitionUri ? { definitionUri } : {}),
 			...(snapshot !== undefined && { snapshot }),
 			preferredChartType,
 			disposables,

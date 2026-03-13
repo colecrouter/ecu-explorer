@@ -39,6 +39,7 @@
 	let tableId = $state("");
 	let tableName = $state("");
 	let romPath = $state("");
+	let definitionUri = $state("");
 	let isReady = $state(false);
 	let themeColors = $state<ThemeColors | undefined>(undefined);
 
@@ -46,6 +47,7 @@
 		romPath: string;
 		tableId: string;
 		tableName: string;
+		definitionUri?: string;
 		zoom?: number;
 		pan?: { x: number; y: number };
 		layer?: number;
@@ -58,6 +60,7 @@
 		tableId = persistedState.tableId ?? "";
 		tableName = persistedState.tableName ?? "";
 		romPath = persistedState.romPath ?? "";
+		definitionUri = persistedState.definitionUri ?? "";
 	}
 
 	// Sync chartState with snapshot reactively
@@ -87,6 +90,7 @@
 			romPath,
 			tableId,
 			tableName,
+			...(definitionUri ? { definitionUri } : {}),
 		} satisfies PersistedGraphPanelState);
 	});
 
@@ -137,6 +141,7 @@
 		tableId: string;
 		tableName: string;
 		romPath: string;
+		definitionUri?: string;
 		preferredChartType?: "line" | "heatmap";
 		themeColors?: ThemeColors;
 	}) {
@@ -144,6 +149,7 @@
 		tableId = message.tableId;
 		tableName = message.tableName;
 		romPath = message.romPath;
+		definitionUri = message.definitionUri ?? "";
 
 		if (message.preferredChartType) {
 			chartState.setChartType(message.preferredChartType);
