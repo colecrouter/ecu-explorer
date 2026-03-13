@@ -197,17 +197,37 @@ export class Mut3Protocol implements EcuProtocol {
 	 * Probe the connection to determine if this protocol can communicate
 	 * with the connected ECU.
 	 *
-	 * Returns true if the device is an OpenPort 2.0 (transportName === "openport2")
-	 * for CAN-based MUT-III, or a K-line transport (transportName === "kline")
-	 * for older Mitsubishi ECUs using the E0/E5/E1 command sequence.
+	 * Returns true for K-line transports, where MUT-III RAX/ROM commands are
+	 * observed (legacy serial path), and for OpenPort 2.0 transports that
+	 * respond as expected to both the diagnostic-session and seed-request pair
+	 * used by the MUT-III flow.
 	 *
 	 * @param connection - Active device connection to probe
 	 */
 	async canHandle(connection: DeviceConnection): Promise<boolean> {
-		return (
-			connection.deviceInfo.transportName === "openport2" ||
-			connection.deviceInfo.transportName === "kline"
-		);
+		if (connection.deviceInfo.transportName === "kline") {
+			return true;
+		}
+
+		if (connection.deviceInfo.transportName !== "openport2") {
+			return false;
+		}
+
+		try {
+			const sessionResponse = await connection.sendFrame(
+				new Uint8Array([SID_DIAGNOSTIC_SESSION_CONTROL, 0x03]),
+			);
+			if (sessionResponse[0] !== 0x50 || sessionResponse[1] !== 0x03) {
+				return false;
+			}
+
+			const seedResponse = await connection.sendFrame(
+				new Uint8Array([SID_SECURITY_ACCESS, 0x01]),
+			);
+			return seedResponse[0] === 0x67 && seedResponse[1] === 0x01;
+		} catch {
+			return false;
+		}
 	}
 
 	/**
@@ -523,7 +543,9 @@ export class Mut2Protocol extends Mut3Protocol {
 	 * with the connected ECU.
 	 *
 	 * This adapter gates on OpenPort 2.0 transport and verifies that the ECU
-	 * accepts the extended-diagnostic-session UDS probe used by the MUT stack.
+	 * accepts the extended-diagnostic-session UDS probe used by the MUT stack,
+	 * while excluding the MUT-III profile that also responds correctly to the
+	 * seed request.
 	 *
 	 * @param connection - Active device connection to probe
 	 */
@@ -536,7 +558,14 @@ export class Mut2Protocol extends Mut3Protocol {
 			const response = await connection.sendFrame(
 				new Uint8Array([SID_DIAGNOSTIC_SESSION_CONTROL, 0x03]),
 			);
-			return response[0] === 0x50 && response[1] === 0x03;
+			if (response[0] !== 0x50 || response[1] !== 0x03) {
+				return false;
+			}
+
+			const seedResponse = await connection.sendFrame(
+				new Uint8Array([SID_SECURITY_ACCESS, 0x01]),
+			);
+			return seedResponse[0] !== 0x67 || seedResponse[1] !== 0x01;
 		} catch {
 			return false;
 		}

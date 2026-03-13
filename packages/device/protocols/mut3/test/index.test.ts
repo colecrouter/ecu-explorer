@@ -109,15 +109,60 @@ describe("Mut3Protocol", () => {
 	// ── canHandle ────────────────────────────────────────────────────────────
 
 	describe("canHandle()", () => {
-		it("returns true for openport2 connections", async () => {
+		it("returns true for openport2 connections when MUT-III handshake succeeds", async () => {
 			const protocol = new Mut3Protocol();
-			const connection = makeMockConnection("openport2");
+			let callIndex = 0;
+			const connection = makeMockConnection("openport2", async (data) => {
+				if (callIndex === 0) {
+					expect(data).toEqual(new Uint8Array([0x10, 0x03]));
+					callIndex += 1;
+					return new Uint8Array([0x50, 0x03]);
+				}
+				expect(data).toEqual(new Uint8Array([0x27, 0x01]));
+				callIndex += 1;
+				return new Uint8Array([0x67, 0x01, 0x12, 0x34]);
+			});
+
 			expect(await protocol.canHandle(connection)).toBe(true);
 		});
 
-		it("returns false for non-openport2 connections", async () => {
+		it("returns false for non-openport2 non-kline connections", async () => {
 			const protocol = new Mut3Protocol();
 			const connection = makeMockConnection("elm327");
+			expect(await protocol.canHandle(connection)).toBe(false);
+		});
+
+		it("returns false when seed request does not match MUT-III on openport2", async () => {
+			const protocol = new Mut3Protocol();
+			let callIndex = 0;
+			const connection = makeMockConnection("openport2", async (data) => {
+				if (callIndex === 0) {
+					expect(data).toEqual(new Uint8Array([0x10, 0x03]));
+					callIndex += 1;
+					return new Uint8Array([0x50, 0x03]);
+				}
+				expect(data).toEqual(new Uint8Array([0x27, 0x01]));
+				callIndex += 1;
+				return new Uint8Array([0x7f, 0x27, 0x33]);
+			});
+
+			expect(await protocol.canHandle(connection)).toBe(false);
+		});
+
+		it("returns false for openport2 seed responses missing the subfunction byte", async () => {
+			const protocol = new Mut3Protocol();
+			let callIndex = 0;
+			const connection = makeMockConnection("openport2", async (data) => {
+				if (callIndex === 0) {
+					expect(data).toEqual(new Uint8Array([0x10, 0x03]));
+					callIndex += 1;
+					return new Uint8Array([0x50, 0x03]);
+				}
+				expect(data).toEqual(new Uint8Array([0x27, 0x01]));
+				callIndex += 1;
+				return new Uint8Array([0x67]);
+			});
+
 			expect(await protocol.canHandle(connection)).toBe(false);
 		});
 
@@ -407,9 +452,16 @@ describe("Mut2Protocol", () => {
 	describe("canHandle()", () => {
 		it("returns true on openport2 when UDS diagnostic session probe succeeds", async () => {
 			const protocol = new Mut2Protocol();
+			let callIndex = 0;
 			const connection = makeMockConnection("openport2", async (data) => {
-				expect(Array.from(data)).toEqual([0x10, 0x03]);
-				return new Uint8Array([0x50, 0x03]);
+				if (callIndex === 0) {
+					expect(data).toEqual(new Uint8Array([0x10, 0x03]));
+					callIndex += 1;
+					return new Uint8Array([0x50, 0x03]);
+				}
+				expect(data).toEqual(new Uint8Array([0x27, 0x01]));
+				callIndex += 1;
+				return new Uint8Array([0x7f, 0x27, 0x33]);
 			});
 
 			expect(await protocol.canHandle(connection)).toBe(true);
@@ -430,6 +482,19 @@ describe("Mut2Protocol", () => {
 				throw new Error("mock failure");
 			});
 
+			expect(await protocol.canHandle(connection)).toBe(false);
+		});
+
+		it("returns false on openport2 MUT-III-style seed responses", async () => {
+			const protocol = new Mut2Protocol();
+			const connection = makeMockConnection("openport2", async (data) => {
+				if (data[0] !== 0x10 || data[1] !== 0x03) {
+					return new Uint8Array([0x67, 0x01, 0x12, 0x34]);
+				}
+				return new Uint8Array([0x50, 0x03]);
+			});
+
+			// MUT-III-like behavior for openport2 should exclude Mut2
 			expect(await protocol.canHandle(connection)).toBe(false);
 		});
 
