@@ -154,11 +154,11 @@ function buildProtocolMatchTokens(protocolName: string): Set<string> {
 }
 
 /**
- * Reorder protocol probes so the preferred protocol is attempted first.
+ * Select exactly one protocol when a preference is provided.
  *
  * @param protocols - Full protocol list
  * @param preferredProtocolName - Optional preferred protocol selector
- * @returns Ordered protocol list
+ * @returns protocol list containing only the selected protocol when set
  */
 function prioritizeProtocol(
 	protocols: EcuProtocol[],

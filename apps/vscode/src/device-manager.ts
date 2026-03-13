@@ -261,10 +261,10 @@ export class DeviceManagerImpl implements DeviceManager {
 	}
 
 	/**
-	 * Build a probe order where a preferred protocol is checked first.
+	 * Build a probe order that enforces an exact protocol preference.
 	 *
 	 * @param preferredProtocolName - optional protocol selector
-	 * @returns protocol list in probing order
+	 * @returns protocol list containing only the selected protocol when set
 	 * @throws when preferred protocol name is missing or ambiguous
 	 */
 	private selectProtocolOrder(preferredProtocolName?: string): EcuProtocol[] {
