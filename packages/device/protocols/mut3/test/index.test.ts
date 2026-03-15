@@ -10,7 +10,6 @@ import {
 	CMD_READ_WORD_INC,
 	CMD_SET_ADDRESS,
 	decodeRaxPid,
-	Mut2Protocol,
 	Mut3Protocol,
 	RAX_PID_BASE,
 	RAX_PID_DESCRIPTORS,
@@ -126,9 +125,9 @@ describe("Mut3Protocol", () => {
 			expect(await protocol.canHandle(connection)).toBe(true);
 		});
 
-		it("returns false for non-openport2 non-kline connections", async () => {
+		it("returns false for non-openport2 transports", async () => {
 			const protocol = new Mut3Protocol();
-			const connection = makeMockConnection("elm327");
+			const connection = makeMockConnection("kline");
 			expect(await protocol.canHandle(connection)).toBe(false);
 		});
 
@@ -442,73 +441,6 @@ describe("Mut3Protocol", () => {
 			// Should not emit sector events (writeRom is not implemented)
 			expect(eventTypes).not.toContain("SECTOR_ERASE_STARTED");
 			expect(eventTypes).not.toContain("SECTOR_ERASE_COMPLETE");
-		});
-	});
-});
-
-// ── RAX PID descriptor helpers ────────────────────────────────────────────────
-
-describe("Mut2Protocol", () => {
-	describe("canHandle()", () => {
-		it("returns true on openport2 when UDS diagnostic session probe succeeds", async () => {
-			const protocol = new Mut2Protocol();
-			let callIndex = 0;
-			const connection = makeMockConnection("openport2", async (data) => {
-				if (callIndex === 0) {
-					expect(data).toEqual(new Uint8Array([0x10, 0x03]));
-					callIndex += 1;
-					return new Uint8Array([0x50, 0x03]);
-				}
-				expect(data).toEqual(new Uint8Array([0x27, 0x01]));
-				callIndex += 1;
-				return new Uint8Array([0x7f, 0x27, 0x33]);
-			});
-
-			expect(await protocol.canHandle(connection)).toBe(true);
-		});
-
-		it("returns false when probe response is not a positive session response", async () => {
-			const protocol = new Mut2Protocol();
-			const connection = makeMockConnection("openport2", async () => {
-				return new Uint8Array([0x7f, 0x10, 0x33]);
-			});
-
-			expect(await protocol.canHandle(connection)).toBe(false);
-		});
-
-		it("returns false when probing throws", async () => {
-			const protocol = new Mut2Protocol();
-			const connection = makeMockConnection("openport2", async () => {
-				throw new Error("mock failure");
-			});
-
-			expect(await protocol.canHandle(connection)).toBe(false);
-		});
-
-		it("returns false on openport2 MUT-III-style seed responses", async () => {
-			const protocol = new Mut2Protocol();
-			const connection = makeMockConnection("openport2", async (data) => {
-				if (data[0] !== 0x10 || data[1] !== 0x03) {
-					return new Uint8Array([0x67, 0x01, 0x12, 0x34]);
-				}
-				return new Uint8Array([0x50, 0x03]);
-			});
-
-			// MUT-III-like behavior for openport2 should exclude Mut2
-			expect(await protocol.canHandle(connection)).toBe(false);
-		});
-
-		it("returns false for non-openport2 transports", async () => {
-			const protocol = new Mut2Protocol();
-			const connection = makeMockConnection("kline");
-			expect(await protocol.canHandle(connection)).toBe(false);
-		});
-	});
-
-	describe("name", () => {
-		it("has the expected human-readable name", () => {
-			const protocol = new Mut2Protocol();
-			expect(protocol.name).toBe("MUT-II (Mitsubishi)");
 		});
 	});
 });

@@ -238,6 +238,31 @@ For live logging and RX-path investigation:
 - **OpenPort 2.0 findings** are relevant to the project's current `op20` / J2534-style work.
 - **OpenPort 1.3 findings** are relevant to legacy FTDI adapters and K-line style workflows, but should not be assumed to match OpenPort 2.0 behavior.
 
+### 3.6 Official OpenPort 2.0 Installer Findings (2026-03-14)
+
+The official Tactrix `openport2_setup_1024820.exe` installer adds stronger evidence for OpenPort 2.0 K-line support than the earlier EvoScan-only analysis.
+
+**Extracted artifacts:**
+
+- `drivers/openport 2.0/op20pt32.dll`
+- `samples/common/J2534.h`
+- `samples/common/j2534_tactrix.h`
+- `samples/klogger/klogger.cpp`
+- `samples/logging/mitsubishi k-line.txt`
+
+**Key findings:**
+
+- Tactrix's shipped J2534 headers define `ISO9141`, `ISO14230`, `ISO9141_K`, `ISO9141_L`, `ISO14230_K`, `ISO14230_L`, `FIVE_BAUD_INIT`, `FAST_INIT`, and legacy timing/config parameters such as `P1_MAX`, `P3_MIN`, `P4_MIN`, and `PARITY`.
+- The `klogger` sample is not CAN-specific. It connects with `PassThruConnect(..., ISO9141_K, ISO9141_NO_CHECKSUM, 10400, ...)`, then applies `SET_CONFIG` for `P1_MAX` and `PARITY`, installs a pass-all filter, and reads raw messages in a loop.
+- The shipped Mitsubishi OpenPort 2.0 logging profile explicitly states `type=mut2` and says it logs "using the MUT-II protocol over the K-line".
+- That same profile includes a hardware note that some older Mitsubishis need `setpinvoltage=1,-2`, i.e. grounding OBD pin 1 to enable logging.
+
+**Implications:**
+
+- OpenPort 2.0 K-line support is no longer merely inferred from generic J2534 capability; it is directly documented by Tactrix's own headers, sample code, and logging profiles.
+- This still does **not** prove the exact lower-level USB command format inside `op20pt32.dll`, but it does significantly reduce uncertainty around whether OpenPort 2.0 was intended to support K-line and MUT-II.
+- The remaining reverse-engineering task is transport detail, not feature existence.
+
 ---
 
 ## 4. Real-Time Data Logging
@@ -604,6 +629,55 @@ FE 00 00 00 00 00 00 00 00 00 00 00
   - ignores recoverable/non-fatal read statuses that EvoScan tolerates
   - discards inbound packets that do not match the current minimal `AR...` ISO15765 expectations
 - The most likely remaining mismatch is now in receive semantics and parser behavior, not the basic protocol/baud/CAN-ID tuple.
+
+### 10.5.1 Local MUTII Package Compatibility Findings
+
+Inspection of the local `EvoScanv2.9.0100.zip` payload provides concrete evidence that EvoScan's `MUTII`
+branch is a real legacy-compatibility path with its own module catalogs and request semantics, not a thin
+variant of the `ISO15765` / CAN path.
+
+**Recovered MUTII vehicle/module definitions from the package:**
+
+- `Mitsubishi MUTII MMC 1G DSM OBDI - EFI`
+- `Mitsubishi MUTII MMC 1G DSM OBDI - ABS`
+- `Mitsubishi MUTII MMC 1G DSM OBDI - TCU`
+- `Mitsubishi MUTII - AYC Evo4-5-6`
+- `Mitsubishi MUTII - ACD Evo7-8-9`
+- `Mitsubishi MUTII EFI CeddyMod Evo5/6`
+
+**Observed MUTII request shape from packaged XML definitions:**
+
+- Most live-data requests are expressed as **single-byte request IDs** such as `06`, `17`, `21`, `2F`,
+  `30`, `38`, `79`, `86`, `B0`, `B1`, `B2`, and `B3`.
+- EvoScan also supports **paired request IDs** for higher-resolution values, for example:
+  - `00` + `01` for 2-byte load
+  - `02` + `03` for 2-byte RPM
+  - `04` + `05` for 2-byte MAF Hz
+  - `B6` + `B7`, `B8` + `B9`, `BA` + `BB` for 2-byte compensated load variants
+- This strongly suggests the MUTII path should be modeled as a **module-oriented polling protocol**
+  with explicit one-byte and paired-byte parameter descriptors, rather than as UDS services over CAN.
+
+**Observed command-level compatibility across modules:**
+
+- Request `FC` is used as a **clear-DTC command** across multiple MUTII modules:
+  - EFI: `Clear EFI Diagnostic Codes`
+  - ABS: `Clear ABS Diagnostic Codes`
+  - TCU: `Clear AT/TCU Diagnostic Codes`
+  - AYC: `Clear AYC Diagnostic Codes`
+  - ACD: `Clear ACD Diagnostic Codes`
+- The EFI XML notes that this clear-DTC behavior is:
+  - "Only supported by Mitsubishi vehicles 1994-1998"
+
+**Implications for this project:**
+
+- The current codebase should treat **MUTII as a separate protocol family** from the existing MUT-III /
+  ISO15765 implementation.
+- EvoScan's `MUTII`-branch `SET_CONFIG` values belong with this legacy path and should be interpreted in
+  the context of **low-speed serial/K-line timing**, not reused in the OpenPort CAN path.
+- The first safe implementation target for a future `mut2` package is likely:
+  - per-module compatibility tables
+  - single-byte and paired-byte request descriptors
+  - `FC` clear-DTC support where the module profile explicitly exposes it
 
 ### 10.6 Mitsubishi "PassThru CAN" Package Findings
 

@@ -428,10 +428,11 @@ Access Levels (inferred from SST structure):
   - RAX polling on K-line is slower; expect 10 Hz vs. 20 Hz on CAN
   - Parameter count may need filtering to stay within bandwidth
 
-- **OpenPort 2.0 K-Line Support**: ⚠️ UNCONFIRMED
-  - OpenPort 2.0 advertises both CAN and K-line support
+- **OpenPort 2.0 K-Line Support**: ⚠️ CONFIRMED IN TACTRIX INSTALLER, NOT YET IMPLEMENTED HERE
+  - Tactrix ships OpenPort 2.0 J2534 headers with `ISO9141_*` and `ISO14230_*` protocol IDs plus `FIVE_BAUD_INIT` / `FAST_INIT`
+  - The installer also includes a `klogger` sample that opens `ISO9141_K` at `10400` baud and applies `SET_CONFIG` timing/parity values
   - Project only uses CAN mode currently
-  - K-line mode requires driver reconfiguration
+  - K-line mode still requires transport implementation and hardware validation in this repo
 
 ### 8.2 Protocol Constraints
 
@@ -460,11 +461,11 @@ Access Levels (inferred from SST structure):
 
 **Why It Exists**:
 - OpenPort 2.0 transport currently initialized to CAN mode only
-- K-line mode requires different initialization sequence
+- K-line mode requires a different initialization sequence despite now being confirmed in Tactrix's own installer samples and headers
 - Project device layer doesn't expose K-line transport option
 
 **Resolution Path**:
-1. Check OpenPort 2.0 driver documentation (locate K-line init sequence)
+1. Mirror Tactrix sample behavior for `ISO9141_K` / `ISO14230_K`, `SET_CONFIG`, and init IOCTL support in the `openport2` transport
 2. Implement K-line mode toggle in transport wrapper
 3. Add K-line connection test to device manager
 4. Verify with mock K-line harness or real WRX ECU

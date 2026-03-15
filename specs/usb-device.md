@@ -57,6 +57,10 @@ Use this order for implementation work:
 3. Use `OpenJ2534` and `python-j2534` for transport-level parity and diagnostic transport sequencing.
 4. Validate service-level UDS/diagnostic packaging against `python-uds`.
 5. Track legacy MUT-II branch behavior hints from public EvoScan reverse-engineering notes (`https://www.evoscan.com/`) before implementing any non-UDS transport tuning.
+6. Treat MUT-II as a separate legacy compatibility path:
+   - module-oriented K-line polling
+   - single-byte and paired-byte request IDs
+   - module-specific commands such as `FC` for DTC clearing
 
 ---
 
@@ -770,4 +774,3 @@ The `packages/definitions/ecuflash/` package uses `fs` for XML file reading. Thi
 - [OpenJ2534](https://github.com/jakka351/OpenJ2534) — J2534 tools and implementation references
 - [python-j2534](https://github.com/joeFischetti/python-j2534) — J2534 API and adapter workflow examples
 - [python-uds](https://github.com/hyundai-odyssey/python-uds) — UDS service and message framing patterns
-

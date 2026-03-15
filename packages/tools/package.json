@@ -21,6 +21,7 @@
 		"@ecu-explorer/definitions-ecuflash": "*",
 		"@ecu-explorer/device": "*",
 		"@ecu-explorer/device-transport-openport2": "*",
+		"@ecu-explorer/protocol-mut2": "*",
 		"@ecu-explorer/protocol-obd2": "*",
 		"@ecu-explorer/protocol-mut3": "*",
 		"@ecu-explorer/protocol-mitsubishi-bootloader": "*",

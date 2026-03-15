@@ -8,11 +8,12 @@ import {
 import { EcuFlashProvider } from "@ecu-explorer/definitions-ecuflash";
 import type { EcuEvent, RomProgress } from "@ecu-explorer/device";
 import { MitsubishiBootloaderProtocol } from "@ecu-explorer/device-protocol-mitsubishi-bootloader";
-import { Mut2Protocol, Mut3Protocol } from "@ecu-explorer/device-protocol-mut3";
+import { Mut3Protocol } from "@ecu-explorer/device-protocol-mut3";
 import { Obd2Protocol } from "@ecu-explorer/device-protocol-obd2";
 import { SubaruProtocol } from "@ecu-explorer/device-protocol-subaru";
 import { UdsProtocol } from "@ecu-explorer/device-protocol-uds";
 import { OpenPort2Transport } from "@ecu-explorer/device-transport-openport2";
+import { Mut2Protocol } from "@ecu-explorer/protocol-mut2";
 import * as vscode from "vscode";
 import {
 	setEditCommandsContext,

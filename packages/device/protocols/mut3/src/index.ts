@@ -197,18 +197,12 @@ export class Mut3Protocol implements EcuProtocol {
 	 * Probe the connection to determine if this protocol can communicate
 	 * with the connected ECU.
 	 *
-	 * Returns true for K-line transports, where MUT-III RAX/ROM commands are
-	 * observed (legacy serial path), and for OpenPort 2.0 transports that
-	 * respond as expected to both the diagnostic-session and seed-request pair
-	 * used by the MUT-III flow.
+	 * Returns true for OpenPort 2.0 transports that respond as expected to the
+	 * diagnostic-session and seed-request pair used by the MUT-III flow.
 	 *
 	 * @param connection - Active device connection to probe
 	 */
 	async canHandle(connection: DeviceConnection): Promise<boolean> {
-		if (connection.deviceInfo.transportName === "kline") {
-			return true;
-		}
-
 		if (connection.deviceInfo.transportName !== "openport2") {
 			return false;
 		}
@@ -520,56 +514,6 @@ export class Mut3Protocol implements EcuProtocol {
 	// `ecuflash.exe` binary and cannot be extracted by static analysis alone.
 	// See `security.ts` for details and resolution options.
 	// See also: HANDSHAKE_ANALYSIS.md §7.5 and DEVELOPMENT.md for the blocker entry.
-}
-
-/**
- * Mitsubishi MUT-II protocol adapter.
- *
- * MUT-II and MUT-III share transport-level framing and Mitsubishi RAX/ROM
- * command patterns in this project. Where this project does not yet have a
- * fully differentiated MUT-II handshake, this adapter reuses the MUT-III logic
- * and provides Mitsubishi-specific protocol naming for discovery and reporting.
- *
- * References:
- * - https://github.com/harshadura/libmut
- * - https://github.com/harshadura/Lancer-Scan
- * - https://www.evoscan.com/
- */
-export class Mut2Protocol extends Mut3Protocol {
-	readonly name = "MUT-II (Mitsubishi)";
-
-	/**
-	 * Probe the connection to determine if this protocol can communicate
-	 * with the connected ECU.
-	 *
-	 * This adapter gates on OpenPort 2.0 transport and verifies that the ECU
-	 * accepts the extended-diagnostic-session UDS probe used by the MUT stack,
-	 * while excluding the MUT-III profile that also responds correctly to the
-	 * seed request.
-	 *
-	 * @param connection - Active device connection to probe
-	 */
-	async canHandle(connection: DeviceConnection): Promise<boolean> {
-		if (connection.deviceInfo.transportName !== "openport2") {
-			return false;
-		}
-
-		try {
-			const response = await connection.sendFrame(
-				new Uint8Array([SID_DIAGNOSTIC_SESSION_CONTROL, 0x03]),
-			);
-			if (response[0] !== 0x50 || response[1] !== 0x03) {
-				return false;
-			}
-
-			const seedResponse = await connection.sendFrame(
-				new Uint8Array([SID_SECURITY_ACCESS, 0x01]),
-			);
-			return seedResponse[0] !== 0x67 || seedResponse[1] !== 0x01;
-		} catch {
-			return false;
-		}
-	}
 }
 
 // Suppress unused-variable warnings for CAN ID constants that are defined
