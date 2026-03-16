@@ -5,7 +5,7 @@
  * Returns YAML frontmatter + markdown table with axis labels.
  */
 
-import { findClosestMatches } from "@ecu-explorer/core";
+import { findClosestTableMatches } from "@ecu-explorer/core";
 import type { McpConfig } from "../config.js";
 import {
 	formatTable,
@@ -51,13 +51,10 @@ export async function handleReadTable(
 	}
 
 	if (!tableDef) {
-		const tableNames = definition.tables.map((t) => t.name);
-
-		// Find fuzzy matches
-		const suggestions = findClosestMatches(tableName, tableNames, 3, 20);
+		const suggestions = findClosestTableMatches(tableName, definition.tables, 3);
 		const suggestionText =
 			suggestions.length > 0
-				? `\nDid you mean: ${suggestions.join(", ")}?`
+				? `\nDid you mean: ${suggestions.map((table) => table.name).join(", ")}?`
 				: "";
 
 		throw new Error(

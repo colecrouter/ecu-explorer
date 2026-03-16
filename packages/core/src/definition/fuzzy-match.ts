@@ -140,13 +140,21 @@ export function rankCandidates<T>(
 	options: {
 		maxResults?: number;
 		minScore?: number;
+		tokenizeInput?: boolean;
 	} = {},
 ): RankedMatch<T>[] {
 	if (!input || input.length === 0 || candidates.length === 0) {
 		return [];
 	}
 
-	const { maxResults = candidates.length, minScore = 0 } = options;
+	const { maxResults = candidates.length, minScore = 0, tokenizeInput = false } =
+		options;
+	const tokens = tokenizeInput
+		? input
+				.toLowerCase()
+				.split(/\s+/)
+				.filter((token) => token.length > 0)
+		: [];
 
 	return candidates
 		.map((candidate) => {
@@ -167,6 +175,36 @@ export function rankCandidates<T>(
 						value: candidate,
 						score: weightedScore,
 						matchedText: entry.text,
+					};
+				}
+			}
+
+			if (tokens.length > 1) {
+				const tokenScores = tokens.map((token) => {
+					let bestToken = { score: 0, text: best?.matchedText ?? searchTexts[0]?.text ?? "" };
+					for (const entry of searchTexts) {
+						const weightedScore =
+							scoreCandidate(token, entry.text) * (entry.weight ?? 1);
+						if (weightedScore > bestToken.score) {
+							bestToken = { score: weightedScore, text: entry.text };
+						}
+					}
+					return bestToken;
+				});
+
+				const averageTokenScore =
+					tokenScores.reduce((sum, entry) => sum + entry.score, 0) /
+					tokenScores.length;
+				const bestTokenText =
+					tokenScores.sort((a, b) => b.score - a.score)[0]?.text ??
+					best?.matchedText ??
+					"";
+
+				if (best === null || averageTokenScore > best.score) {
+					best = {
+						value: candidate,
+						score: averageTokenScore,
+						matchedText: bestTokenText,
 					};
 				}
 			}
@@ -216,7 +254,9 @@ export function findClosestMatches(
 
 	const maxLen = Math.max(input.length, ...candidates.map((c) => c.length));
 	const minScore =
-		maxDistance === Infinity ? -Infinity : Math.max(0, 1 - maxDistance / maxLen);
+		maxDistance === Infinity
+			? -Infinity
+			: Math.max(0, 1 - maxDistance / maxLen);
 
 	return rankCandidates(input, candidates, (candidate) => [candidate], {
 		maxResults,

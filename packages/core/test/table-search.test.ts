@@ -1,10 +1,12 @@
-import type { Table1DDefinition, Table2DDefinition } from "../src/definition/table.js";
+import { describe, expect, it } from "vitest";
+import type {
+	Table1DDefinition,
+	Table2DDefinition,
+} from "../src/definition/table.js";
 import {
 	findClosestTableMatches,
 	rankTablesByQuery,
 } from "../src/definition/table-search.js";
-
-import { describe, expect, it } from "vitest";
 
 describe("table search", () => {
 	const highOctaneIgnition = {

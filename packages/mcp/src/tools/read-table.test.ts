@@ -94,4 +94,10 @@ describe("handleReadTable", () => {
 			/Table selector matched no cells\. Available axes: RPM \(rpm\), Load \(g\/rev\)\. RPM \(rpm\): nearest values are 4000, 3000 Load \(g\/rev\): nearest values are 2, 1.6/,
 		);
 	});
+
+	it("uses ranked table suggestions when an exact table name is missing", async () => {
+		await expect(
+			handleReadTable("/tmp/sample.hex", "ignitoin rpm", config),
+		).rejects.toThrow(/Did you mean: High Octane Ignition\?/);
+	});
 });

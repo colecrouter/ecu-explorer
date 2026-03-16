@@ -1,6 +1,6 @@
-import type { TableDefinition } from "./table.js";
 import type { RankedMatch, SearchText } from "./fuzzy-match.js";
 import { rankCandidates } from "./fuzzy-match.js";
+import type { TableDefinition } from "./table.js";
 
 export interface RankedTableMatch extends RankedMatch<TableDefinition> {}
 
@@ -46,7 +46,10 @@ export function rankTablesByQuery(
 		minScore?: number;
 	} = {},
 ): RankedTableMatch[] {
-	return rankCandidates(query, tables, getTableSearchTexts, options);
+	return rankCandidates(query, tables, getTableSearchTexts, {
+		...options,
+		tokenizeInput: true,
+	});
 }
 
 export function findClosestTableMatches(
