@@ -31,7 +31,7 @@ export default defineConfig({
 			},
 			// Node environment for VSCode extension tests (with jest-mock-vscode)
 			{
-				plugins: [],
+				plugins: [svelte()],
 				test: {
 					name: "vscode",
 					clearMocks: true,
@@ -40,7 +40,7 @@ export default defineConfig({
 					pool: "vmForks",
 					setupFiles: ["./apps/vscode/test/setup.ts"],
 					include: ["./apps/vscode/**/*.{test,spec}.ts"],
-					exclude: ["./**/*.svelte.{test,spec}.ts", "node_modules/**"],
+					exclude: ["node_modules/**"],
 				},
 			},
 			// Node environment for all other tests (core, providers, ui non-svelte)
