@@ -7,6 +7,7 @@ export * from "./definition/match.js";
 export * from "./definition/provider.js";
 export * from "./definition/resolution.js";
 export * from "./definition/rom.js";
+export * from "./definition/table-search.js";
 export * from "./definition/table.js";
 export * from "./math/operations.js";
 export * from "./runtime.js";
