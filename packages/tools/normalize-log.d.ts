@@ -1,12 +1,7 @@
 export function parseCsvLine(line: string): string[];
 export function detectLogFormat(headers: string[]): "evoscan" | "unknown";
 export function inferEvoScanUnit(channel: string): string;
-export function normalizeEvoScanCsv(
-	csvText: string,
-	options?: {
-		channels?: string[] | undefined;
-	},
-): {
+export function normalizeEvoScanCsv(csvText: string): {
 	headers: string[];
 	units: string[];
 	rows: string[][];

@@ -2,11 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import sade from "sade";
-import {
-	parseCommaSeparatedList,
-	resolveCliPath,
-	runCliAction,
-} from "./mcp-cli.js";
+import { resolveCliPath, runCliAction } from "./mcp-cli.js";
 
 const EVOSCAN_METADATA_COLUMNS = new Set([
 	"LogID",
@@ -83,6 +79,7 @@ export function detectLogFormat(headers) {
 export function inferEvoScanUnit(channel) {
 	if (/rpm/i.test(channel)) return "rpm";
 	if (/afr/i.test(channel)) return "afr";
+	if (/baro|map/i.test(channel)) return "kPa";
 	if (/^psig$/i.test(channel)) return "psi";
 	if (/battery/i.test(channel)) return "V";
 	if (/fronto2|o2sensor/i.test(channel)) return "V";
@@ -91,8 +88,16 @@ export function inferEvoScanUnit(channel) {
 	if (/mafhz/i.test(channel)) return "Hz";
 	if (/maf/i.test(channel)) return "g/s";
 	if (/timing/i.test(channel)) return "deg";
+	if (/load/i.test(channel)) return "g/rev";
 	if (/knocksum/i.test(channel)) return "count";
+	if (
+		/knock_adc|knock_base|knock_var|knock_change|knock_dynamics|knock_flag/i.test(
+			channel,
+		)
+	)
+		return "count";
 	if (/mat|ect|iat/i.test(channel)) return "C";
+	if (/speed/i.test(channel)) return "km/h";
 	return "";
 }
 
@@ -100,10 +105,9 @@ export function inferEvoScanUnit(channel) {
  * Convert an EvoScan CSV string into the ECU Explorer native log CSV format.
  *
  * @param {string} csvText
- * @param {{ channels?: string[] | undefined }} [options]
  * @returns {{ headers: string[]; units: string[]; rows: string[][] }}
  */
-export function normalizeEvoScanCsv(csvText, options = {}) {
+export function normalizeEvoScanCsv(csvText) {
 	const lines = csvText.split(/\r?\n/).filter((line) => line.trim().length > 0);
 	if (lines.length < 2) {
 		throw new Error(
@@ -120,19 +124,7 @@ export function normalizeEvoScanCsv(csvText, options = {}) {
 	const availableChannels = headers.filter(
 		(header) => !EVOSCAN_METADATA_COLUMNS.has(header),
 	);
-	const requestedChannels = options.channels;
-	if (requestedChannels !== undefined) {
-		const missing = requestedChannels.filter(
-			(channel) => !availableChannels.includes(channel),
-		);
-		if (missing.length > 0) {
-			throw new Error(
-				`Unknown EvoScan channel(s): ${missing.join(", ")}. Available channels: ${availableChannels.join(", ")}`,
-			);
-		}
-	}
-
-	const selectedChannels = requestedChannels ?? availableChannels;
+	const selectedChannels = availableChannels;
 	const selectedIndices = selectedChannels.map((channel) => {
 		const index = headers.indexOf(channel);
 		if (index < 0) {
@@ -202,7 +194,6 @@ prog
 	.option("--input", "Path to the source log CSV")
 	.option("--output", "Optional output CSV path")
 	.option("--format", "Source format: auto or evoscan", "auto")
-	.option("--channels", "Optional comma-separated subset of channels to keep")
 	.action((opts) => {
 		if (!opts.input) {
 			console.error("Missing required --input argument");
@@ -225,8 +216,7 @@ prog
 				);
 			}
 
-			const channels = parseCommaSeparatedList(opts.channels);
-			const normalized = normalizeEvoScanCsv(csvText, { channels });
+			const normalized = normalizeEvoScanCsv(csvText);
 			const rendered = renderNormalizedCsv(normalized);
 			await fs.writeFile(outputPath, rendered, "utf8");
 
