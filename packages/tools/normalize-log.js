@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import sade from "sade";
-import { resolveCliPath, runCliAction } from "./mcp-cli.js";
+import { resolveCliPath } from "./mcp-cli.js";
 
 const EVOSCAN_METADATA_COLUMNS = new Set([
 	"LogID",
@@ -10,6 +10,7 @@ const EVOSCAN_METADATA_COLUMNS = new Set([
 	"LogEntryTime",
 	"LogEntrySeconds",
 	"LogNotes",
+	"PSIG",
 ]);
 
 /**
@@ -200,7 +201,7 @@ prog
 			process.exit(1);
 		}
 
-		runCliAction(async () => {
+		(async () => {
 			const inputPath = resolveCliPath(opts.input);
 			const outputPath = resolveCliPath(
 				opts.output ?? getDefaultOutputPath(inputPath),
@@ -220,13 +221,19 @@ prog
 			const rendered = renderNormalizedCsv(normalized);
 			await fs.writeFile(outputPath, rendered, "utf8");
 
-			return [
-				`Normalized ${detectedFormat} log to ECU Explorer format.`,
-				`Input: ${inputPath}`,
-				`Output: ${outputPath}`,
-				`Channels: ${normalized.headers.length - 1}`,
-				`Rows: ${normalized.rows.length}`,
-			].join("\n");
+			console.log(
+				[
+					`Normalized ${detectedFormat} log to ECU Explorer format.`,
+					`Input: ${inputPath}`,
+					`Output: ${outputPath}`,
+					`Channels: ${normalized.headers.length - 1}`,
+					`Rows: ${normalized.rows.length}`,
+				].join("\n"),
+			);
+			process.exit(0);
+		})().catch((err) => {
+			console.error(err instanceof Error ? err.message : String(err));
+			process.exit(1);
 		});
 	});
 
