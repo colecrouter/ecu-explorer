@@ -94,9 +94,19 @@ describe("handleListTables", () => {
 			pageSize: 1,
 		});
 
-		expect(result).toContain("total_tables: 1");
+		expect(result).toContain("total_tables: 2");
 		expect(result).toContain("page_size: 1");
 		expect(result).toContain("High Octane Ignition");
 		expect(result).not.toContain("Primary Fuel");
+	});
+
+	it("uses ranked search across name and axis metadata", async () => {
+		const result = await handleListTables("/tmp/sample.hex", config, {
+			query: "fuel rpm load",
+			pageSize: 1,
+		});
+
+		expect(result).toContain("Primary Fuel");
+		expect(result).not.toContain("High Octane Ignition");
 	});
 });

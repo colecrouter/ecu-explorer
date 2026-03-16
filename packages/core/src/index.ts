@@ -8,6 +8,7 @@ export * from "./definition/provider.js";
 export * from "./definition/resolution.js";
 export * from "./definition/rom.js";
 export * from "./definition/table.js";
+export * from "./definition/table-search.js";
 export * from "./math/operations.js";
 export * from "./runtime.js";
 export * from "./units.js";

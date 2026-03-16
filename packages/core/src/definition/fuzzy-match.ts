@@ -5,6 +5,17 @@
  * base-name matching, and Levenshtein distance.
  */
 
+export interface RankedMatch<T> {
+	value: T;
+	score: number;
+	matchedText: string;
+}
+
+export interface SearchText {
+	text: string;
+	weight?: number;
+}
+
 /**
  * Calculates the Levenshtein distance between two strings.
  *
@@ -80,7 +91,7 @@ function extractBaseName(candidate: string): string {
  * @param candidate - The candidate string to score
  * @returns Score between 0 and 1 (higher = better match)
  */
-function scoreCandidate(input: string, candidate: string): number {
+export function scoreCandidate(input: string, candidate: string): number {
 	const lowerInput = input.toLowerCase();
 	const lowerCandidate = candidate.toLowerCase();
 
@@ -104,6 +115,112 @@ function scoreCandidate(input: string, candidate: string): number {
 	const maxLen = Math.max(lowerInput.length, lowerCandidate.length);
 	const distance = levenshteinDistance(lowerInput, lowerCandidate);
 	return Math.max(0, Math.min(0.84, 1 - distance / maxLen));
+}
+
+function normalizeSearchText(entry: SearchText | string): SearchText {
+	if (typeof entry === "string") {
+		return { text: entry, weight: 1 };
+	}
+
+	return {
+		text: entry.text,
+		weight: entry.weight ?? 1,
+	};
+}
+
+/**
+ * Rank structured candidates against an input query using weighted fuzzy scores.
+ *
+ * The highest-scoring search text for each candidate determines its final score.
+ */
+export function rankCandidates<T>(
+	input: string,
+	candidates: T[],
+	getSearchTexts: (candidate: T) => Array<SearchText | string>,
+	options: {
+		maxResults?: number;
+		minScore?: number;
+		tokenizeInput?: boolean;
+	} = {},
+): RankedMatch<T>[] {
+	if (!input || input.length === 0 || candidates.length === 0) {
+		return [];
+	}
+
+	const {
+		maxResults = candidates.length,
+		minScore = 0,
+		tokenizeInput = false,
+	} = options;
+	const tokens = tokenizeInput
+		? input
+				.toLowerCase()
+				.split(/\s+/)
+				.filter((token) => token.length > 0)
+		: [];
+
+	return candidates
+		.map((candidate) => {
+			const searchTexts = getSearchTexts(candidate)
+				.map(normalizeSearchText)
+				.filter((entry) => entry.text.trim().length > 0);
+
+			if (searchTexts.length === 0) {
+				return null;
+			}
+
+			let best: RankedMatch<T> | null = null;
+			for (const entry of searchTexts) {
+				const weightedScore =
+					scoreCandidate(input, entry.text) * (entry.weight ?? 1);
+				if (best === null || weightedScore > best.score) {
+					best = {
+						value: candidate,
+						score: weightedScore,
+						matchedText: entry.text,
+					};
+				}
+			}
+
+			if (tokens.length > 1) {
+				const tokenScores = tokens.map((token) => {
+					let bestToken = {
+						score: 0,
+						text: best?.matchedText ?? searchTexts[0]?.text ?? "",
+					};
+					for (const entry of searchTexts) {
+						const weightedScore =
+							scoreCandidate(token, entry.text) * (entry.weight ?? 1);
+						if (weightedScore > bestToken.score) {
+							bestToken = { score: weightedScore, text: entry.text };
+						}
+					}
+					return bestToken;
+				});
+
+				const averageTokenScore =
+					tokenScores.reduce((sum, entry) => sum + entry.score, 0) /
+					tokenScores.length;
+				const bestTokenText =
+					tokenScores.sort((a, b) => b.score - a.score)[0]?.text ??
+					best?.matchedText ??
+					"";
+
+				if (best === null || averageTokenScore > best.score) {
+					best = {
+						value: candidate,
+						score: averageTokenScore,
+						matchedText: bestTokenText,
+					};
+				}
+			}
+
+			return best;
+		})
+		.filter((match): match is RankedMatch<T> => match !== null)
+		.filter((match) => match.score >= minScore)
+		.sort((a, b) => b.score - a.score)
+		.slice(0, maxResults);
 }
 
 /**
@@ -141,24 +258,14 @@ export function findClosestMatches(
 		return [];
 	}
 
-	// Score all candidates
-	const scored = candidates.map((c) => ({
-		candidate: c,
-		score: scoreCandidate(input, c),
-	}));
-
-	// Map maxDistance parameter to a minScore threshold.
-	// maxLen here is max(query.length, max candidate length).
-	// When maxDistance is Infinity, include all candidates (no filter).
 	const maxLen = Math.max(input.length, ...candidates.map((c) => c.length));
 	const minScore =
 		maxDistance === Infinity
 			? -Infinity
 			: Math.max(0, 1 - maxDistance / maxLen);
 
-	return scored
-		.filter((s) => s.score > minScore)
-		.sort((a, b) => b.score - a.score)
-		.slice(0, maxResults)
-		.map((s) => s.candidate);
+	return rankCandidates(input, candidates, (candidate) => [candidate], {
+		maxResults,
+		minScore,
+	}).map((match) => match.value);
 }

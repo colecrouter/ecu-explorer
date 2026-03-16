@@ -5,6 +5,7 @@
  * Returns YAML frontmatter with ROM metadata + markdown table of all tables.
  */
 
+import { rankTablesByQuery } from "@ecu-explorer/core";
 import type { McpConfig } from "../config.js";
 import { formatTableListMarkdown } from "../formatters/table-summary.js";
 import { toYamlFrontmatter } from "../formatters/yaml-formatter.js";
@@ -39,29 +40,11 @@ export async function handleListTables(
 	);
 	const { definition } = loaded;
 
-	// Filter tables by metadata query if provided
 	const tables =
 		query !== undefined
-			? definition.tables.filter((table) => {
-					const haystack = [
-						table.name,
-						table.category ?? "",
-						table.kind,
-						table.z.unit ?? "",
-						table.x?.name ?? "",
-						table.kind === "table2d" || table.kind === "table3d"
-							? (table.y?.name ?? "")
-							: "",
-					]
-						.join(" ")
-						.toLowerCase();
-
-					return query
-						.toLowerCase()
-						.split(/\s+/)
-						.filter((token) => token.length > 0)
-						.every((token) => haystack.includes(token));
-				})
+			? rankTablesByQuery(query, definition.tables, { minScore: 0.35 }).map(
+					(match) => match.value,
+				)
 			: definition.tables;
 
 	const safePageSize = Math.max(1, pageSize);
