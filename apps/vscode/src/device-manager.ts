@@ -320,16 +320,30 @@ export class DeviceManagerImpl implements DeviceManager {
 					Required<Pick<DeviceTransport, "requestDevice">> =>
 					transport.requestDevice != null,
 			)
-			.map((transport) => ({
-				id: `${transport.name}:request-device`,
-				label: `$(add) Connect New ${transport.name} Device...`,
-				description: "Grant browser access to a newly connected device",
-				run: async () =>
-					createHardwareCandidate(
-						await transport.requestDevice(),
-						this.hardwareCandidateLocality,
-					),
-			}));
+			.flatMap((transport) => {
+				const makeRequestAction = (
+					kind: "usb" | "serial",
+				): HardwareRequestAction => ({
+					id: `${transport.name}:request-${kind}-device`,
+					label: `$(add) Connect New ${kind === "usb" ? "USB" : "Serial"} Device...`,
+					description: `${transport.name} via ${kind === "usb" ? "browser USB" : "browser serial"}`,
+					run: async () => {
+						const candidate = createHardwareCandidate(
+							await transport.requestDevice(),
+							this.hardwareCandidateLocality,
+						);
+						const isSerialCandidate =
+							candidate.device.id.startsWith("openport2-serial:") ||
+							candidate.device.name.includes("(Serial)");
+						if ((kind === "serial") === isSerialCandidate) {
+							return candidate;
+						}
+						return undefined;
+					},
+				});
+
+				return [makeRequestAction("usb"), makeRequestAction("serial")];
+			});
 	}
 
 	private getHardwarePromptOptions(): HardwarePromptOptions {

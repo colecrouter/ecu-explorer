@@ -538,7 +538,7 @@ describe("DeviceManagerImpl", () => {
 			const requestEntry = harness.quickPick.items.find(
 				(entry) =>
 					"action" in entry &&
-					entry.label === "$(add) Connect New OpenPort 2.0 Device...",
+					entry.label === "$(add) Connect New USB Device...",
 			);
 			if (requestEntry == null) {
 				throw new Error("Missing request quick pick entry");
@@ -649,7 +649,7 @@ describe("DeviceManagerImpl", () => {
 			const requestEntry = harness.quickPick.items.find(
 				(entry) =>
 					"action" in entry &&
-					entry.label === "$(add) Connect New OpenPort 2.0 Device...",
+					entry.label === "$(add) Connect New USB Device...",
 			);
 			if (requestEntry == null) {
 				throw new Error("Missing request quick pick entry");
