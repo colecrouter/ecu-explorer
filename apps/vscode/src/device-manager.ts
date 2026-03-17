@@ -14,15 +14,10 @@ import {
 	DEFAULT_HARDWARE_LOCALITY,
 	type HardwareCandidate,
 	type HardwareDeviceSelectionStrategy,
+	type HardwarePromptOptions,
 	type HardwareRequestAction,
 	promptForHardwareCandidate,
 } from "./hardware-selection.js";
-
-class RefreshHardwareSelectionError extends Error {
-	constructor() {
-		super("Refresh hardware selection");
-	}
-}
 
 /**
  * Reconnect configuration options.
@@ -189,70 +184,65 @@ export class DeviceManagerImpl implements DeviceManager {
 		connection: DeviceConnection;
 		protocol: EcuProtocol;
 	}> {
-		for (;;) {
-			// List all available devices across all transports
-			const devices = await this.listAllDevices();
-			const candidates = devices.map((device) =>
-				createHardwareCandidate(device, this.hardwareCandidateLocality),
+		// List all available devices across all transports
+		const devices = await this.listAllDevices();
+		const candidates = devices.map((device) =>
+			createHardwareCandidate(device, this.hardwareCandidateLocality),
+		);
+		const requestActions = this.getHardwareRequestActions();
+		const promptOptions = this.getHardwarePromptOptions();
+		if (devices.length === 0 && requestActions.length === 0) {
+			throw new Error(
+				"No devices found. Ensure device is connected and transport is available.",
 			);
-			const requestActions = this.getHardwareRequestActions(candidates);
-			if (devices.length === 0 && requestActions.length === 0) {
-				throw new Error(
-					"No devices found. Ensure device is connected and transport is available.",
-				);
-			}
+		}
 
-			try {
-				const selectedCandidate =
-					this.hardwareSelectionStrategy != null
-						? await this.hardwareSelectionStrategy.selectDevice(
-								candidates,
-								requestActions,
-							)
-						: await this.selectDeviceFromList(candidates, requestActions);
-				const selectedDevice = selectedCandidate.device;
-
-				// Get the transport for this device
-				const transport = this.getTransport(selectedDevice.transportName);
-				if (!transport) {
-					throw new Error(
-						`Transport "${selectedDevice.transportName}" not registered`,
+		const selectedCandidate =
+			this.hardwareSelectionStrategy != null
+				? await this.hardwareSelectionStrategy.selectDevice(
+						candidates,
+						requestActions,
+						promptOptions,
+					)
+				: await this.selectDeviceFromList(
+						candidates,
+						requestActions,
+						promptOptions,
 					);
-				}
+		const selectedDevice = selectedCandidate.device;
 
-				// Open a connection to the device
-				const connection = await transport.connect(selectedDevice.id);
+		// Get the transport for this device
+		const transport = this.getTransport(selectedDevice.transportName);
+		if (!transport) {
+			throw new Error(
+				`Transport "${selectedDevice.transportName}" not registered`,
+			);
+		}
 
-				// Auto-detect the protocol by trying each registered protocol
-				for (const protocol of this.protocols) {
-					try {
-						if (await protocol.canHandle(connection)) {
-							this.hardwareSelectionStrategy?.rememberCandidate(
-								selectedCandidate,
-							);
-							vscode.window.showInformationMessage(
-								`Connected using ${protocol.name}`,
-							);
-							return { connection, protocol };
-						}
-					} catch {
-						// Continue to next protocol if canHandle fails
-					}
-				}
+		// Open a connection to the device
+		const connection = await transport.connect(selectedDevice.id);
 
-				// No protocol matched
-				await connection.close();
-				throw new Error(
-					`No protocol matched for device "${selectedDevice.name}". ` +
-						`Supported protocols: ${this.protocols.map((p) => p.name).join(", ")}`,
-				);
-			} catch (error) {
-				if (error instanceof RefreshHardwareSelectionError) {
-					continue;
+		// Auto-detect the protocol by trying each registered protocol
+		for (const protocol of this.protocols) {
+			try {
+				if (await protocol.canHandle(connection)) {
+					this.hardwareSelectionStrategy?.rememberCandidate(selectedCandidate);
+					vscode.window.showInformationMessage(
+						`Connected using ${protocol.name}`,
+					);
+					return { connection, protocol };
 				}
-				throw error;
+			} catch {
+				// Continue to next protocol if canHandle fails
 			}
 		}
+
+		// No protocol matched
+		await connection.close();
+		throw new Error(
+			`No protocol matched for device "${selectedDevice.name}". ` +
+				`Supported protocols: ${this.protocols.map((p) => p.name).join(", ")}`,
+		);
 	}
 
 	/**
@@ -285,18 +275,21 @@ export class DeviceManagerImpl implements DeviceManager {
 	private async selectDeviceFromList(
 		candidates: readonly HardwareCandidate[],
 		requestActions: readonly HardwareRequestAction[],
+		promptOptions: HardwarePromptOptions,
 	): Promise<HardwareCandidate> {
-		return promptForHardwareCandidate(candidates, requestActions);
+		return promptForHardwareCandidate(
+			candidates,
+			requestActions,
+			promptOptions,
+		);
 	}
 
-	private getHardwareRequestActions(
-		candidates: readonly HardwareCandidate[],
-	): HardwareRequestAction[] {
+	private getHardwareRequestActions(): HardwareRequestAction[] {
 		if (this.hardwareCandidateLocality !== "client-browser") {
 			return [];
 		}
 
-		const requestActions = [...this.transports.values()]
+		return [...this.transports.values()]
 			.filter(
 				(
 					transport,
@@ -306,38 +299,37 @@ export class DeviceManagerImpl implements DeviceManager {
 			)
 			.map((transport) => ({
 				id: `${transport.name}:request-device`,
-				label: `$(add) Connect new ${transport.name} device...`,
-				description:
-					"Grant browser access to a newly connected device for this transport",
+				label: `$(add) Connect New ${transport.name} Device...`,
+				description: "Grant browser access to a newly connected device",
 				run: async () =>
 					createHardwareCandidate(
 						await transport.requestDevice(),
 						this.hardwareCandidateLocality,
 					),
 			}));
+	}
 
-		const forgetActions = candidates
-			.map((candidate) => {
+	private getHardwarePromptOptions(): HardwarePromptOptions {
+		if (this.hardwareCandidateLocality !== "client-browser") {
+			return {};
+		}
+
+		return {
+			canForgetCandidate: (candidate) =>
+				this.getTransport(candidate.device.transportName)?.forgetDevice != null,
+			forgetCandidate: async (candidate) => {
 				const transport = this.getTransport(candidate.device.transportName);
 				const forgetDevice = transport?.forgetDevice;
 				if (forgetDevice == null) {
-					return undefined;
+					throw new Error(
+						`Transport "${candidate.device.transportName}" cannot forget devices`,
+					);
 				}
 
-				return {
-					id: `${candidate.device.id}:forget-device`,
-					label: `$(close) Forget ${candidate.device.name}...`,
-					description: `Remove browser access for ${candidate.device.id}`,
-					run: async () => {
-						await forgetDevice(candidate.device.id);
-						this.hardwareSelectionStrategy?.forgetCandidate?.(candidate);
-						throw new RefreshHardwareSelectionError();
-					},
-				} satisfies HardwareRequestAction;
-			})
-			.filter((action) => action != null);
-
-		return [...requestActions, ...forgetActions];
+				await forgetDevice(candidate.device.id);
+				this.hardwareSelectionStrategy?.forgetCandidate?.(candidate);
+			},
+		};
 	}
 
 	/**

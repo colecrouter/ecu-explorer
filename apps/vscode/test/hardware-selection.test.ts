@@ -5,6 +5,7 @@ import {
 	createHardwareCandidate,
 	createHardwareSelectionRecord,
 	doesSelectionMatchCandidate,
+	FORGET_HARDWARE_BUTTON,
 	findPreferredHardwareCandidate,
 	HardwareSelectionService,
 	promptForHardwareCandidate,
@@ -20,6 +21,78 @@ function makeDevice(
 		name: overrides.name,
 		transportName: overrides.transportName ?? "openport2",
 		connected: overrides.connected ?? false,
+	};
+}
+
+function createQuickPickHarness() {
+	let acceptHandler: (() => void) | undefined;
+	let hideHandler: (() => void) | undefined;
+	let itemButtonHandler:
+		| ((event: {
+				item: vscode.QuickPickItem;
+				button: vscode.QuickInputButton;
+		  }) => void)
+		| undefined;
+	const quickPick: vscode.QuickPick<vscode.QuickPickItem> = {
+		value: "",
+		items: [] as vscode.QuickPickItem[],
+		selectedItems: [] as vscode.QuickPickItem[],
+		activeItems: [] as vscode.QuickPickItem[],
+		title: "",
+		step: undefined,
+		totalSteps: undefined,
+		placeholder: "",
+		enabled: true,
+		busy: false,
+		ignoreFocusOut: false,
+		buttons: [],
+		canSelectMany: false,
+		matchOnDescription: false,
+		matchOnDetail: false,
+		keepScrollPosition: false,
+		show: vi.fn(),
+		hide: vi.fn(() => {
+			hideHandler?.();
+		}),
+		dispose: vi.fn(),
+		onDidChangeValue: () => ({ dispose: vi.fn() }),
+		onDidAccept: (handler: () => void) => {
+			acceptHandler = handler;
+			return { dispose: vi.fn() };
+		},
+		onDidTriggerButton: () => ({ dispose: vi.fn() }),
+		onDidHide: (handler: () => void) => {
+			hideHandler = handler;
+			return { dispose: vi.fn() };
+		},
+		onDidChangeActive: () => ({ dispose: vi.fn() }),
+		onDidChangeSelection: () => ({ dispose: vi.fn() }),
+		onDidTriggerItemButton: (
+			handler: (event: {
+				item: vscode.QuickPickItem;
+				button: vscode.QuickInputButton;
+			}) => void,
+		) => {
+			itemButtonHandler = handler;
+			return { dispose: vi.fn() };
+		},
+	};
+
+	return {
+		quickPick,
+		accept(item: vscode.QuickPickItem) {
+			quickPick.selectedItems = [item];
+			acceptHandler?.();
+		},
+		triggerButton(
+			item: vscode.QuickPickItem,
+			button: vscode.QuickInputButton = FORGET_HARDWARE_BUTTON,
+		) {
+			itemButtonHandler?.({ item, button });
+		},
+		hide() {
+			hideHandler?.();
+		},
 	};
 }
 
@@ -103,7 +176,7 @@ describe("hardware-selection", () => {
 		const strategy = new WorkspaceHardwareSelectionStrategy(
 			new HardwareSelectionService(workspaceState),
 		);
-		const quickPickSpy = vi.spyOn(vscode.window, "showQuickPick");
+		const quickPickSpy = vi.spyOn(vscode.window, "createQuickPick");
 
 		const selected = await strategy.selectDevice([
 			createHardwareCandidate(
@@ -161,22 +234,12 @@ describe("hardware-selection", () => {
 			"client-browser",
 		);
 		const run = vi.fn().mockResolvedValue(requestedCandidate);
-		vi.spyOn(vscode.window, "showQuickPick").mockImplementationOnce(
-			async (items) => {
-				const entries = Array.isArray(items) ? items : await items;
-				const requestEntry = entries.find(
-					(entry) =>
-						"action" in entry &&
-						entry.label === "$(add) Connect new USB device...",
-				);
-				if (requestEntry == null) {
-					throw new Error("Missing request quick pick entry");
-				}
-				return requestEntry;
-			},
+		const harness = createQuickPickHarness();
+		vi.spyOn(vscode.window, "createQuickPick").mockReturnValueOnce(
+			harness.quickPick,
 		);
 
-		const selected = await promptForHardwareCandidate(
+		const selectedPromise = promptForHardwareCandidate(
 			[
 				createHardwareCandidate(
 					makeDevice({ id: "openport2:ABC", name: "OpenPort 2.0 A" }),
@@ -185,14 +248,56 @@ describe("hardware-selection", () => {
 			[
 				{
 					id: "request-usb",
-					label: "$(add) Connect new USB device...",
+					label: "$(add) Connect New USB Device...",
 					description: "Grant browser access to a newly connected device",
 					run,
 				},
 			],
 		);
+		const requestEntry = harness.quickPick.items.find(
+			(entry) =>
+				"action" in entry && entry.label === "$(add) Connect New USB Device...",
+		);
+		if (requestEntry == null) {
+			throw new Error("Missing request quick pick entry");
+		}
+		harness.accept(requestEntry);
+		const selected = await selectedPromise;
 
 		expect(run).toHaveBeenCalledTimes(1);
 		expect(selected).toEqual(requestedCandidate);
+	});
+
+	it("uses human-friendly copy and forget buttons for browser-owned candidates", async () => {
+		const harness = createQuickPickHarness();
+		vi.spyOn(vscode.window, "createQuickPick").mockReturnValueOnce(
+			harness.quickPick,
+		);
+
+		const selectionPromise = promptForHardwareCandidate(
+			[
+				createHardwareCandidate(
+					makeDevice({ id: "openport2:web", name: "OpenPort 2.0 WebUSB" }),
+					"client-browser",
+				),
+			],
+			[],
+			{
+				canForgetCandidate: () => true,
+				forgetCandidate: async () => {},
+			},
+		);
+
+		const candidateEntry = harness.quickPick.items[0];
+		expect(candidateEntry?.label).toBe("OpenPort 2.0 WebUSB");
+		expect(candidateEntry?.description).toBe("USB • Browser");
+		expect(candidateEntry?.detail).toBe("ID: openport2:web");
+		expect(candidateEntry?.buttons).toEqual([FORGET_HARDWARE_BUTTON]);
+
+		harness.hide();
+
+		await expect(selectionPromise).rejects.toThrow(
+			"Device selection cancelled by user",
+		);
 	});
 });
