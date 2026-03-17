@@ -16,6 +16,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { DeviceManagerImpl } from "../src/device-manager.js";
 import { DeviceStatusBarManager } from "../src/device-status-bar.js";
+import { HardwareSelectionService } from "../src/hardware-selection.js";
+import { WorkspaceState } from "../src/workspace-state.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -82,6 +84,17 @@ function createMockTransport(connection: TestConnection): DeviceTransport {
 		listDevices: vi.fn().mockResolvedValue([]),
 		connect: vi.fn().mockResolvedValue(connection),
 	};
+}
+
+function createWorkspaceState() {
+	const storage = new Map<string, unknown>();
+	return new WorkspaceState({
+		get: (key: string) => storage.get(key),
+		update: async (key: string, value: unknown) => {
+			storage.set(key, value);
+		},
+		keys: () => Array.from(storage.keys()),
+	});
 }
 
 function getRequiredStatusBarItem(
@@ -298,6 +311,82 @@ describe("DeviceManagerImpl", () => {
 			expect(mockConnection.close).toHaveBeenCalled();
 		});
 	});
+
+	describe("hardware selection reuse", () => {
+		it("prefers a saved device selection before showing quick pick", async () => {
+			const connection = createMockConnection();
+			const manager = new DeviceManagerImpl();
+			const transport = {
+				name: "openport2",
+				listDevices: vi.fn().mockResolvedValue([
+					{
+						id: "openport2:one",
+						name: "OpenPort 2.0 A",
+						transportName: "openport2",
+						connected: false,
+					},
+					{
+						id: "openport2:two",
+						name: "OpenPort 2.0 B",
+						transportName: "openport2",
+						connected: false,
+					},
+				]),
+				connect: vi.fn().mockResolvedValue(connection),
+			} satisfies DeviceTransport;
+			manager.registerTransport("openport2", transport);
+			manager.registerProtocol(createMockProtocol());
+
+			const workspaceState = createWorkspaceState();
+			workspaceState.saveDeviceSelection("ecu-primary", {
+				id: "openport2:two",
+				transportName: "openport2",
+				name: "OpenPort 2.0 B",
+			});
+			manager.setHardwareSelectionService(
+				new HardwareSelectionService(workspaceState),
+			);
+
+			const quickPickSpy = vi.spyOn(vscode.window, "showQuickPick");
+
+			await manager.selectDeviceAndProtocol();
+
+			expect(quickPickSpy).not.toHaveBeenCalled();
+			expect(transport.connect).toHaveBeenCalledWith("openport2:two");
+		});
+
+		it("saves the successful device selection after protocol detection", async () => {
+			const connection = createMockConnection();
+			const transport = {
+				name: "openport2",
+				listDevices: vi.fn().mockResolvedValue([
+					{
+						id: "openport2:one",
+						name: "OpenPort 2.0 A",
+						transportName: "openport2",
+						connected: false,
+					},
+				]),
+				connect: vi.fn().mockResolvedValue(connection),
+			} satisfies DeviceTransport;
+			const manager = new DeviceManagerImpl();
+			manager.registerTransport("openport2", transport);
+			manager.registerProtocol(createMockProtocol());
+
+			const workspaceState = createWorkspaceState();
+			manager.setHardwareSelectionService(
+				new HardwareSelectionService(workspaceState),
+			);
+
+			await manager.selectDeviceAndProtocol();
+
+			expect(workspaceState.getDeviceSelection("ecu-primary")).toEqual({
+				id: "openport2:one",
+				transportName: "openport2",
+				name: "OpenPort 2.0 A",
+			});
+		});
+	});
 });
 
 // ─── DeviceStatusBarManager Tests ────────────────────────────────────────────
@@ -375,7 +464,7 @@ describe("DeviceStatusBarManager", () => {
 		await manager.connect();
 
 		const disconnectItem = getRequiredStatusBarItem(createdItems, 1);
-		expect(disconnectItem.tooltip).toContain("ECU Device");
+		expect(disconnectItem.tooltip).toContain("Test Device");
 	});
 
 	it("should dispose all status bar items on dispose()", () => {

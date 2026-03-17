@@ -8,6 +8,7 @@ import type {
 	FailureCause,
 } from "@ecu-explorer/device";
 import * as vscode from "vscode";
+import type { HardwareSelectionService } from "./hardware-selection.js";
 
 /**
  * Reconnect configuration options.
@@ -51,6 +52,7 @@ export interface ActiveConnection {
 export class DeviceManagerImpl implements DeviceManager {
 	private transports = new Map<string, DeviceTransport>();
 	private protocols: EcuProtocol[] = [];
+	private hardwareSelectionService: HardwareSelectionService | undefined;
 
 	/** The currently active connection, or undefined if not connected. */
 	private _activeConnection: ActiveConnection | undefined;
@@ -86,6 +88,12 @@ export class DeviceManagerImpl implements DeviceManager {
 	 */
 	get activeConnection(): ActiveConnection | undefined {
 		return this._activeConnection;
+	}
+
+	setHardwareSelectionService(
+		service: HardwareSelectionService | undefined,
+	): void {
+		this.hardwareSelectionService = service;
 	}
 
 	/**
@@ -167,16 +175,16 @@ export class DeviceManagerImpl implements DeviceManager {
 			);
 		}
 
-		// Create a list of device options for the user to select from
-		const deviceQuickPicks = devices.map((device, index) => ({
-			label: `${device.name} (${device.transportName})`,
-			description: `ID: ${device.id}`,
-			index,
-		}));
-
-		// If only one device, select it automatically
-		let selectedDevice: DeviceInfo | undefined = devices[0];
-		if (devices.length > 1) {
+		let selectedDevice =
+			devices.length === 1
+				? devices[0]
+				: this.hardwareSelectionService?.findPreferredDevice(devices);
+		if (devices.length > 1 && selectedDevice == null) {
+			const deviceQuickPicks = devices.map((device, index) => ({
+				label: `${device.name} (${device.transportName})`,
+				description: `ID: ${device.id}`,
+				index,
+			}));
 			const selected = await vscode.window.showQuickPick(deviceQuickPicks, {
 				placeHolder: "Select a device to connect",
 			});
@@ -211,6 +219,7 @@ export class DeviceManagerImpl implements DeviceManager {
 		for (const protocol of this.protocols) {
 			try {
 				if (await protocol.canHandle(connection)) {
+					this.hardwareSelectionService?.saveDevice(selectedDevice);
 					vscode.window.showInformationMessage(
 						`Connected using ${protocol.name}`,
 					);
@@ -243,7 +252,7 @@ export class DeviceManagerImpl implements DeviceManager {
 		}
 
 		const { connection, protocol } = await this.selectDeviceAndProtocol();
-		const deviceName = "ECU Device";
+		const deviceName = connection.deviceInfo.name;
 
 		this._activeConnection = {
 			connection,
