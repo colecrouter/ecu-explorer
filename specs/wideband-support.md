@@ -214,6 +214,25 @@ The first slice should not try to solve:
 - multi-device mixing
 - calibration/configuration UX
 
+## Initial Support Table
+
+The first implementation pass should target AEM serial-output widebands.
+
+| Device family | Transport | Coverage target | Notes |
+| --- | --- | --- | --- |
+| AEM serial-output widebands | Serial | First implementation target | `9600 8N1` ASCII value stream |
+| AEM X-Series serial output | Serial | Planned under same adapter | AEM documents backward-compatible serial output formatting |
+| AEM legacy 30-4100 / 30-4110 style serial output | Serial | Planned under same adapter | Same line-based serial output model |
+| AEMnet / CAN integrations | CAN | Not in first pass | Separate transport and protocol work |
+| Non-AEM widebands | Varies | Not in first pass | To be added as later adapter families |
+
+The first AEM adapter should assume:
+
+- the device is selected as a serial-backed hardware candidate
+- serial parameters are `9600 8N1`
+- the output stream is line-based ASCII text ending in `\r\n`
+- the unit mode is configured by the user as either `afr` or `lambda`
+
 ## Initial Implementation Plan
 
 ### Commit 1: Add wideband support specification
@@ -266,4 +285,3 @@ Expected changes:
 - Wideband sessions reuse the shared hardware runtime and selection foundation.
 - Extension-side wideband composition remains separate from the ECU device manager.
 - The first implementation path is narrow enough to land in reviewable commits.
-

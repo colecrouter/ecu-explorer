@@ -21,9 +21,19 @@ export interface NodeSerialPortSession {
 	read(maxLength: number, timeoutMs: number): Promise<Uint8Array>;
 }
 
+export interface NodeSerialOpenOptions {
+	baudRate?: number;
+	dataBits?: 5 | 6 | 7 | 8;
+	stopBits?: 1 | 2;
+	parity?: "none" | "even" | "mark" | "odd" | "space";
+}
+
 export interface NodeSerialRuntime {
 	listPorts(): Promise<readonly NodeSerialPortInfo[]>;
-	openPort(path: string): Promise<NodeSerialPortSession>;
+	openPort(
+		path: string,
+		options?: NodeSerialOpenOptions,
+	): Promise<NodeSerialPortSession>;
 }
 
 type NodeUsbEndpointLike = {
@@ -438,13 +448,13 @@ export async function createNodeSerialRuntime(): Promise<NodeSerialRuntime> {
 				friendlyName: port.friendlyName ?? null,
 			}));
 		},
-		async openPort(path: string) {
+		async openPort(path: string, options: NodeSerialOpenOptions = {}) {
 			const port = new SerialPort({
 				path,
-				baudRate: 115200,
-				dataBits: 8,
-				stopBits: 1,
-				parity: "none",
+				baudRate: options.baudRate ?? 115200,
+				dataBits: options.dataBits ?? 8,
+				stopBits: options.stopBits ?? 1,
+				parity: options.parity ?? "none",
 				autoOpen: false,
 			});
 			const reader = createBufferedReader(port);
