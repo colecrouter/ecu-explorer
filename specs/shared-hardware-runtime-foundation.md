@@ -43,6 +43,13 @@ The model should answer two separate questions:
 
 Those are different abstraction boundaries and should remain separate.
 
+There is also an important runtime-locality consideration for USB support:
+
+- a Node-owned USB runtime talks to hardware attached to the extension host machine
+- a WebUSB runtime talks to hardware attached to the browser/client machine
+
+Supporting both gives the project meaningful flexibility for remote workflows such as SSH, tunnels, and dev containers, where "where the cable is plugged in" matters as much as the transport itself.
+
 There is also an important host-model constraint for this repository:
 
 - the project primarily targets web-compatible TypeScript builds
@@ -102,6 +109,7 @@ Runtime backends provide access to physical host APIs.
 Examples:
 
 - Node desktop serial via `serialport`
+- Node desktop USB via a WebUSB-compatible adapter over `usb`
 - Web Serial
 - WebUSB
 - WebHID
@@ -114,6 +122,11 @@ For this repository, runtime backend design should follow a simple rule:
 - use one USB backend shape per host family
 - keep serial as a separate runtime family
 - avoid duplicating host backends unless hardware evidence shows a real reliability or capability advantage
+
+Today, the strongest justification for carrying both Node USB and WebUSB is host locality rather than protocol differences:
+
+- Node USB covers extension-host-attached hardware
+- WebUSB covers client/browser-attached hardware
 
 ### Layer 2: Shared Hardware Foundation
 
@@ -198,6 +211,8 @@ Where possible, the project should standardize on a WebUSB-compatible runtime sh
 If the Node USB layer can satisfy the same contract, higher layers should not need a separate Node-specific USB abstraction.
 
 This keeps USB support aligned with the repository's web-first build strategy and minimizes host-specific branching above the runtime layer.
+
+It also keeps USB-aware adapters agnostic to whether the hardware session is owned by the extension host or the client/browser.
 
 ### Serial Runtime Contract
 

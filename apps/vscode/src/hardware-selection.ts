@@ -1,7 +1,7 @@
 import type { DeviceInfo } from "@ecu-explorer/device";
 import type { HardwareSelectionRecord } from "@ecu-explorer/device/hardware-runtime";
 import * as vscode from "vscode";
-import { WorkspaceState } from "./workspace-state.js";
+import type { WorkspaceState } from "./workspace-state.js";
 
 export const DEFAULT_HARDWARE_SELECTION_SLOT = "ecu-primary";
 

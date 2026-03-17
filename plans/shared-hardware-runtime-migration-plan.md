@@ -39,12 +39,18 @@ For the near term, the most important practical rule is:
 
 - shared host/runtime logic should be authored once and consumed by both the extension and the diagnostic/help tools
 
+For USB specifically, the runtime split should preserve a shared WebUSB-compatible contract while making ownership locality explicit:
+
+- Node USB for extension-host-attached hardware
+- WebUSB for client/browser-attached hardware
+
 ## Scope
 
 In scope:
 
 - extracting shared runtime contracts for serial and hardware identity
 - moving desktop serial endpoint logic into a reusable shared location
+- extracting a shared Node USB runtime that preserves the existing WebUSB-compatible transport contract
 - updating the extension to consume the shared runtime foundation
 - updating the help tools to consume the same shared runtime logic
 - keeping OpenPort runtime behavior stable while the structure changes
@@ -54,7 +60,7 @@ Out of scope:
 
 - implementing wideband device support
 - rewriting all device selection UI in a single pass
-- introducing Node USB support unless a concrete follow-up commit justifies it
+- implementing WebSerial parity before a concrete consumer needs it
 - changing OpenPort protocol semantics beyond the minimum required for runtime extraction
 
 ## Constraints
@@ -206,6 +212,30 @@ Verification:
 - `npm run check`
 - `npm run tools:inspect-device -- connect --verbose`
   - use a safe dry diagnostic command or equivalent local tool probe where hardware is available
+
+### Commit 4.5: Add Node USB parity for host-owned USB sessions
+
+Objective:
+
+- support host-owned USB sessions through the shared Node runtime package without changing the higher-level transport contract
+
+Expected changes:
+
+- extract the existing `packages/tools/inspect-device.js` Node USB wrapper into `packages/hardware-runtime-node`
+- compose both USB and serial in `apps/vscode/src/openport2-desktop-runtime.ts`
+- keep the diagnostic/help tools consuming the same Node USB runtime
+
+Likely touchpoints:
+
+- `packages/hardware-runtime-node`
+- `apps/vscode/src/openport2-desktop-runtime.ts`
+- `packages/tools/inspect-device.js`
+
+Verification:
+
+- `npm run build -w packages/hardware-runtime-node`
+- `npm run test -- node-usb-runtime.test.ts openport2-transport.test.ts`
+- `npm run check`
 
 ### Commit 5: Generalize selection persistence around shared hardware identity
 
