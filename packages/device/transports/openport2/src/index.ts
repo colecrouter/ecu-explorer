@@ -111,6 +111,56 @@ interface SerialPortLike {
 interface SerialLike {
 	listPorts(): Promise<readonly SerialPortInfoLike[]>;
 	openPort(path: string): Promise<SerialPortLike>;
+	requestPort?(): Promise<SerialPortInfoLike>;
+	forgetPort?(path: string): Promise<void>;
+}
+
+interface BrowserSerialPortInfoLike {
+	usbVendorId?: number;
+	usbProductId?: number;
+}
+
+interface BrowserSerialReadableStreamReader {
+	read(): Promise<{ value?: Uint8Array; done: boolean }>;
+	releaseLock(): void;
+	cancel(): Promise<void>;
+}
+
+interface BrowserSerialReadableStreamLike {
+	getReader(): BrowserSerialReadableStreamReader;
+}
+
+interface BrowserSerialWritableStreamWriter {
+	write(data: Uint8Array): Promise<void>;
+	releaseLock(): void;
+}
+
+interface BrowserSerialWritableStreamLike {
+	getWriter(): BrowserSerialWritableStreamWriter;
+}
+
+interface BrowserSerialPortLike {
+	readable?: BrowserSerialReadableStreamLike | null;
+	writable?: BrowserSerialWritableStreamLike | null;
+	open(options: {
+		baudRate: number;
+		dataBits?: number;
+		stopBits?: 1 | 2;
+		parity?: "none" | "even" | "odd";
+	}): Promise<void>;
+	close(): Promise<void>;
+	getInfo(): BrowserSerialPortInfoLike;
+	forget?(): Promise<void>;
+}
+
+interface BrowserSerialLike {
+	getPorts(): Promise<readonly BrowserSerialPortLike[]>;
+	requestPort(options?: {
+		filters?: readonly {
+			usbVendorId?: number;
+			usbProductId?: number;
+		}[];
+	}): Promise<BrowserSerialPortLike>;
 }
 
 interface NodeLikeUsbEndpoint {
@@ -281,6 +331,173 @@ function compareSerialPortPreference(
 		return leftIsCallout ? -1 : 1;
 	}
 	return left.path.localeCompare(right.path);
+}
+
+function toSerialHexIdentifier(value: number | undefined): string {
+	return value == null ? "unknown" : value.toString(16).padStart(4, "0");
+}
+
+function createBrowserSerialRuntime(
+	browserSerial: BrowserSerialLike | undefined,
+): SerialLike | undefined {
+	if (browserSerial == null) {
+		return undefined;
+	}
+
+	const knownPorts = new Map<string, BrowserSerialPortLike>();
+
+	const buildPortPath = (
+		port: BrowserSerialPortLike,
+		index: number,
+	): string => {
+		const info = port.getInfo();
+		const vendorId = toSerialHexIdentifier(info.usbVendorId);
+		const productId = toSerialHexIdentifier(info.usbProductId);
+		return `webserial:${vendorId}:${productId}:${index}`;
+	};
+
+	const toPortInfo = (
+		port: BrowserSerialPortLike,
+		index: number,
+	): SerialPortInfoLike => {
+		const info = port.getInfo();
+		const path = buildPortPath(port, index);
+		knownPorts.set(path, port);
+		return {
+			path,
+			friendlyName: "Tactrix OpenPort 2.0",
+			vendorId: info.usbVendorId?.toString(16) ?? null,
+			productId: info.usbProductId?.toString(16) ?? null,
+		};
+	};
+
+	const getKnownPort = async (
+		path: string,
+	): Promise<BrowserSerialPortLike | undefined> => {
+		const known = knownPorts.get(path);
+		if (known != null) {
+			return known;
+		}
+		const ports = await browserSerial.getPorts();
+		for (const [index, port] of ports.entries()) {
+			const info = toPortInfo(port, index);
+			if (info.path === path) {
+				return port;
+			}
+		}
+		return undefined;
+	};
+
+	return {
+		async listPorts() {
+			const ports = await browserSerial.getPorts();
+			return ports.map((port, index) => toPortInfo(port, index));
+		},
+		async requestPort() {
+			const port = await browserSerial.requestPort({
+				filters: [{ usbVendorId: VENDOR_ID, usbProductId: PRODUCT_ID }],
+			});
+			const ports = await browserSerial.getPorts();
+			const index = ports.indexOf(port);
+			return toPortInfo(port, index >= 0 ? index : ports.length);
+		},
+		async forgetPort(path: string) {
+			const port = await getKnownPort(path);
+			if (port?.forget == null) {
+				throw new Error(`Serial port cannot be forgotten: ${path}`);
+			}
+			await port.forget();
+			knownPorts.delete(path);
+		},
+		async openPort(path: string) {
+			const port = await getKnownPort(path);
+			if (port == null) {
+				throw new Error(`Serial port not found: ${path}`);
+			}
+
+			let isOpen = false;
+			let buffered = new Uint8Array(0);
+			let reader: BrowserSerialReadableStreamReader | null = null;
+
+			const readChunk = async (): Promise<Uint8Array> => {
+				if (reader == null) {
+					const readable = port.readable;
+					if (readable == null) {
+						throw new Error("Serial port is not readable");
+					}
+					reader = readable.getReader();
+				}
+				const result = await reader.read();
+				if (result.done) {
+					throw new Error("Serial port closed");
+				}
+				return result.value ?? new Uint8Array(0);
+			};
+
+			return {
+				path,
+				get isOpen() {
+					return isOpen;
+				},
+				async open() {
+					if (isOpen) {
+						return;
+					}
+					await port.open({
+						baudRate: 115200,
+						dataBits: 8,
+						stopBits: 1,
+						parity: "none",
+					});
+					isOpen = true;
+				},
+				async close() {
+					if (!isOpen) {
+						return;
+					}
+					await reader?.cancel().catch(() => undefined);
+					reader?.releaseLock();
+					reader = null;
+					buffered = new Uint8Array(0);
+					await port.close();
+					isOpen = false;
+				},
+				async write(data: Uint8Array) {
+					const writable = port.writable;
+					if (writable == null) {
+						throw new Error("Serial port is not writable");
+					}
+					const writer = writable.getWriter();
+					try {
+						await writer.write(data);
+					} finally {
+						writer.releaseLock();
+					}
+				},
+				async read(maxLength: number, timeoutMs: number) {
+					if (buffered.length === 0) {
+						const timeoutPromise = new Promise<Uint8Array>((_, reject) => {
+							setTimeout(
+								() =>
+									reject(
+										new Error(`Serial read timed out after ${timeoutMs}ms`),
+									),
+								timeoutMs,
+							);
+						});
+						buffered = copyBytes(
+							await Promise.race([readChunk(), timeoutPromise]),
+						);
+					}
+
+					const size = Math.min(maxLength, buffered.length);
+					const chunk = buffered.slice(0, size);
+					buffered = buffered.slice(size);
+					return chunk;
+				},
+			};
+		},
+	};
 }
 
 function encodeCanId(canId: number): Uint8Array {
@@ -1204,12 +1421,15 @@ export class OpenPort2Transport implements DeviceTransport {
 	 * @param options.hid - Custom HID interface. Defaults to navigator.hid.
 	 */
 	constructor(options?: OpenPort2TransportOptions) {
-		const navigatorRef: { usb?: USB; hid?: HidLike } | undefined =
+		const navigatorRef:
+			| { usb?: USB; hid?: HidLike; serial?: BrowserSerialLike }
+			| undefined =
 			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
 			globalThis.navigator;
 		this.usb = options?.usb ?? navigatorRef?.usb;
 		this.hid = options?.hid ?? navigatorRef?.hid;
-		this.serial = options?.serial;
+		this.serial =
+			options?.serial ?? createBrowserSerialRuntime(navigatorRef?.serial);
 	}
 
 	/**
@@ -1221,44 +1441,62 @@ export class OpenPort2Transport implements DeviceTransport {
 		const devices: DeviceInfoWithSource[] = [];
 
 		if (this.usb?.getDevices != null) {
-			const usbDevices = await this.usb.getDevices();
-			for (const device of usbDevices) {
-				if (device.vendorId === VENDOR_ID && device.productId === PRODUCT_ID) {
-					const info = usbDeviceToInfo(device);
-					if (!seen.has(info.id)) {
-						seen.add(info.id);
-						devices.push(info);
+			try {
+				const usbDevices = await this.usb.getDevices();
+				for (const device of usbDevices) {
+					if (
+						device.vendorId === VENDOR_ID &&
+						device.productId === PRODUCT_ID
+					) {
+						const info = usbDeviceToInfo(device);
+						if (!seen.has(info.id)) {
+							seen.add(info.id);
+							devices.push(info);
+						}
 					}
 				}
+			} catch {
+				// Continue with other backends if USB enumeration is unavailable.
 			}
 		}
 
 		if (this.hid?.getDevices != null) {
-			const hidDevices = await this.hid.getDevices();
-			for (const device of hidDevices) {
-				if (device.vendorId === VENDOR_ID && device.productId === PRODUCT_ID) {
-					const info = hidDeviceToInfo(device);
+			try {
+				const hidDevices = await this.hid.getDevices();
+				for (const device of hidDevices) {
+					if (
+						device.vendorId === VENDOR_ID &&
+						device.productId === PRODUCT_ID
+					) {
+						const info = hidDeviceToInfo(device);
+						if (!seen.has(info.id)) {
+							seen.add(info.id);
+							devices.push(info);
+						}
+					}
+				}
+			} catch {
+				// Continue with other backends if HID enumeration is unavailable.
+			}
+		}
+
+		if (this.serial != null) {
+			try {
+				const serialPorts = [...(await this.serial.listPorts())].sort(
+					compareSerialPortPreference,
+				);
+				for (const port of serialPorts) {
+					if (!isMatchingSerialPort(port)) {
+						continue;
+					}
+					const info = serialPortToInfo(port);
 					if (!seen.has(info.id)) {
 						seen.add(info.id);
 						devices.push(info);
 					}
 				}
-			}
-		}
-
-		if (this.serial != null) {
-			const serialPorts = [...(await this.serial.listPorts())].sort(
-				compareSerialPortPreference,
-			);
-			for (const port of serialPorts) {
-				if (!isMatchingSerialPort(port)) {
-					continue;
-				}
-				const info = serialPortToInfo(port);
-				if (!seen.has(info.id)) {
-					seen.add(info.id);
-					devices.push(info);
-				}
+			} catch {
+				// Continue if serial enumeration is unavailable for this refresh.
 			}
 		}
 
@@ -1280,22 +1518,37 @@ export class OpenPort2Transport implements DeviceTransport {
 				});
 				return usbDeviceToInfo(device);
 			} catch {
-				// Fall back to WebHID selector
+				// Fall back to other backends when USB selection is unavailable.
 			}
 		}
 
 		if (this.hid?.requestDevice != null) {
-			const devices = await this.hid.requestDevice({
-				filters: [{ vendorId: VENDOR_ID, productId: PRODUCT_ID }],
-			});
-			const device = devices.at(0);
-			if (device == null) {
-				throw new Error("No OpenPort 2.0 HID device selected");
+			try {
+				const devices = await this.hid.requestDevice({
+					filters: [{ vendorId: VENDOR_ID, productId: PRODUCT_ID }],
+				});
+				const device = devices.at(0);
+				if (device == null) {
+					throw new Error("No OpenPort 2.0 HID device selected");
+				}
+				return hidDeviceToInfo(device);
+			} catch {
+				// Fall through to serial selection.
 			}
-			return hidDeviceToInfo(device);
 		}
 
 		if (this.serial != null) {
+			if (this.serial.requestPort != null) {
+				try {
+					const port = await this.serial.requestPort();
+					const info = serialPortToInfo(port);
+					const { source: _source, ...deviceInfo } = info;
+					return deviceInfo;
+				} catch {
+					// Fall through to previously granted/enumerated serial ports.
+				}
+			}
+
 			const serialPorts = [...(await this.serial.listPorts())].sort(
 				compareSerialPortPreference,
 			);
@@ -1307,7 +1560,7 @@ export class OpenPort2Transport implements DeviceTransport {
 			}
 		}
 
-		throw new Error("No USB or HID transport APIs available");
+		throw new Error("No USB, HID, or serial transport APIs available");
 	}
 
 	async forgetDevice(deviceId: string): Promise<void> {
@@ -1337,6 +1590,15 @@ export class OpenPort2Transport implements DeviceTransport {
 				await device.forget();
 				return;
 			}
+		}
+
+		if (
+			this.serial?.forgetPort != null &&
+			deviceId.startsWith("openport2-serial:")
+		) {
+			const portPath = deviceId.slice("openport2-serial:".length);
+			await this.serial.forgetPort(portPath);
+			return;
 		}
 
 		throw new Error(`OpenPort 2.0 device cannot be forgotten: ${deviceId}`);

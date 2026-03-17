@@ -268,6 +268,37 @@ describe("hardware-selection", () => {
 		expect(selected).toEqual(requestedCandidate);
 	});
 
+	it("keeps the picker open when a request action declines the chosen transport kind", async () => {
+		const harness = createQuickPickHarness();
+		vi.spyOn(vscode.window, "createQuickPick").mockReturnValueOnce(
+			harness.quickPick,
+		);
+
+		const selectionPromise = promptForHardwareCandidate(
+			[],
+			[
+				{
+					id: "request-usb",
+					label: "$(add) Connect New USB Device...",
+					run: async () => undefined,
+				},
+			],
+		);
+		const requestEntry = harness.quickPick.items.find(
+			(entry) =>
+				"action" in entry && entry.label === "$(add) Connect New USB Device...",
+		);
+		if (requestEntry == null) {
+			throw new Error("Missing request quick pick entry");
+		}
+		harness.accept(requestEntry);
+		harness.hide();
+
+		await expect(selectionPromise).rejects.toThrow(
+			"Device selection cancelled by user",
+		);
+	});
+
 	it("uses human-friendly copy and forget buttons for browser-owned candidates", async () => {
 		const harness = createQuickPickHarness();
 		vi.spyOn(vscode.window, "createQuickPick").mockReturnValueOnce(
