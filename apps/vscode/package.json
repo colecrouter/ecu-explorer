@@ -374,6 +374,7 @@
 		"@ecu-explorer/device-protocol-subaru": "*",
 		"@ecu-explorer/device-protocol-uds": "*",
 		"@ecu-explorer/device-transport-openport2": "*",
+		"@ecu-explorer/hardware-runtime-node": "*",
 		"@ecu-explorer/mcp": "*",
 		"@ecu-explorer/ui": "*",
 		"serialport": "^13.0.0"

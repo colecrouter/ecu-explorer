@@ -8,6 +8,7 @@
  * that state is specific to each workspace and persists across sessions.
  */
 
+import type { HardwareSelectionRecord } from "@ecu-explorer/device/hardware-runtime";
 import type * as vscode from "vscode";
 
 /**
@@ -33,14 +34,7 @@ export interface TableEditorState {
 	lastModified?: number;
 }
 
-export interface DeviceSelectionState {
-	id: string;
-	transportName: string;
-	name: string;
-	serialNumber?: string;
-	vendorId?: string;
-	productId?: string;
-}
+export interface DeviceSelectionState extends HardwareSelectionRecord {}
 
 /**
  * Workspace state structure
