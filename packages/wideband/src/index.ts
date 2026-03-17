@@ -33,9 +33,7 @@ export interface WidebandSession {
 export interface WidebandAdapter {
 	readonly id: string;
 	readonly name: string;
-	canOpen(
-		candidate: WidebandHardwareCandidate,
-	): Promise<boolean> | boolean;
+	canOpen(candidate: WidebandHardwareCandidate): Promise<boolean> | boolean;
 	open(candidate: WidebandHardwareCandidate): Promise<WidebandSession>;
 }
 
