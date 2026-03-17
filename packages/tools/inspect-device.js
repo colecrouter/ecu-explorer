@@ -8,6 +8,7 @@
 
 import { writeFile } from "node:fs/promises";
 import sade from "sade";
+import { groupSerialPorts } from "../device/dist/hardware-runtime.js";
 import {
 	DiagnosticStage,
 	DiagnosticStatus,
@@ -539,86 +540,16 @@ const DEFAULT_MUT3_PID_NAMES = ["RPM", "Boost Pressure", "Timing Advance"];
 async function createNodeSerialInterface() {
 	const { SerialPort } = await import("serialport");
 
-	/**
-	 * @param {string | null | undefined} value
-	 * @returns {string | undefined}
-	 */
-	const normalizeUsbIdentifier = (value) => {
-		if (typeof value !== "string") {
-			return undefined;
-		}
-		const normalized = value.trim().toLowerCase();
-		if (normalized.length === 0) {
-			return undefined;
-		}
-		return normalized.startsWith("0x") ? normalized.slice(2) : normalized;
-	};
-
-	/**
-	 * @param {string} path
-	 * @returns {number}
-	 */
-	const pathRank = (path) =>
-		path.startsWith("/dev/cu.") ? 0 : path.startsWith("/dev/tty.") ? 1 : 2;
-
-	/**
-	 * @param {string} left
-	 * @param {string} right
-	 * @returns {number}
-	 */
-	const comparePaths = (left, right) => {
-		const rankDifference = pathRank(left) - pathRank(right);
-		return rankDifference !== 0 ? rankDifference : left.localeCompare(right);
-	};
-
-	/**
-	 * @param {{ path: string; serialNumber?: string | null | undefined; manufacturer?: string | null | undefined; vendorId?: string | null | undefined; productId?: string | null | undefined }} port
-	 * @returns {string}
-	 */
-	const buildDeviceKey = (port) => {
-		const vendorId = normalizeUsbIdentifier(port.vendorId) ?? "unknown-vendor";
-		const productId =
-			normalizeUsbIdentifier(port.productId) ?? "unknown-product";
-		const serialNumber = port.serialNumber?.trim();
-		if (serialNumber != null && serialNumber.length > 0) {
-			return `${vendorId}:${productId}:${serialNumber}`;
-		}
-		const suffix = port.path.replace(/^\/dev\/(cu|tty)\./, "");
-		return `${vendorId}:${productId}:${suffix}`;
-	};
-
 	return {
 		async listPorts() {
 			const ports = await SerialPort.list();
-			/** @type {Map<string, { path: string; serialNumber: string | null; manufacturer: string | null; vendorId: string | null; productId: string | null; allPaths: string[] }>} */
-			const grouped = new Map();
-			for (const port of ports) {
-				const key = buildDeviceKey(port);
-				const existing = grouped.get(key);
-				if (existing == null) {
-					/** @type {{ path: string; serialNumber: string | null; manufacturer: string | null; vendorId: string | null; productId: string | null; allPaths: string[] }} */
-					const entry = {
-						path: port.path,
-						serialNumber: port.serialNumber ?? null,
-						manufacturer: port.manufacturer ?? null,
-						vendorId: port.vendorId ?? null,
-						productId: port.productId ?? null,
-						allPaths: [port.path],
-					};
-					grouped.set(key, entry);
-					continue;
-				}
-				existing.allPaths.push(port.path);
-				existing.allPaths.sort(comparePaths);
-				existing.path = existing.allPaths[0] ?? existing.path;
-			}
-
-			return [...grouped.values()].map((port) => ({
-				path: port.path,
-				serialNumber: port.serialNumber,
-				manufacturer: port.manufacturer,
-				vendorId: port.vendorId,
-				productId: port.productId,
+			return groupSerialPorts(ports).map((port) => ({
+				path: port.preferredPath,
+				serialNumber: port.serialNumber ?? null,
+				manufacturer: port.manufacturer ?? null,
+				vendorId: port.vendorId ?? null,
+				productId: port.productId ?? null,
+				friendlyName: port.friendlyName ?? null,
 			}));
 		},
 		async openPort(/** @type {string} */ path) {

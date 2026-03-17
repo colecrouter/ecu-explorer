@@ -170,5 +170,6 @@ export interface DeviceManager {
 
 export * from "./diagnostic-workflow.js";
 export * from "./diff.js";
+export * from "./hardware-runtime.js";
 export * from "./trace.js";
 export * from "./types.js";
