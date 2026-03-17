@@ -17,6 +17,7 @@ import * as vscode from "vscode";
 import { DeviceManagerImpl } from "../src/device-manager.js";
 import { DeviceStatusBarManager } from "../src/device-status-bar.js";
 import {
+	createHardwareCandidate,
 	FORGET_HARDWARE_BUTTON,
 	HardwareSelectionService,
 	promptForHardwareCandidate,
@@ -76,10 +77,12 @@ function createResolvedSelection(
 ): {
 	connection: DeviceConnection;
 	protocol: EcuProtocol;
+	candidate: ReturnType<typeof createHardwareCandidate>;
 } {
 	return {
 		connection,
 		protocol,
+		candidate: createHardwareCandidate(connection.deviceInfo),
 	};
 }
 
@@ -703,17 +706,18 @@ describe("DeviceStatusBarManager", () => {
 		statusBarManager = new DeviceStatusBarManager(manager);
 	});
 
-	it("should create 5 status bar items", () => {
-		expect(vscode.window.createStatusBarItem).toHaveBeenCalledTimes(5);
+	it("should create 6 status bar items", () => {
+		expect(vscode.window.createStatusBarItem).toHaveBeenCalledTimes(6);
 	});
 
-	it("should show Connect item and hide others when disconnected", () => {
-		// connectItem is index 0 (first created)
-		const connectItem = getRequiredStatusBarItem(createdItems, 0);
+	it("should show hardware and Connect items when disconnected", () => {
+		const hardwareItem = getRequiredStatusBarItem(createdItems, 0);
+		const connectItem = getRequiredStatusBarItem(createdItems, 1);
+		expect(hardwareItem.show).toHaveBeenCalled();
 		expect(connectItem.show).toHaveBeenCalled();
 
 		// All other items should be hidden
-		for (let i = 1; i < createdItems.length; i++) {
+		for (let i = 2; i < createdItems.length; i++) {
 			expect(createdItems[i]?.hide).toHaveBeenCalled();
 		}
 	});
@@ -721,12 +725,14 @@ describe("DeviceStatusBarManager", () => {
 	it("should hide Connect item and show Disconnect + StartLog when connected", async () => {
 		await manager.connect();
 
-		const connectItem = getRequiredStatusBarItem(createdItems, 0);
-		const disconnectItem = getRequiredStatusBarItem(createdItems, 1);
-		const startLogItem = getRequiredStatusBarItem(createdItems, 2);
+		const hardwareItem = getRequiredStatusBarItem(createdItems, 0);
+		const connectItem = getRequiredStatusBarItem(createdItems, 1);
+		const disconnectItem = getRequiredStatusBarItem(createdItems, 2);
+		const startLogItem = getRequiredStatusBarItem(createdItems, 3);
 
 		// After connect, connectItem should be hidden
 		expect(connectItem.hide).toHaveBeenCalled();
+		expect(hardwareItem.text).toContain("This machine");
 		// disconnectItem and startLogItem should be shown
 		expect(disconnectItem.show).toHaveBeenCalled();
 		expect(startLogItem.show).toHaveBeenCalled();
@@ -736,7 +742,7 @@ describe("DeviceStatusBarManager", () => {
 		await manager.connect();
 		await manager.disconnect();
 
-		const connectItem = getRequiredStatusBarItem(createdItems, 0);
+		const connectItem = getRequiredStatusBarItem(createdItems, 1);
 		// After disconnect, connectItem should be shown again
 		const showCallCount = connectItem.show.mock.calls.length;
 		expect(showCallCount).toBeGreaterThanOrEqual(2); // initial + after disconnect
@@ -745,8 +751,34 @@ describe("DeviceStatusBarManager", () => {
 	it("should set disconnect tooltip to device name when connected", async () => {
 		await manager.connect();
 
-		const disconnectItem = getRequiredStatusBarItem(createdItems, 1);
+		const disconnectItem = getRequiredStatusBarItem(createdItems, 2);
 		expect(disconnectItem.tooltip).toContain("Test Device");
+	});
+
+	it("shows remembered hardware in the status bar when disconnected", () => {
+		const rememberedWorkspaceState = createWorkspaceState();
+		rememberedWorkspaceState.saveDeviceSelection("ecu-primary", {
+			id: "openport2:web",
+			transportName: "openport2",
+			name: "OpenPort 2.0 WebUSB",
+			locality: "client-browser",
+		});
+
+		statusBarManager.dispose();
+		createdItems = [];
+		vi.mocked(vscode.window.createStatusBarItem).mockImplementation(() => {
+			const item = createMockStatusBarItem();
+			createdItems.push(item);
+			return item as TestStatusBarItem;
+		});
+		statusBarManager = new DeviceStatusBarManager(
+			manager,
+			new HardwareSelectionService(rememberedWorkspaceState),
+		);
+
+		const hardwareItem = getRequiredStatusBarItem(createdItems, 0);
+		expect(hardwareItem.text).toContain("OpenPort 2.0 WebUSB");
+		expect(hardwareItem.tooltip).toContain("Browser");
 	});
 
 	it("should dispose all status bar items on dispose()", () => {
@@ -776,9 +808,9 @@ describe("DeviceStatusBarManager", () => {
 		it("should show Pause + Stop items when recording", () => {
 			statusBarManager.updateLoggingState("recording");
 
-			const startLogItem = getRequiredStatusBarItem(createdItems, 2);
-			const pauseLogItem = getRequiredStatusBarItem(createdItems, 3);
-			const stopLogItem = getRequiredStatusBarItem(createdItems, 4);
+			const startLogItem = getRequiredStatusBarItem(createdItems, 3);
+			const pauseLogItem = getRequiredStatusBarItem(createdItems, 4);
+			const stopLogItem = getRequiredStatusBarItem(createdItems, 5);
 
 			expect(startLogItem.hide).toHaveBeenCalled();
 			expect(pauseLogItem.show).toHaveBeenCalled();
@@ -788,9 +820,9 @@ describe("DeviceStatusBarManager", () => {
 		it("should show Resume + Stop items when paused", () => {
 			statusBarManager.updateLoggingState("paused");
 
-			const startLogItem = getRequiredStatusBarItem(createdItems, 2);
-			const pauseLogItem = getRequiredStatusBarItem(createdItems, 3);
-			const stopLogItem = getRequiredStatusBarItem(createdItems, 4);
+			const startLogItem = getRequiredStatusBarItem(createdItems, 3);
+			const pauseLogItem = getRequiredStatusBarItem(createdItems, 4);
+			const stopLogItem = getRequiredStatusBarItem(createdItems, 5);
 
 			expect(startLogItem.hide).toHaveBeenCalled();
 			expect(pauseLogItem.show).toHaveBeenCalled();
@@ -802,7 +834,7 @@ describe("DeviceStatusBarManager", () => {
 			clearStatusBarItemCallHistory();
 			statusBarManager.updateLoggingState("idle");
 
-			const startLogItem = getRequiredStatusBarItem(createdItems, 2);
+			const startLogItem = getRequiredStatusBarItem(createdItems, 3);
 			expect(startLogItem.show).toHaveBeenCalled();
 		});
 	});

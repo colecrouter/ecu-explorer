@@ -1,5 +1,10 @@
 import * as vscode from "vscode";
 import type { ActiveConnection, DeviceManagerImpl } from "./device-manager.js";
+import {
+	createHardwareCandidate,
+	formatHardwareRuntime,
+	type HardwareSelectionService,
+} from "./hardware-selection.js";
 
 /**
  * Manages the ECU Explorer status bar items for device connection and logging state.
@@ -10,6 +15,7 @@ import type { ActiveConnection, DeviceManagerImpl } from "./device-manager.js";
  * - Connected + Logging: shows Disconnect button + Pause/Resume Log + Stop Log buttons
  */
 export class DeviceStatusBarManager implements vscode.Disposable {
+	private hardwareItem: vscode.StatusBarItem;
 	private connectItem: vscode.StatusBarItem;
 	private disconnectItem: vscode.StatusBarItem;
 	private startLogItem: vscode.StatusBarItem;
@@ -19,7 +25,16 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 	private loggingState: "idle" | "recording" | "paused" = "idle";
 	private disposables: vscode.Disposable[] = [];
 
-	constructor(private deviceManager: DeviceManagerImpl) {
+	constructor(
+		private deviceManager: DeviceManagerImpl,
+		private hardwareSelectionService?: HardwareSelectionService,
+	) {
+		this.hardwareItem = vscode.window.createStatusBarItem(
+			vscode.StatusBarAlignment.Left,
+			101,
+		);
+		this.hardwareItem.command = "ecuExplorer.manageHardware";
+
 		// Create Connect button (shown when disconnected)
 		this.connectItem = vscode.window.createStatusBarItem(
 			vscode.StatusBarAlignment.Left,
@@ -78,6 +93,7 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 	 * @param connection - The current active connection, or undefined if disconnected
 	 */
 	private update(connection: ActiveConnection | undefined): void {
+		this.updateHardwareItem(connection);
 		if (!connection) {
 			// Disconnected state: show Connect, hide everything else
 			this.connectItem.show();
@@ -96,6 +112,42 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 			// Show log items based on logging state
 			this.updateLogItems();
 		}
+	}
+
+	private updateHardwareItem(connection: ActiveConnection | undefined): void {
+		this.hardwareItem.show();
+		if (connection != null) {
+			const runtime = formatHardwareRuntime(
+				createHardwareCandidate(
+					connection.connection.deviceInfo,
+					connection.locality,
+				),
+			);
+			this.hardwareItem.text = `$(chip) ${runtime}`;
+			this.hardwareItem.tooltip = `${connection.deviceName}\n${runtime}\nManage remembered hardware devices`;
+			return;
+		}
+
+		const rememberedSelection = this.hardwareSelectionService?.getSelection();
+		if (rememberedSelection != null) {
+			const runtime = formatHardwareRuntime(
+				createHardwareCandidate(
+					{
+						id: rememberedSelection.id,
+						name: rememberedSelection.name,
+						transportName: rememberedSelection.transportName,
+						connected: false,
+					},
+					rememberedSelection.locality ?? "extension-host",
+				),
+			);
+			this.hardwareItem.text = `$(chip) ${rememberedSelection.name}`;
+			this.hardwareItem.tooltip = `${runtime}\nRemembered hardware device\nManage remembered hardware devices`;
+			return;
+		}
+
+		this.hardwareItem.text = "$(chip) Manage Hardware";
+		this.hardwareItem.tooltip = "Connect, request, or forget hardware devices";
 	}
 
 	/**
@@ -143,6 +195,7 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 		for (const d of this.disposables) {
 			d.dispose();
 		}
+		this.hardwareItem.dispose();
 		this.connectItem.dispose();
 		this.disconnectItem.dispose();
 		this.startLogItem.dispose();

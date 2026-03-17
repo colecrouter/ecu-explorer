@@ -541,7 +541,13 @@ export async function activate(
 	);
 
 	// Initialize and register DeviceStatusBarManager
-	const deviceStatusBarManager = new DeviceStatusBarManager(deviceManager);
+	if (workspaceState == null) {
+		throw new Error("Workspace state not initialized");
+	}
+	const deviceStatusBarManager = new DeviceStatusBarManager(
+		deviceManager,
+		new HardwareSelectionService(workspaceState),
+	);
 	ctx.subscriptions.push(deviceStatusBarManager);
 
 	// Initialize LiveDataPanelManager

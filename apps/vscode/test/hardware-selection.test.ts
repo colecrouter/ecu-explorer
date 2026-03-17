@@ -7,6 +7,7 @@ import {
 	doesSelectionMatchCandidate,
 	FORGET_HARDWARE_BUTTON,
 	findPreferredHardwareCandidate,
+	formatHardwareRuntime,
 	HardwareSelectionService,
 	promptForHardwareCandidate,
 	WorkspaceHardwareSelectionStrategy,
@@ -330,5 +331,19 @@ describe("hardware-selection", () => {
 		await expect(selectionPromise).rejects.toThrow(
 			"Device selection cancelled by user",
 		);
+	});
+
+	it("formats serial-backed OpenPort candidates as serial runtimes", () => {
+		expect(
+			formatHardwareRuntime(
+				createHardwareCandidate(
+					makeDevice({
+						id: "openport2-serial:webserial:0403:cc4d:0",
+						name: "OpenPort 2.0 (Serial)",
+					}),
+					"client-browser",
+				),
+			),
+		).toBe("Serial • Browser");
 	});
 });

@@ -47,6 +47,7 @@ export interface ActiveConnection {
 	connection: DeviceConnection;
 	protocol: EcuProtocol;
 	deviceName: string;
+	locality: HardwareLocality;
 	/** Current connection state for reliability tracking */
 	state: ConnectionState;
 	/** Last failure cause if state is 'failed' */
@@ -183,6 +184,7 @@ export class DeviceManagerImpl implements DeviceManager {
 	async selectDeviceAndProtocol(): Promise<{
 		connection: DeviceConnection;
 		protocol: EcuProtocol;
+		candidate: HardwareCandidate;
 	}> {
 		// List all available devices across all transports
 		const devices = await this.listAllDevices();
@@ -230,7 +232,7 @@ export class DeviceManagerImpl implements DeviceManager {
 					vscode.window.showInformationMessage(
 						`Connected using ${protocol.name}`,
 					);
-					return { connection, protocol };
+					return { connection, protocol, candidate: selectedCandidate };
 				}
 			} catch {
 				// Continue to next protocol if canHandle fails
@@ -258,13 +260,15 @@ export class DeviceManagerImpl implements DeviceManager {
 			return this._activeConnection;
 		}
 
-		const { connection, protocol } = await this.selectDeviceAndProtocol();
+		const { connection, protocol, candidate } =
+			await this.selectDeviceAndProtocol();
 		const deviceName = connection.deviceInfo.name;
 
 		this._activeConnection = {
 			connection,
 			protocol,
 			deviceName,
+			locality: candidate.locality,
 			state: "connected",
 		};
 		this._onDidChangeConnection.fire(this._activeConnection);

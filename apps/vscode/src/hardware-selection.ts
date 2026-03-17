@@ -89,6 +89,13 @@ export function doesSelectionMatchCandidate(
 	);
 }
 
+function isSerialHardwareCandidate(candidate: HardwareCandidate): boolean {
+	return (
+		candidate.device.id.startsWith("openport2-serial:") ||
+		candidate.device.name.includes("(Serial)")
+	);
+}
+
 export class HardwareSelectionService {
 	constructor(
 		private readonly workspaceState: WorkspaceState,
@@ -133,17 +140,25 @@ export interface HardwareDeviceSelectionStrategy {
 	forgetCandidate?(candidate: HardwareCandidate): void;
 }
 
-function formatLocality(locality: HardwareLocality): string {
+export function formatHardwareLocality(locality: HardwareLocality): string {
 	return locality === "client-browser" ? "Browser" : "This machine";
 }
 
-function formatTransport(transportName: string): string {
-	switch (transportName) {
+export function formatHardwareTransport(candidate: HardwareCandidate): string {
+	if (isSerialHardwareCandidate(candidate)) {
+		return "Serial";
+	}
+
+	switch (candidate.device.transportName) {
 		case "openport2":
 			return "USB";
 		default:
-			return transportName;
+			return candidate.device.transportName;
 	}
+}
+
+export function formatHardwareRuntime(candidate: HardwareCandidate): string {
+	return `${formatHardwareTransport(candidate)} • ${formatHardwareLocality(candidate.locality)}`;
 }
 
 export async function promptForHardwareCandidate(
@@ -170,7 +185,7 @@ export async function promptForHardwareCandidate(
 	const deviceQuickPicks: HardwareCandidateQuickPickItem[] = candidates.map(
 		(candidate) => ({
 			label: candidate.device.name,
-			description: `${formatTransport(candidate.device.transportName)} • ${formatLocality(candidate.locality)}`,
+			description: formatHardwareRuntime(candidate),
 			detail: `ID: ${candidate.device.id}`,
 			...(options.canForgetCandidate?.(candidate)
 				? { buttons: [FORGET_HARDWARE_BUTTON] }
