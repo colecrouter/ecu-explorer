@@ -27,6 +27,7 @@
 		"packages/core",
 		"packages/device",
 		"packages/hardware-runtime-node",
+		"packages/wideband",
 		"packages/device/transports/*",
 		"packages/device/protocols/*",
 		"packages/definitions/*",
