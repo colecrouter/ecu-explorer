@@ -7,8 +7,8 @@
  */
 
 import { writeFile } from "node:fs/promises";
+import { createNodeSerialRuntime } from "@ecu-explorer/hardware-runtime-node";
 import sade from "sade";
-import { groupSerialPorts } from "../device/dist/hardware-runtime.js";
 import {
 	DiagnosticStage,
 	DiagnosticStatus,
@@ -538,126 +538,7 @@ const DEFAULT_MUT3_PID_NAMES = ["RPM", "Boost Pressure", "Timing Advance"];
  * @returns {Promise<import("../device/transports/openport2/dist/index.js").OpenPort2TransportOptions["serial"]>}
  */
 async function createNodeSerialInterface() {
-	const { SerialPort } = await import("serialport");
-
-	return {
-		async listPorts() {
-			const ports = await SerialPort.list();
-			return groupSerialPorts(ports).map((port) => ({
-				path: port.preferredPath,
-				serialNumber: port.serialNumber ?? null,
-				manufacturer: port.manufacturer ?? null,
-				vendorId: port.vendorId ?? null,
-				productId: port.productId ?? null,
-				friendlyName: port.friendlyName ?? null,
-			}));
-		},
-		async openPort(/** @type {string} */ path) {
-			const port = new SerialPort({
-				path,
-				baudRate: 115200,
-				dataBits: 8,
-				stopBits: 1,
-				parity: "none",
-				autoOpen: false,
-			});
-
-			let buffer = Buffer.alloc(0);
-			/** @type {{ resolve: (value: Uint8Array) => void; reject: (error: unknown) => void; timer: NodeJS.Timeout; maxLength: number }[]} */
-			const waiters = [];
-
-			const flushWaiters = () => {
-				while (waiters.length > 0 && buffer.length > 0) {
-					const waiter = waiters.shift();
-					if (waiter == null) {
-						return;
-					}
-					clearTimeout(waiter.timer);
-					const size = Math.min(waiter.maxLength, buffer.length);
-					const chunk = buffer.subarray(0, size);
-					buffer = buffer.subarray(size);
-					waiter.resolve(new Uint8Array(chunk));
-				}
-			};
-
-			port.on("data", (chunk) => {
-				buffer = Buffer.concat([buffer, chunk]);
-				flushWaiters();
-			});
-			port.on("close", () => {
-				for (const waiter of waiters.splice(0)) {
-					clearTimeout(waiter.timer);
-					waiter.reject(new Error("Serial port closed"));
-				}
-			});
-			port.on("error", (error) => {
-				for (const waiter of waiters.splice(0)) {
-					clearTimeout(waiter.timer);
-					waiter.reject(error);
-				}
-			});
-
-			return {
-				path,
-				get isOpen() {
-					return port.isOpen;
-				},
-				async open() {
-					if (port.isOpen) {
-						return;
-					}
-					await new Promise((resolve, reject) => {
-						port.open((error) => (error ? reject(error) : resolve(undefined)));
-					});
-				},
-				async close() {
-					if (!port.isOpen) {
-						return;
-					}
-					await new Promise((resolve, reject) => {
-						port.close((error) => (error ? reject(error) : resolve(undefined)));
-					});
-				},
-				async write(/** @type {Uint8Array} */ data) {
-					await new Promise((resolve, reject) => {
-						port.write(Buffer.from(data), (error) => {
-							if (error != null) {
-								reject(error);
-								return;
-							}
-							port.drain((drainError) =>
-								drainError ? reject(drainError) : resolve(undefined),
-							);
-						});
-					});
-				},
-				async read(
-					/** @type {number} */ maxLength,
-					/** @type {number} */ timeoutMs,
-				) {
-					if (buffer.length > 0) {
-						const size = Math.min(maxLength, buffer.length);
-						const chunk = buffer.subarray(0, size);
-						buffer = buffer.subarray(size);
-						return new Uint8Array(chunk);
-					}
-
-					return new Promise((resolve, reject) => {
-						const timer = setTimeout(() => {
-							const index = waiters.findIndex((entry) => entry.timer === timer);
-							if (index >= 0) {
-								waiters.splice(index, 1);
-							}
-							reject(
-								new Error(`OpenPort 2.0 read timed out after ${timeoutMs}ms`),
-							);
-						}, timeoutMs);
-						waiters.push({ resolve, reject, timer, maxLength });
-					});
-				},
-			};
-		},
-	};
+	return createNodeSerialRuntime();
 }
 
 /**

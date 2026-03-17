@@ -1,0 +1,23 @@
+{
+	"name": "@ecu-explorer/hardware-runtime-node",
+	"version": "0.0.1",
+	"type": "module",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"check": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@ecu-explorer/device": "*",
+		"serialport": "^13.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "*",
+		"typescript": "*"
+	}
+}

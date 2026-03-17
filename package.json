@@ -26,6 +26,7 @@
 	"workspaces": [
 		"packages/core",
 		"packages/device",
+		"packages/hardware-runtime-node",
 		"packages/device/transports/*",
 		"packages/device/protocols/*",
 		"packages/definitions/*",
