@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as vscode from "vscode";
 import {
+	type DeviceSelectionState,
 	type TableEditorState,
 	WorkspaceState,
 } from "../src/workspace-state.js";
@@ -111,6 +112,34 @@ describe("workspace-state", () => {
 
 			expect(workspaceState.getLastOpenedTable(rom1)).toBe(table1);
 			expect(workspaceState.getLastOpenedTable(rom2)).toBe(table2);
+		});
+	});
+
+	describe("device selection persistence", () => {
+		it("saves and retrieves a device selection", () => {
+			const selection: DeviceSelectionState = {
+				id: "openport2:ABC123",
+				transportName: "openport2",
+				name: "OpenPort 2.0",
+			};
+
+			workspaceState.saveDeviceSelection("ecu-primary", selection);
+
+			expect(workspaceState.getDeviceSelection("ecu-primary")).toEqual(
+				selection,
+			);
+		});
+
+		it("clears a saved device selection", () => {
+			workspaceState.saveDeviceSelection("ecu-primary", {
+				id: "openport2:ABC123",
+				transportName: "openport2",
+				name: "OpenPort 2.0",
+			});
+
+			workspaceState.clearDeviceSelection("ecu-primary");
+
+			expect(workspaceState.getDeviceSelection("ecu-primary")).toBeUndefined();
 		});
 	});
 
@@ -579,6 +608,35 @@ describe("workspace-state", () => {
 			// Should only return valid entries
 			const all = newInstance.getAllRomDefinitions();
 			expect(all).toEqual({ valid: "file:///def.xml" });
+		});
+
+		it("sanitizes invalid device selections", () => {
+			storage.set("ecuExplorer.workspaceState", {
+				romDefinitions: {},
+				lastOpenedTables: {},
+				tableStates: {},
+				dirtyTables: {},
+				deviceSelections: {
+					valid: {
+						id: "openport2:ABC123",
+						transportName: "openport2",
+						name: "OpenPort 2.0",
+					},
+					invalid: {
+						id: 123,
+						transportName: "openport2",
+					},
+				},
+			});
+
+			const newInstance = new WorkspaceState(memento);
+
+			expect(newInstance.getDeviceSelection("valid")).toEqual({
+				id: "openport2:ABC123",
+				transportName: "openport2",
+				name: "OpenPort 2.0",
+			});
+			expect(newInstance.getDeviceSelection("invalid")).toBeUndefined();
 		});
 
 		it("sanitizes invalid table states", () => {
