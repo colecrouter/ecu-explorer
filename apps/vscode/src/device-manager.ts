@@ -8,7 +8,7 @@ import type {
 	FailureCause,
 } from "@ecu-explorer/device";
 import * as vscode from "vscode";
-import type { HardwareSelectionService } from "./hardware-selection.js";
+import type { HardwareDeviceSelectionStrategy } from "./hardware-selection.js";
 
 /**
  * Reconnect configuration options.
@@ -52,7 +52,9 @@ export interface ActiveConnection {
 export class DeviceManagerImpl implements DeviceManager {
 	private transports = new Map<string, DeviceTransport>();
 	private protocols: EcuProtocol[] = [];
-	private hardwareSelectionService: HardwareSelectionService | undefined;
+	private hardwareSelectionStrategy:
+		| HardwareDeviceSelectionStrategy
+		| undefined;
 
 	/** The currently active connection, or undefined if not connected. */
 	private _activeConnection: ActiveConnection | undefined;
@@ -90,10 +92,10 @@ export class DeviceManagerImpl implements DeviceManager {
 		return this._activeConnection;
 	}
 
-	setHardwareSelectionService(
-		service: HardwareSelectionService | undefined,
+	setHardwareSelectionStrategy(
+		strategy: HardwareDeviceSelectionStrategy | undefined,
 	): void {
-		this.hardwareSelectionService = service;
+		this.hardwareSelectionStrategy = strategy;
 	}
 
 	/**
@@ -175,30 +177,10 @@ export class DeviceManagerImpl implements DeviceManager {
 			);
 		}
 
-		let selectedDevice =
-			devices.length === 1
-				? devices[0]
-				: this.hardwareSelectionService?.findPreferredDevice(devices);
-		if (devices.length > 1 && selectedDevice == null) {
-			const deviceQuickPicks = devices.map((device, index) => ({
-				label: `${device.name} (${device.transportName})`,
-				description: `ID: ${device.id}`,
-				index,
-			}));
-			const selected = await vscode.window.showQuickPick(deviceQuickPicks, {
-				placeHolder: "Select a device to connect",
-			});
-			if (!selected) {
-				throw new Error("Device selection cancelled by user");
-			}
-			const device = devices[selected.index];
-			if (!device) {
-				throw new Error(
-					"Selected device index is out of bounds for device list",
-				);
-			}
-			selectedDevice = device;
-		}
+		const selectedDevice =
+			this.hardwareSelectionStrategy != null
+				? await this.hardwareSelectionStrategy.selectDevice(devices)
+				: await this.selectDeviceFromList(devices);
 
 		if (!selectedDevice) {
 			throw new Error("No device selected");
@@ -219,7 +201,7 @@ export class DeviceManagerImpl implements DeviceManager {
 		for (const protocol of this.protocols) {
 			try {
 				if (await protocol.canHandle(connection)) {
-					this.hardwareSelectionService?.saveDevice(selectedDevice);
+					this.hardwareSelectionStrategy?.rememberDevice(selectedDevice);
 					vscode.window.showInformationMessage(
 						`Connected using ${protocol.name}`,
 					);
@@ -263,6 +245,36 @@ export class DeviceManagerImpl implements DeviceManager {
 		this._onDidChangeConnection.fire(this._activeConnection);
 
 		return this._activeConnection;
+	}
+
+	private async selectDeviceFromList(
+		devices: readonly DeviceInfo[],
+	): Promise<DeviceInfo> {
+		if (devices.length === 0) {
+			throw new Error("No device selected");
+		}
+
+		const device = devices[0];
+		if (devices.length === 1 && device != null) {
+			return device;
+		}
+
+		const deviceQuickPicks = devices.map((entry, index) => ({
+			label: `${entry.name} (${entry.transportName})`,
+			description: `ID: ${entry.id}`,
+			index,
+		}));
+		const selected = await vscode.window.showQuickPick(deviceQuickPicks, {
+			placeHolder: "Select a device to connect",
+		});
+		if (!selected) {
+			throw new Error("Device selection cancelled by user");
+		}
+		const selectedDevice = devices[selected.index];
+		if (!selectedDevice) {
+			throw new Error("Selected device index is out of bounds for device list");
+		}
+		return selectedDevice;
 	}
 
 	/**

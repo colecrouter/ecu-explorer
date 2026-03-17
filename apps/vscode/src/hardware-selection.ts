@@ -1,5 +1,6 @@
 import type { DeviceInfo } from "@ecu-explorer/device";
 import type { HardwareSelectionRecord } from "@ecu-explorer/device/hardware-runtime";
+import * as vscode from "vscode";
 import { WorkspaceState } from "./workspace-state.js";
 
 export const DEFAULT_HARDWARE_SELECTION_SLOT = "ecu-primary";
@@ -52,5 +53,62 @@ export class HardwareSelectionService {
 
 	findPreferredDevice(devices: readonly DeviceInfo[]): DeviceInfo | undefined {
 		return findPreferredHardwareDevice(devices, this.getSelection());
+	}
+}
+
+export interface HardwareDeviceSelectionStrategy {
+	selectDevice(devices: readonly DeviceInfo[]): Promise<DeviceInfo>;
+	rememberDevice(device: DeviceInfo): void;
+}
+
+export async function promptForHardwareDevice(
+	devices: readonly DeviceInfo[],
+): Promise<DeviceInfo> {
+	if (devices.length === 0) {
+		throw new Error("No device selected");
+	}
+
+	if (devices.length === 1) {
+		const device = devices[0];
+		if (device == null) {
+			throw new Error("No device selected");
+		}
+		return device;
+	}
+
+	const deviceQuickPicks = devices.map((device, index) => ({
+		label: `${device.name} (${device.transportName})`,
+		description: `ID: ${device.id}`,
+		index,
+	}));
+	const selected = await vscode.window.showQuickPick(deviceQuickPicks, {
+		placeHolder: "Select a device to connect",
+	});
+	if (!selected) {
+		throw new Error("Device selection cancelled by user");
+	}
+	const device = devices[selected.index];
+	if (!device) {
+		throw new Error("Selected device index is out of bounds for device list");
+	}
+	return device;
+}
+
+export class WorkspaceHardwareSelectionStrategy
+	implements HardwareDeviceSelectionStrategy
+{
+	constructor(private readonly selectionService: HardwareSelectionService) {}
+
+	async selectDevice(devices: readonly DeviceInfo[]): Promise<DeviceInfo> {
+		const preferred = this.selectionService.findPreferredDevice(devices);
+		if (preferred != null) {
+			return preferred;
+		}
+
+		return promptForHardwareDevice(devices);
+	}
+
+	rememberDevice(device: DeviceInfo): void {
+		this.selectionService.saveDevice(device);
 	}
 }

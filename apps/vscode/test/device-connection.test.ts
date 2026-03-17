@@ -16,7 +16,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { DeviceManagerImpl } from "../src/device-manager.js";
 import { DeviceStatusBarManager } from "../src/device-status-bar.js";
-import { HardwareSelectionService } from "../src/hardware-selection.js";
+import {
+	HardwareSelectionService,
+	WorkspaceHardwareSelectionStrategy,
+} from "../src/hardware-selection.js";
 import { WorkspaceState } from "../src/workspace-state.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -343,8 +346,10 @@ describe("DeviceManagerImpl", () => {
 				transportName: "openport2",
 				name: "OpenPort 2.0 B",
 			});
-			manager.setHardwareSelectionService(
-				new HardwareSelectionService(workspaceState),
+			manager.setHardwareSelectionStrategy(
+				new WorkspaceHardwareSelectionStrategy(
+					new HardwareSelectionService(workspaceState),
+				),
 			);
 
 			const quickPickSpy = vi.spyOn(vscode.window, "showQuickPick");
@@ -374,8 +379,10 @@ describe("DeviceManagerImpl", () => {
 			manager.registerProtocol(createMockProtocol());
 
 			const workspaceState = createWorkspaceState();
-			manager.setHardwareSelectionService(
-				new HardwareSelectionService(workspaceState),
+			manager.setHardwareSelectionStrategy(
+				new WorkspaceHardwareSelectionStrategy(
+					new HardwareSelectionService(workspaceState),
+				),
 			);
 
 			await manager.selectDeviceAndProtocol();

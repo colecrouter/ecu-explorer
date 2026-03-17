@@ -31,7 +31,10 @@ import {
 	setCellEditHandlerContext,
 	setTableHandlerContext,
 } from "./handlers/index.js";
-import { HardwareSelectionService } from "./hardware-selection.js";
+import {
+	HardwareSelectionService,
+	WorkspaceHardwareSelectionStrategy,
+} from "./hardware-selection.js";
 import type { TableEditSession } from "./history/table-edit-session.js";
 import { LiveDataPanelManager } from "./live-data-panel-manager.js";
 import { LoggingManager, openLogsFolder } from "./logging-manager.js";
@@ -1249,8 +1252,10 @@ export async function activate(
 
 	// Initialize workspace state
 	workspaceState = new WorkspaceState(ctx.workspaceState);
-	deviceManager?.setHardwareSelectionService(
-		new HardwareSelectionService(workspaceState),
+	deviceManager?.setHardwareSelectionStrategy(
+		new WorkspaceHardwareSelectionStrategy(
+			new HardwareSelectionService(workspaceState),
+		),
 	);
 
 	// Create and register ECU Explorer tree provider
