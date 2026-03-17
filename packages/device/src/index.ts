@@ -39,6 +39,14 @@ export interface DeviceTransport {
 	 */
 	requestDevice?(): Promise<DeviceInfo>;
 
+	/**
+	 * Forget a previously granted device of this type, if supported by the runtime.
+	 *
+	 * This is primarily used by browser-owned runtimes where device permissions
+	 * can be explicitly revoked by the user.
+	 */
+	forgetDevice?(deviceId: string): Promise<void>;
+
 	/** Open a connection to a specific device by ID */
 	connect(deviceId: string): Promise<DeviceConnection>;
 }

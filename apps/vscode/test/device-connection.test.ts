@@ -18,6 +18,7 @@ import { DeviceManagerImpl } from "../src/device-manager.js";
 import { DeviceStatusBarManager } from "../src/device-status-bar.js";
 import {
 	HardwareSelectionService,
+	promptForHardwareCandidate,
 	WorkspaceHardwareSelectionStrategy,
 } from "../src/hardware-selection.js";
 import { WorkspaceState } from "../src/workspace-state.js";
@@ -482,6 +483,67 @@ describe("DeviceManagerImpl", () => {
 				name: "OpenPort 2.0 WebUSB",
 				locality: "client-browser",
 			});
+		});
+
+		it("forgets a browser-owned device and clears the saved selection", async () => {
+			const transport = {
+				name: "OpenPort 2.0",
+				listDevices: vi
+					.fn()
+					.mockResolvedValueOnce([
+						{
+							id: "openport2:web",
+							name: "OpenPort 2.0 WebUSB",
+							transportName: "openport2",
+							connected: false,
+						},
+					])
+					.mockResolvedValueOnce([]),
+				forgetDevice: vi.fn().mockResolvedValue(undefined),
+				connect: vi.fn(),
+			} satisfies DeviceTransport;
+			const manager = new DeviceManagerImpl();
+			manager.setHardwareCandidateLocality("client-browser");
+			manager.registerTransport("openport2", transport);
+			manager.registerProtocol(createMockProtocol());
+
+			const workspaceState = createWorkspaceState();
+			workspaceState.saveDeviceSelection("ecu-primary", {
+				id: "openport2:web",
+				transportName: "openport2",
+				name: "OpenPort 2.0 WebUSB",
+				locality: "client-browser",
+			});
+			const selectionService = new HardwareSelectionService(workspaceState);
+			manager.setHardwareSelectionStrategy({
+				selectDevice: async (candidates, requestActions = []) =>
+					promptForHardwareCandidate(candidates, requestActions),
+				rememberCandidate: () => {},
+				forgetCandidate: (candidate) =>
+					selectionService.forgetCandidate(candidate),
+			});
+
+			vi.spyOn(vscode.window, "showQuickPick").mockImplementationOnce(
+				async (items) => {
+					const entries = Array.isArray(items) ? items : await items;
+					const forgetEntry = entries.find(
+						(entry) =>
+							"action" in entry &&
+							entry.label === "$(close) Forget OpenPort 2.0 WebUSB...",
+					);
+					if (forgetEntry == null) {
+						throw new Error("Missing forget quick pick entry");
+					}
+					return forgetEntry;
+				},
+			);
+
+			await expect(manager.selectDeviceAndProtocol()).rejects.toThrow(
+				"No devices found",
+			);
+
+			expect(transport.forgetDevice).toHaveBeenCalledWith("openport2:web");
+			expect(workspaceState.getDeviceSelection("ecu-primary")).toBeUndefined();
 		});
 	});
 });

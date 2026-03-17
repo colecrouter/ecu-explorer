@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import {
 	createHardwareCandidate,
 	createHardwareSelectionRecord,
+	doesSelectionMatchCandidate,
 	findPreferredHardwareCandidate,
 	HardwareSelectionService,
 	promptForHardwareCandidate,
@@ -115,6 +116,43 @@ describe("hardware-selection", () => {
 
 		expect(selected.device.id).toBe("openport2:DEF");
 		expect(quickPickSpy).not.toHaveBeenCalled();
+	});
+
+	it("matches a saved selection to a candidate", () => {
+		expect(
+			doesSelectionMatchCandidate(
+				{
+					id: "openport2:ABC",
+					transportName: "openport2",
+					name: "OpenPort 2.0",
+					locality: "client-browser",
+				},
+				createHardwareCandidate(
+					makeDevice({ id: "openport2:ABC", name: "OpenPort 2.0" }),
+					"client-browser",
+				),
+			),
+		).toBe(true);
+	});
+
+	it("clears a saved selection when the matching candidate is forgotten", () => {
+		const workspaceState = createWorkspaceState();
+		const service = new HardwareSelectionService(workspaceState);
+		service.saveCandidate(
+			createHardwareCandidate(
+				makeDevice({ id: "openport2:ABC", name: "OpenPort 2.0" }),
+				"client-browser",
+			),
+		);
+
+		service.forgetCandidate(
+			createHardwareCandidate(
+				makeDevice({ id: "openport2:ABC", name: "OpenPort 2.0" }),
+				"client-browser",
+			),
+		);
+
+		expect(workspaceState.getDeviceSelection("ecu-primary")).toBeUndefined();
 	});
 
 	it("runs a request action from the quick pick when selected", async () => {

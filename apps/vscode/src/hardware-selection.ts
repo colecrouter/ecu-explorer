@@ -19,7 +19,7 @@ export interface HardwareRequestAction {
 	id: string;
 	label: string;
 	description?: string;
-	run(): Promise<HardwareCandidate>;
+	run(): Promise<HardwareCandidate | undefined>;
 }
 
 interface HardwareCandidateQuickPickItem extends vscode.QuickPickItem {
@@ -64,6 +64,21 @@ export function findPreferredHardwareCandidate(
 	);
 }
 
+export function doesSelectionMatchCandidate(
+	selection: HardwareSelectionRecord | undefined,
+	candidate: HardwareCandidate,
+): boolean {
+	if (selection == null) {
+		return false;
+	}
+
+	return (
+		candidate.device.id === selection.id &&
+		candidate.device.transportName === selection.transportName &&
+		(selection.locality == null || candidate.locality === selection.locality)
+	);
+}
+
 export class HardwareSelectionService {
 	constructor(
 		private readonly workspaceState: WorkspaceState,
@@ -85,6 +100,12 @@ export class HardwareSelectionService {
 		this.workspaceState.clearDeviceSelection(this.slot);
 	}
 
+	forgetCandidate(candidate: HardwareCandidate): void {
+		if (doesSelectionMatchCandidate(this.getSelection(), candidate)) {
+			this.clearSelection();
+		}
+	}
+
 	findPreferredCandidate(
 		candidates: readonly HardwareCandidate[],
 	): HardwareCandidate | undefined {
@@ -98,6 +119,7 @@ export interface HardwareDeviceSelectionStrategy {
 		requestActions?: readonly HardwareRequestAction[],
 	): Promise<HardwareCandidate>;
 	rememberCandidate(candidate: HardwareCandidate): void;
+	forgetCandidate?(candidate: HardwareCandidate): void;
 }
 
 function formatLocality(locality: HardwareLocality): string {
@@ -146,7 +168,11 @@ export async function promptForHardwareCandidate(
 	}
 
 	if ("action" in selected) {
-		return selected.action.run();
+		const candidate = await selected.action.run();
+		if (candidate == null) {
+			throw new Error("Device selection cancelled by user");
+		}
+		return candidate;
 	}
 
 	return selected.candidate;
@@ -171,5 +197,9 @@ export class WorkspaceHardwareSelectionStrategy
 
 	rememberCandidate(candidate: HardwareCandidate): void {
 		this.selectionService.saveCandidate(candidate);
+	}
+
+	forgetCandidate(candidate: HardwareCandidate): void {
+		this.selectionService.forgetCandidate(candidate);
 	}
 }
