@@ -220,9 +220,9 @@ The first implementation pass should target AEM serial-output widebands.
 
 | Device family | Transport | Coverage target | Notes |
 | --- | --- | --- | --- |
-| AEM serial-output widebands | Serial | First implementation target | `9600 8N1` ASCII value stream |
-| AEM X-Series serial output | Serial | Planned under same adapter | AEM documents backward-compatible serial output formatting |
-| AEM legacy 30-4100 / 30-4110 style serial output | Serial | Planned under same adapter | Same line-based serial output model |
+| AEM UEGO 9600 serial family | Serial | First implementation target | `9600 8N1` ASCII value stream |
+| AEM X-Series 30-0300 / 30-0310 | Serial | Supported by current adapter | AEM documents backward-compatible serial output formatting |
+| AEM legacy 30-4100 / 30-4110 style UEGO gauges | Serial | Supported by current adapter | Same line-based serial output model |
 | AEMnet / CAN integrations | CAN | Not in first pass | Separate transport and protocol work |
 | Non-AEM widebands | Varies | Not in first pass | To be added as later adapter families |
 
@@ -237,6 +237,18 @@ The first implementation should support both host-local serial paths built on th
 
 - extension-host serial via the shared Node serial runtime
 - client-browser serial via WebSerial through the same shared serial contract
+
+## Reconnect Direction
+
+Preferred wideband hardware should reconnect automatically when the extension is idle and the remembered device becomes available again.
+
+The intended UX split is:
+
+- passive/background reconnect uses the remembered wideband selection and saved display mode
+- explicit `Connect Wideband` clicks always show the picker
+- explicit `Disconnect Wideband` should suppress automatic reconnect until the user chooses to connect again
+
+This mirrors the ECU-side behavior: remembered hardware should make reconnect seamless without making the explicit connect affordance feel sticky.
 
 ## Logging Integration
 
