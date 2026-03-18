@@ -1,5 +1,16 @@
 import * as vscode from "vscode";
 import type { TableEditSession } from "../history/table-edit-session.js";
+import type { RomEditorProvider } from "../rom/editor-provider.js";
+
+type EditCommandsTableSession = Pick<
+	TableEditSession,
+	"activePanel" | "tableDef" | "undo" | "redo"
+>;
+
+type EditCommandsEditorProvider = Pick<
+	RomEditorProvider,
+	"getPanelForDocument" | "getTableDocument"
+>;
 
 /**
  * Get references to extension state
@@ -7,7 +18,11 @@ import type { TableEditSession } from "../history/table-edit-session.js";
 let getStateRefs:
 	| (() => {
 			activePanel: vscode.WebviewPanel | null;
-			activeTableSession: TableEditSession | null;
+			activeTableSession: EditCommandsTableSession | null;
+			editorProvider: EditCommandsEditorProvider | null;
+			getTableSessionForUri: (
+				uri: vscode.Uri,
+			) => EditCommandsTableSession | null;
 	  })
 	| null = null;
 
@@ -32,23 +47,74 @@ function getState() {
 	return getStateRefs();
 }
 
+function isCustomTabInput(
+	input: unknown,
+): input is { uri: vscode.Uri; viewType: string } {
+	if (!input || typeof input !== "object") {
+		return false;
+	}
+
+	const candidate = input as {
+		uri?: unknown;
+		viewType?: unknown;
+	};
+
+	return (
+		typeof candidate.viewType === "string" &&
+		typeof candidate.uri === "object" &&
+		candidate.uri !== null
+	);
+}
+
+function resolveActiveTableContext() {
+	const state = getState();
+	const activeTabInput =
+		vscode.window.tabGroups?.activeTabGroup?.activeTab?.input;
+
+	let panel =
+		state.activeTableSession?.activePanel ?? state.activePanel ?? null;
+	let tableSession = state.activeTableSession;
+
+	if (isCustomTabInput(activeTabInput)) {
+		const tableDoc = state.editorProvider?.getTableDocument(activeTabInput.uri);
+		if (tableDoc) {
+			panel =
+				state.editorProvider?.getPanelForDocument(tableDoc.romDocument) ??
+				panel;
+			tableSession =
+				state.getTableSessionForUri(activeTabInput.uri) ?? tableSession;
+
+			return {
+				panel,
+				tableDef: tableDoc.tableDef,
+				tableSession,
+			};
+		}
+	}
+
+	return {
+		panel,
+		tableDef: tableSession?.tableDef ?? null,
+		tableSession,
+	};
+}
+
 /**
  * Handle undo command
  * Integrates with VSCode's undo/redo system
  */
 export function handleUndo(): void {
-	const state = getState();
+	const { panel, tableSession } = resolveActiveTableContext();
 
-	if (!state.activeTableSession) {
+	if (!tableSession) {
 		return;
 	}
 
-	const result = state.activeTableSession.undo();
+	const result = tableSession.undo();
 	if (!result) {
 		return;
 	}
 
-	const panel = state.activeTableSession.activePanel ?? state.activePanel;
 	if (panel) {
 		panel.webview.postMessage(result.message);
 	}
@@ -59,18 +125,17 @@ export function handleUndo(): void {
  * Integrates with VSCode's undo/redo system
  */
 export function handleRedo(): void {
-	const state = getState();
+	const { panel, tableSession } = resolveActiveTableContext();
 
-	if (!state.activeTableSession) {
+	if (!tableSession) {
 		return;
 	}
 
-	const result = state.activeTableSession.redo();
+	const result = tableSession.redo();
 	if (!result) {
 		return;
 	}
 
-	const panel = state.activeTableSession.activePanel ?? state.activePanel;
 	if (panel) {
 		panel.webview.postMessage(result.message);
 	}
@@ -80,9 +145,9 @@ export function handleRedo(): void {
  * Handle math operation: Add constant to selection
  */
 export async function handleMathOpAdd(): Promise<void> {
-	const state = getState();
+	const { panel } = resolveActiveTableContext();
 
-	if (!state.activePanel) {
+	if (!panel) {
 		vscode.window.showErrorMessage("No active table editor");
 		return;
 	}
@@ -98,7 +163,7 @@ export async function handleMathOpAdd(): Promise<void> {
 
 	if (constant === undefined) return;
 
-	await state.activePanel.webview.postMessage({
+	await panel.webview.postMessage({
 		type: "mathOp",
 		operation: "add",
 		constant: Number.parseFloat(constant),
@@ -109,9 +174,9 @@ export async function handleMathOpAdd(): Promise<void> {
  * Handle math operation: Multiply selection by factor
  */
 export async function handleMathOpMultiply(): Promise<void> {
-	const state = getState();
+	const { panel } = resolveActiveTableContext();
 
-	if (!state.activePanel) {
+	if (!panel) {
 		vscode.window.showErrorMessage("No active table editor");
 		return;
 	}
@@ -127,7 +192,7 @@ export async function handleMathOpMultiply(): Promise<void> {
 
 	if (factor === undefined) return;
 
-	await state.activePanel.webview.postMessage({
+	await panel.webview.postMessage({
 		type: "mathOp",
 		operation: "multiply",
 		factor: Number.parseFloat(factor),
@@ -138,9 +203,9 @@ export async function handleMathOpMultiply(): Promise<void> {
  * Handle math operation: Clamp selection to range
  */
 export async function handleMathOpClamp(): Promise<void> {
-	const state = getState();
+	const { panel } = resolveActiveTableContext();
 
-	if (!state.activePanel) {
+	if (!panel) {
 		vscode.window.showErrorMessage("No active table editor");
 		return;
 	}
@@ -171,7 +236,7 @@ export async function handleMathOpClamp(): Promise<void> {
 
 	if (max === undefined) return;
 
-	await state.activePanel.webview.postMessage({
+	await panel.webview.postMessage({
 		type: "mathOp",
 		operation: "clamp",
 		min: Number.parseFloat(min),
@@ -183,17 +248,14 @@ export async function handleMathOpClamp(): Promise<void> {
  * Handle math operation: Smooth selection (2D/3D only)
  */
 export async function handleMathOpSmooth(): Promise<void> {
-	const state = getState();
+	const { panel, tableDef } = resolveActiveTableContext();
 
-	if (!state.activePanel) {
+	if (!panel) {
 		vscode.window.showErrorMessage("No active table editor");
 		return;
 	}
 
-	if (
-		!state.activeTableSession ||
-		state.activeTableSession.tableDef.kind === "table1d"
-	) {
+	if (!tableDef || tableDef.kind === "table1d") {
 		vscode.window.showErrorMessage(
 			"Smooth operation is only available for 2D and 3D tables",
 		);
@@ -236,7 +298,7 @@ export async function handleMathOpSmooth(): Promise<void> {
 
 	if (boundaryMode === undefined) return;
 
-	await state.activePanel.webview.postMessage({
+	await panel.webview.postMessage({
 		type: "mathOp",
 		operation: "smooth",
 		kernelSize: Number.parseInt(kernelSize, 10),

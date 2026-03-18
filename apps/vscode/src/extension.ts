@@ -26,6 +26,12 @@ import {
 	reconnectPreferredWideband,
 } from "./auto-reconnect.js";
 import {
+	handleMathOpAdd,
+	handleMathOpClamp,
+	handleMathOpMultiply,
+	handleMathOpSmooth,
+	handleRedo,
+	handleUndo,
 	setEditCommandsContext,
 	setGraphCommandsContext,
 } from "./commands/index.js";
@@ -495,6 +501,9 @@ export async function activate(
 	setEditCommandsContext(() => ({
 		activePanel,
 		activeTableSession,
+		editorProvider,
+		getTableSessionForUri: (uri: vscode.Uri) =>
+			tableSessions.get(uri.toString()) ?? null,
 	}));
 
 	setGraphCommandsContext(() => ({
@@ -1671,207 +1680,6 @@ export async function activate(
  * Handle undo command
  * Integrates with VSCode's undo/redo system
  */
-function handleUndo(): void {
-	if (!activeTableSession) {
-		return;
-	}
-
-	const result = activeTableSession.undo();
-	if (!result) {
-		return;
-	}
-
-	activeRom = activeRom
-		? { ...activeRom, bytes: activeTableSession.romDocument.romBytes }
-		: activeRom;
-
-	const panel = activeTableSession.activePanel ?? activePanel;
-	if (panel) {
-		panel.webview.postMessage(result.message);
-	}
-}
-
-/**
- * Handle redo command
- * Integrates with VSCode's undo/redo system
- */
-function handleRedo(): void {
-	if (!activeTableSession) {
-		return;
-	}
-
-	const result = activeTableSession.redo();
-	if (!result) {
-		return;
-	}
-
-	activeRom = activeRom
-		? { ...activeRom, bytes: activeTableSession.romDocument.romBytes }
-		: activeRom;
-
-	const panel = activeTableSession.activePanel ?? activePanel;
-	if (panel) {
-		panel.webview.postMessage(result.message);
-	}
-}
-
-/**
- * Handle math operation: Add constant to selection
- */
-async function handleMathOpAdd(): Promise<void> {
-	if (!activePanel) {
-		vscode.window.showErrorMessage("No active table editor");
-		return;
-	}
-
-	const constant = await vscode.window.showInputBox({
-		prompt: "Enter constant to add (can be negative)",
-		placeHolder: "e.g., 5 or -10",
-		validateInput: (value) => {
-			const num = Number.parseFloat(value);
-			return Number.isNaN(num) ? "Please enter a valid number" : null;
-		},
-	});
-
-	if (constant === undefined) return;
-
-	await activePanel.webview.postMessage({
-		type: "mathOp",
-		operation: "add",
-		constant: Number.parseFloat(constant),
-	});
-}
-
-/**
- * Handle math operation: Multiply selection by factor
- */
-async function handleMathOpMultiply(): Promise<void> {
-	if (!activePanel) {
-		vscode.window.showErrorMessage("No active table editor");
-		return;
-	}
-
-	const factor = await vscode.window.showInputBox({
-		prompt: "Enter multiplication factor",
-		placeHolder: "e.g., 1.5 or 0.5",
-		validateInput: (value) => {
-			const num = Number.parseFloat(value);
-			return Number.isNaN(num) ? "Please enter a valid number" : null;
-		},
-	});
-
-	if (factor === undefined) return;
-
-	await activePanel.webview.postMessage({
-		type: "mathOp",
-		operation: "multiply",
-		factor: Number.parseFloat(factor),
-	});
-}
-
-/**
- * Handle math operation: Clamp selection to range
- */
-async function handleMathOpClamp(): Promise<void> {
-	if (!activePanel) {
-		vscode.window.showErrorMessage("No active table editor");
-		return;
-	}
-
-	const min = await vscode.window.showInputBox({
-		prompt: "Enter minimum value",
-		placeHolder: "e.g., 0",
-		validateInput: (value) => {
-			const num = Number.parseFloat(value);
-			return Number.isNaN(num) ? "Please enter a valid number" : null;
-		},
-	});
-
-	if (min === undefined) return;
-
-	const max = await vscode.window.showInputBox({
-		prompt: "Enter maximum value",
-		placeHolder: "e.g., 255",
-		validateInput: (value) => {
-			const num = Number.parseFloat(value);
-			if (Number.isNaN(num)) return "Please enter a valid number";
-			if (num < Number.parseFloat(min)) {
-				return "Maximum must be greater than or equal to minimum";
-			}
-			return null;
-		},
-	});
-
-	if (max === undefined) return;
-
-	await activePanel.webview.postMessage({
-		type: "mathOp",
-		operation: "clamp",
-		min: Number.parseFloat(min),
-		max: Number.parseFloat(max),
-	});
-}
-
-/**
- * Handle math operation: Smooth selection (2D/3D only)
- */
-async function handleMathOpSmooth(): Promise<void> {
-	if (!activePanel) {
-		vscode.window.showErrorMessage("No active table editor");
-		return;
-	}
-
-	if (!activeTableDef || activeTableDef.kind === "table1d") {
-		vscode.window.showErrorMessage(
-			"Smooth operation is only available for 2D and 3D tables",
-		);
-		return;
-	}
-
-	const kernelSize = await vscode.window.showQuickPick(["3", "5", "7", "9"], {
-		placeHolder: "Select kernel size",
-		title: "Smooth Operation - Kernel Size",
-	});
-
-	if (kernelSize === undefined) return;
-
-	const iterations = await vscode.window.showInputBox({
-		prompt: "Enter number of iterations",
-		placeHolder: "e.g., 1",
-		value: "1",
-		validateInput: (value) => {
-			const num = Number.parseInt(value, 10);
-			if (Number.isNaN(num) || num < 1) {
-				return "Please enter a positive integer";
-			}
-			return null;
-		},
-	});
-
-	if (iterations === undefined) return;
-
-	const boundaryMode = await vscode.window.showQuickPick(
-		[
-			{ label: "Pad with zeros", value: "pad" },
-			{ label: "Repeat edge values", value: "repeat" },
-			{ label: "Mirror edge values", value: "mirror" },
-		],
-		{
-			placeHolder: "Select boundary handling mode",
-			title: "Smooth Operation - Boundary Mode",
-		},
-	);
-
-	if (boundaryMode === undefined) return;
-
-	await activePanel.webview.postMessage({
-		type: "mathOp",
-		operation: "smooth",
-		kernelSize: Number.parseInt(kernelSize, 10),
-		iterations: Number.parseInt(iterations, 10),
-		boundaryMode: boundaryMode.value,
-	});
-}
 
 /**
  * Handle open graph command

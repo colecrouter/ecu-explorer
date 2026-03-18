@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { TableDefinition } from "@ecu-explorer/core";
 import {
 	type Edit,
@@ -11,9 +12,13 @@ import {
 	handleMathOpClamp,
 	handleMathOpMultiply,
 	handleMathOpSmooth,
+	handleRedo,
+	handleUndo,
 	setEditCommandsContext,
 } from "../src/commands/edit-commands.js";
 import { activate } from "../src/extension.js";
+import type { TableEditSession } from "../src/history/table-edit-session.js";
+import type { RomEditorProvider } from "../src/rom/editor-provider.js";
 import { WorkspaceState } from "../src/workspace-state.js";
 import {
 	createExtensionContext,
@@ -54,6 +59,16 @@ type ActiveTab = Pick<vscode.Tab, "input">;
 type ActiveTabGroupShape = Pick<
 	vscode.TabGroup,
 	"activeTab" | "isActive" | "viewColumn" | "tabs"
+>;
+
+type EditCommandEditorProvider = Pick<
+	RomEditorProvider,
+	"getTableDocument" | "getPanelForDocument"
+>;
+
+type EditCommandTableSession = Pick<
+	TableEditSession,
+	"activePanel" | "tableDef" | "undo" | "redo"
 >;
 
 function createMockExtensionContext(): ActivateContext {
@@ -134,15 +149,24 @@ function makeTransaction(
 function setMathCommandState(options?: {
 	activePanel?: vscode.WebviewPanel | null;
 	activeTableDef?: TableDefinition | null;
+	editorProvider?: EditCommandEditorProvider | null;
+	activeTableSession?: EditCommandTableSession | null;
+	getTableSessionForUri?: (uri: vscode.Uri) => EditCommandTableSession | null;
 }): void {
 	setEditCommandsContext(() => ({
 		activePanel: options?.activePanel ?? null,
 		activeTableSession:
-			options?.activeTableDef === undefined || options.activeTableDef === null
+			options?.activeTableSession ??
+			(options?.activeTableDef === undefined || options.activeTableDef === null
 				? null
 				: ({
+						activePanel: null,
 						tableDef: options.activeTableDef,
-					} as never),
+						undo: vi.fn().mockReturnValue(null),
+						redo: vi.fn().mockReturnValue(null),
+					} satisfies EditCommandTableSession)),
+		editorProvider: options?.editorProvider ?? null,
+		getTableSessionForUri: options?.getTableSessionForUri ?? (() => null),
 	}));
 }
 
@@ -171,6 +195,35 @@ function create2DTableDef() {
 	} satisfies TableDefinition;
 }
 
+function create1DTableDef() {
+	return {
+		kind: "table1d",
+		name: "Test 1D Table",
+		id: "table1d",
+		rows: 4,
+		z: {
+			id: "table1d-z",
+			name: "Values",
+			address: 0x1000,
+			dtype: "u8",
+		},
+	} satisfies TableDefinition;
+}
+
+function createCustomEditorTabGroup(uri: vscode.Uri): vscode.TabGroup {
+	return {
+		activeTab: {
+			input: {
+				uri,
+				viewType: "romViewer.tableEditor",
+			},
+		} as vscode.Tab,
+		isActive: true,
+		viewColumn: vscode.ViewColumn.One,
+		tabs: [],
+	} as vscode.TabGroup;
+}
+
 /**
  * Tests for math operations commands
  *
@@ -178,6 +231,17 @@ function create2DTableDef() {
  * and can be executed through VSCode's command palette.
  */
 describe("Math Operations Commands", () => {
+	const extensionManifest = JSON.parse(
+		readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+	) as {
+		contributes?: {
+			commands?: { command: string; enablement?: string }[];
+			menus?: {
+				commandPalette?: { command: string; when?: string }[];
+			};
+		};
+	};
+
 	beforeEach(async () => {
 		// Reset commands if possible
 		const registerCommand = getMockedRegisterCommand();
@@ -195,6 +259,48 @@ describe("Math Operations Commands", () => {
 		await activate(mockContext as vscode.ExtensionContext);
 	});
 	describe("Command Registration", () => {
+		it("exposes math commands for the table editor in the extension manifest", () => {
+			const commands = extensionManifest.contributes?.commands ?? [];
+			const commandPaletteEntries =
+				extensionManifest.contributes?.menus?.commandPalette ?? [];
+			const addCommand = commands.find(
+				(entry) => entry.command === "rom.mathOpAdd",
+			);
+			const multiplyCommand = commands.find(
+				(entry) => entry.command === "rom.mathOpMultiply",
+			);
+			const clampCommand = commands.find(
+				(entry) => entry.command === "rom.mathOpClamp",
+			);
+			const smoothCommand = commands.find(
+				(entry) => entry.command === "rom.mathOpSmooth",
+			);
+
+			expect(addCommand?.enablement).toBe(
+				"activeCustomEditorId == 'romViewer.tableEditor'",
+			);
+			expect(multiplyCommand?.enablement).toBe(
+				"activeCustomEditorId == 'romViewer.tableEditor'",
+			);
+			expect(clampCommand?.enablement).toBe(
+				"activeCustomEditorId == 'romViewer.tableEditor'",
+			);
+			expect(smoothCommand?.enablement).toBe(
+				"activeCustomEditorId == 'romViewer.tableEditor' && ecuExplorer.activeTableIs2D",
+			);
+			expect(
+				commandPaletteEntries.find((entry) => entry.command === "rom.mathOpAdd")
+					?.when,
+			).toBe("activeCustomEditorId == 'romViewer.tableEditor'");
+			expect(
+				commandPaletteEntries.find(
+					(entry) => entry.command === "rom.mathOpSmooth",
+				)?.when,
+			).toBe(
+				"activeCustomEditorId == 'romViewer.tableEditor' && ecuExplorer.activeTableIs2D",
+			);
+		});
+
 		it("should register ecuExplorer.clearDefinitionCache command", async () => {
 			expect(vscode.commands.registerCommand).toHaveBeenCalledWith(
 				"ecuExplorer.clearDefinitionCache",
@@ -396,6 +502,122 @@ describe("Math Operations Commands", () => {
 			);
 
 			showQuickPickSpy.mockRestore();
+		});
+
+		it("routes math commands through the active custom table tab when cached panel state is stale", async () => {
+			const panel = createActivePanel();
+			const tableUri = vscode.Uri.parse(
+				"ecu-table:///test/active.rom/Test%20Table?table=table1",
+			);
+			const activeTabGroupSpy = vi
+				.spyOn(vscode.window.tabGroups, "activeTabGroup", "get")
+				.mockReturnValue(createCustomEditorTabGroup(tableUri));
+			const editorProvider = {
+				getTableDocument: vi.fn().mockReturnValue({
+					tableDef: create2DTableDef(),
+					romDocument: { uri: vscode.Uri.file("/test/active.rom") },
+				}),
+				getPanelForDocument: vi.fn().mockReturnValue(panel),
+			} satisfies EditCommandEditorProvider;
+			setMathCommandState({
+				activePanel: null,
+				editorProvider,
+			});
+			const showInputBoxSpy = vi
+				.spyOn(vscode.window, "showInputBox")
+				.mockResolvedValue("5");
+
+			await handleMathOpAdd();
+
+			expect(panel.webview.postMessage).toHaveBeenCalledWith({
+				type: "mathOp",
+				operation: "add",
+				constant: 5,
+			});
+
+			showInputBoxSpy.mockRestore();
+			activeTabGroupSpy.mockRestore();
+		});
+	});
+
+	describe("Active Table Resolution", () => {
+		it("uses the active custom tab's session for undo/redo when cached session state is stale", () => {
+			const panel = createActivePanel();
+			const tableUri = vscode.Uri.parse(
+				"ecu-table:///test/active.rom/Test%20Table?table=table1",
+			);
+			const activeTabGroupSpy = vi
+				.spyOn(vscode.window.tabGroups, "activeTabGroup", "get")
+				.mockReturnValue(createCustomEditorTabGroup(tableUri));
+			const undoMessage = {
+				type: "update",
+				snapshot: {} as never,
+				rom: [],
+				reason: "undo" as const,
+			};
+			const redoMessage = {
+				type: "update",
+				snapshot: {} as never,
+				rom: [],
+				reason: "redo" as const,
+			};
+			const tableSession = {
+				activePanel: panel,
+				tableDef: create2DTableDef(),
+				undo: vi.fn().mockReturnValue({ message: undoMessage }),
+				redo: vi.fn().mockReturnValue({ message: redoMessage }),
+			} satisfies EditCommandTableSession;
+			const editorProvider = {
+				getTableDocument: vi.fn().mockReturnValue({
+					tableDef: create2DTableDef(),
+					romDocument: { uri: vscode.Uri.file("/test/active.rom") },
+				}),
+				getPanelForDocument: vi.fn().mockReturnValue(panel),
+			} satisfies EditCommandEditorProvider;
+			setMathCommandState({
+				activePanel: null,
+				editorProvider,
+				getTableSessionForUri: () => tableSession,
+			});
+
+			handleUndo();
+			handleRedo();
+
+			expect(panel.webview.postMessage).toHaveBeenNthCalledWith(1, undoMessage);
+			expect(panel.webview.postMessage).toHaveBeenNthCalledWith(2, redoMessage);
+
+			activeTabGroupSpy.mockRestore();
+		});
+
+		it("uses the active custom tab's table definition for smooth validation", async () => {
+			const tableUri = vscode.Uri.parse(
+				"ecu-table:///test/active.rom/Test%20Table?table=table1",
+			);
+			const activeTabGroupSpy = vi
+				.spyOn(vscode.window.tabGroups, "activeTabGroup", "get")
+				.mockReturnValue(createCustomEditorTabGroup(tableUri));
+			const panel = createActivePanel();
+			const editorProvider = {
+				getTableDocument: vi.fn().mockReturnValue({
+					tableDef: create1DTableDef(),
+					romDocument: { uri: vscode.Uri.file("/test/active.rom") },
+				}),
+				getPanelForDocument: vi.fn().mockReturnValue(panel),
+			} satisfies EditCommandEditorProvider;
+			const errorSpy = vi.spyOn(vscode.window, "showErrorMessage");
+			setMathCommandState({
+				activePanel: null,
+				editorProvider,
+			});
+
+			await handleMathOpSmooth();
+
+			expect(errorSpy).toHaveBeenCalledWith(
+				"Smooth operation is only available for 2D and 3D tables",
+			);
+
+			errorSpy.mockRestore();
+			activeTabGroupSpy.mockRestore();
 		});
 	});
 

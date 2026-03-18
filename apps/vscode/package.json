@@ -54,22 +54,22 @@
 			{
 				"command": "rom.mathOpAdd",
 				"title": "ECU Explorer: Add Constant to Selection",
-				"enablement": "activeCustomEditorId == 'romViewer.editor'"
+				"enablement": "activeCustomEditorId == 'romViewer.tableEditor'"
 			},
 			{
 				"command": "rom.mathOpMultiply",
 				"title": "ECU Explorer: Multiply Selection by Factor",
-				"enablement": "activeCustomEditorId == 'romViewer.editor'"
+				"enablement": "activeCustomEditorId == 'romViewer.tableEditor'"
 			},
 			{
 				"command": "rom.mathOpClamp",
 				"title": "ECU Explorer: Clamp Selection to Range",
-				"enablement": "activeCustomEditorId == 'romViewer.editor'"
+				"enablement": "activeCustomEditorId == 'romViewer.tableEditor'"
 			},
 			{
 				"command": "rom.mathOpSmooth",
 				"title": "ECU Explorer: Smooth Selection (2D/3D only)",
-				"enablement": "activeCustomEditorId == 'romViewer.editor'"
+				"enablement": "activeCustomEditorId == 'romViewer.tableEditor' && ecuExplorer.activeTableIs2D"
 			},
 			{
 				"command": "ecuExplorer.open2DGraph",
@@ -204,6 +204,22 @@
 		],
 		"menus": {
 			"commandPalette": [
+				{
+					"command": "rom.mathOpAdd",
+					"when": "activeCustomEditorId == 'romViewer.tableEditor'"
+				},
+				{
+					"command": "rom.mathOpMultiply",
+					"when": "activeCustomEditorId == 'romViewer.tableEditor'"
+				},
+				{
+					"command": "rom.mathOpClamp",
+					"when": "activeCustomEditorId == 'romViewer.tableEditor'"
+				},
+				{
+					"command": "rom.mathOpSmooth",
+					"when": "activeCustomEditorId == 'romViewer.tableEditor' && ecuExplorer.activeTableIs2D"
+				},
 				{
 					"command": "ecuExplorer.open2DGraph",
 					"when": "false"
