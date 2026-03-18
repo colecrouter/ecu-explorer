@@ -247,12 +247,12 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 				const deviceName = this.lastWidebandCandidate.device.name;
 				if (this.widebandConnectionState === "reconnecting") {
 					this.widebandItem.text = "$(sync~spin) Wideband";
-					this.widebandItem.tooltip = `${deviceName}\n${runtime}\nAttempting to reconnect`;
+					this.widebandItem.tooltip = `${deviceName}\n${runtime}\nAttempting to reconnect\nClick to stop reconnecting`;
 				} else {
 					this.widebandItem.text = "$(warning) Wideband";
-					this.widebandItem.tooltip = `${deviceName}\n${runtime}\nWideband is currently unavailable. Connect to retry.`;
+					this.widebandItem.tooltip = `${deviceName}\n${runtime}\nWideband is currently unavailable. Click to clear reconnect state.`;
 				}
-				this.widebandItem.command = "ecuExplorer.connectWideband";
+				this.widebandItem.command = "ecuExplorer.disconnectWideband";
 				this.widebandItem.show();
 				return;
 			}

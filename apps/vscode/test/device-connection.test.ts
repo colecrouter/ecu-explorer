@@ -984,7 +984,7 @@ describe("DeviceStatusBarManager", () => {
 		expect(widebandItem.text).toContain("sync~spin");
 		expect(widebandItem.tooltip).toContain("Attempting to reconnect");
 		expect(widebandItem.tooltip).toContain("COM4");
-		expect(widebandItem.command).toBe("ecuExplorer.connectWideband");
+		expect(widebandItem.command).toBe("ecuExplorer.disconnectWideband");
 	});
 
 	it("should dispose all status bar items on dispose()", () => {

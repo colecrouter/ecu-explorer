@@ -129,11 +129,10 @@ export class WidebandManager implements vscode.Disposable {
 	}
 
 	async disconnect(): Promise<void> {
-		if (this._activeSession == null) {
-			return;
+		if (this._activeSession != null) {
+			await this._activeSession.session.close();
 		}
 
-		await this._activeSession.session.close();
 		this._activeSession = undefined;
 		this._latestReading = undefined;
 		this._lastCandidate = undefined;

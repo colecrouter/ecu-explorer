@@ -792,15 +792,19 @@ export async function activate(
 			"ecuExplorer.disconnectWideband",
 			async () => {
 				widebandAutoReconnectController?.suppress();
-				if (widebandManager?.activeSession == null) {
+				if (widebandManager == null) {
 					return;
 				}
-				const deviceName = widebandManager.activeSession.candidate.device.name;
+				const deviceName =
+					widebandManager.activeSession?.candidate.device.name ??
+					widebandManager.lastCandidate?.device.name;
 				await widebandManager.disconnect();
 				activeWidebandMode = undefined;
-				vscode.window.showInformationMessage(
-					`Disconnected from ${deviceName}.`,
-				);
+				if (deviceName != null) {
+					vscode.window.showInformationMessage(
+						`Disconnected from ${deviceName}.`,
+					);
+				}
 			},
 		),
 	);
