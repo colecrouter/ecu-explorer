@@ -16,8 +16,11 @@ import {
 	type HardwareDeviceSelectionStrategy,
 	type HardwarePromptOptions,
 	type HardwareRequestAction,
-	promptForHardwareCandidate,
 } from "./hardware-selection.js";
+import {
+	type HardwareCandidateSource,
+	selectHardwareCandidateFromSource,
+} from "./hardware-source.js";
 
 /**
  * Reconnect configuration options.
@@ -181,36 +184,20 @@ export class DeviceManagerImpl implements DeviceManager {
 	 * @returns The connection and matched protocol
 	 * @throws If no devices found, user cancels, or no protocol matches
 	 */
-	async selectDeviceAndProtocol(): Promise<{
+	async selectDeviceAndProtocol(options?: { forcePrompt?: boolean }): Promise<{
 		connection: DeviceConnection;
 		protocol: EcuProtocol;
 		candidate: HardwareCandidate;
 	}> {
-		// List all available devices across all transports
-		const devices = await this.listAllDevices();
-		const candidates = devices.map((device) =>
-			createHardwareCandidate(device, this.hardwareCandidateLocality),
-		);
-		const requestActions = this.getHardwareRequestActions();
-		const promptOptions = this.getHardwarePromptOptions();
-		if (devices.length === 0 && requestActions.length === 0) {
-			throw new Error(
+		const selectedCandidate = await selectHardwareCandidateFromSource({
+			source: this.createTransportHardwareSource(),
+			...(this.hardwareSelectionStrategy != null
+				? { strategy: this.hardwareSelectionStrategy }
+				: {}),
+			...(options?.forcePrompt === true ? { forcePrompt: true } : {}),
+			emptyMessage:
 				"No devices found. Ensure device is connected and transport is available.",
-			);
-		}
-
-		const selectedCandidate =
-			this.hardwareSelectionStrategy != null
-				? await this.hardwareSelectionStrategy.selectDevice(
-						candidates,
-						requestActions,
-						promptOptions,
-					)
-				: await this.selectDeviceFromList(
-						candidates,
-						requestActions,
-						promptOptions,
-					);
+		});
 		const selectedDevice = selectedCandidate.device;
 
 		// Get the transport for this device
@@ -255,7 +242,9 @@ export class DeviceManagerImpl implements DeviceManager {
 	 * @returns The active connection
 	 * @throws If no devices found, user cancels, or no protocol matches
 	 */
-	async connect(): Promise<ActiveConnection> {
+	async connect(options?: {
+		forcePrompt?: boolean;
+	}): Promise<ActiveConnection> {
 		if (this._activeConnection?.state === "connected") {
 			return this._activeConnection;
 		}
@@ -270,7 +259,7 @@ export class DeviceManagerImpl implements DeviceManager {
 		}
 
 		const { connection, protocol, candidate } =
-			await this.selectDeviceAndProtocol();
+			await this.selectDeviceAndProtocol(options);
 		const deviceName = connection.deviceInfo.name;
 
 		this._activeConnection = {
@@ -285,39 +274,17 @@ export class DeviceManagerImpl implements DeviceManager {
 		return this._activeConnection;
 	}
 
-	async manageHardwareSelection(): Promise<HardwareCandidate> {
-		const devices = await this.listAllDevices();
-		const candidates = devices.map((device) =>
-			createHardwareCandidate(device, this.hardwareCandidateLocality),
-		);
-		const requestActions = this.getHardwareRequestActions();
-		const promptOptions = this.getHardwarePromptOptions();
-
-		if (candidates.length === 0 && requestActions.length === 0) {
-			throw new Error(
-				"No hardware found. Connect a device or use a browser hardware request action if available.",
-			);
-		}
-
-		const selectedCandidate = await promptForHardwareCandidate(
-			candidates,
-			requestActions,
-			promptOptions,
-		);
-		this.hardwareSelectionStrategy?.rememberCandidate(selectedCandidate);
-		return selectedCandidate;
-	}
-
-	private async selectDeviceFromList(
-		candidates: readonly HardwareCandidate[],
-		requestActions: readonly HardwareRequestAction[],
-		promptOptions: HardwarePromptOptions,
-	): Promise<HardwareCandidate> {
-		return promptForHardwareCandidate(
-			candidates,
-			requestActions,
-			promptOptions,
-		);
+	private createTransportHardwareSource(): HardwareCandidateSource {
+		return {
+			listCandidates: async () => {
+				const devices = await this.listAllDevices();
+				return devices.map((device) =>
+					createHardwareCandidate(device, this.hardwareCandidateLocality),
+				);
+			},
+			getRequestActions: () => this.getHardwareRequestActions(),
+			getPromptOptions: (onForgot) => this.getHardwarePromptOptions(onForgot),
+		};
 	}
 
 	private getHardwareRequestActions(): HardwareRequestAction[] {
@@ -359,7 +326,9 @@ export class DeviceManagerImpl implements DeviceManager {
 			});
 	}
 
-	private getHardwarePromptOptions(): HardwarePromptOptions {
+	private getHardwarePromptOptions(
+		onForgot?: (candidate: HardwareCandidate) => void,
+	): HardwarePromptOptions {
 		if (this.hardwareCandidateLocality !== "client-browser") {
 			return {};
 		}
@@ -377,7 +346,7 @@ export class DeviceManagerImpl implements DeviceManager {
 				}
 
 				await forgetDevice(candidate.device.id);
-				this.hardwareSelectionStrategy?.forgetCandidate?.(candidate);
+				onForgot?.(candidate);
 			},
 		};
 	}

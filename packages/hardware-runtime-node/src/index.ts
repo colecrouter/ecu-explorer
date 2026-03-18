@@ -1,29 +1,26 @@
-import { groupSerialPorts } from "@ecu-explorer/device/hardware-runtime";
+import {
+	groupSerialPorts,
+	type SerialOpenOptions,
+	type SerialPortDescriptor,
+	type SerialPortSession,
+	type SerialRuntime,
+} from "@ecu-explorer/device/hardware-runtime";
 import { SerialPort } from "serialport";
 
 const NODE_USB_TRANSFER_TIMEOUT_MS = 500;
 
-export interface NodeSerialPortInfo {
-	path: string;
-	serialNumber?: string | null;
-	manufacturer?: string | null;
-	vendorId?: string | null;
-	productId?: string | null;
-	friendlyName?: string | null;
-}
+export interface NodeSerialPortInfo extends SerialPortDescriptor {}
 
-export interface NodeSerialPortSession {
-	readonly path: string;
-	readonly isOpen: boolean;
-	open(): Promise<void>;
-	close(): Promise<void>;
-	write(data: Uint8Array): Promise<void>;
-	read(maxLength: number, timeoutMs: number): Promise<Uint8Array>;
-}
+export interface NodeSerialPortSession extends SerialPortSession {}
 
-export interface NodeSerialRuntime {
+export interface NodeSerialOpenOptions extends SerialOpenOptions {}
+
+export interface NodeSerialRuntime extends SerialRuntime {
 	listPorts(): Promise<readonly NodeSerialPortInfo[]>;
-	openPort(path: string): Promise<NodeSerialPortSession>;
+	openPort(
+		path: string,
+		options?: NodeSerialOpenOptions,
+	): Promise<NodeSerialPortSession>;
 }
 
 type NodeUsbEndpointLike = {
@@ -438,13 +435,13 @@ export async function createNodeSerialRuntime(): Promise<NodeSerialRuntime> {
 				friendlyName: port.friendlyName ?? null,
 			}));
 		},
-		async openPort(path: string) {
+		async openPort(path: string, options: NodeSerialOpenOptions = {}) {
 			const port = new SerialPort({
 				path,
-				baudRate: 115200,
-				dataBits: 8,
-				stopBits: 1,
-				parity: "none",
+				baudRate: options.baudRate ?? 115200,
+				dataBits: options.dataBits ?? 8,
+				stopBits: options.stopBits ?? 1,
+				parity: options.parity ?? "none",
 				autoOpen: false,
 			});
 			const reader = createBufferedReader(port);

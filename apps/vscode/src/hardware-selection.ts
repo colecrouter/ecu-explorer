@@ -91,9 +91,39 @@ export function doesSelectionMatchCandidate(
 
 function isSerialHardwareCandidate(candidate: HardwareCandidate): boolean {
 	return (
+		candidate.device.id.startsWith("wideband-serial:") ||
 		candidate.device.id.startsWith("openport2-serial:") ||
 		candidate.device.name.includes("(Serial)")
 	);
+}
+
+function getSerialHardwarePath(
+	candidate: HardwareCandidate,
+): string | undefined {
+	if (candidate.device.id.startsWith("wideband-serial:")) {
+		return candidate.device.id.slice("wideband-serial:".length);
+	}
+	if (candidate.device.id.startsWith("openport2-serial:")) {
+		return candidate.device.id.slice("openport2-serial:".length);
+	}
+	return undefined;
+}
+
+function formatSerialHardwareLabel(path: string): string {
+	if (/^com\d+$/i.test(path)) {
+		return path.toUpperCase();
+	}
+	if (path.startsWith("/dev/")) {
+		const segments = path.split("/");
+		return segments.at(-1) ?? path;
+	}
+	if (path.startsWith("webserial:")) {
+		return path.slice("webserial:".length);
+	}
+	if (path.startsWith("wideband-webserial:")) {
+		return path.slice("wideband-webserial:".length);
+	}
+	return path;
 }
 
 export class HardwareSelectionService {
@@ -146,6 +176,10 @@ export function formatHardwareLocality(locality: HardwareLocality): string {
 
 export function formatHardwareTransport(candidate: HardwareCandidate): string {
 	if (isSerialHardwareCandidate(candidate)) {
+		const serialPath = getSerialHardwarePath(candidate);
+		if (serialPath != null) {
+			return `Serial ${formatSerialHardwareLabel(serialPath)}`;
+		}
 		return "Serial";
 	}
 
