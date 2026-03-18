@@ -333,7 +333,7 @@ describe("hardware-selection", () => {
 		);
 	});
 
-	it("formats serial-backed OpenPort candidates as serial runtimes", () => {
+	it("formats browser serial-backed OpenPort candidates with a serial identifier", () => {
 		expect(
 			formatHardwareRuntime(
 				createHardwareCandidate(
@@ -344,6 +344,34 @@ describe("hardware-selection", () => {
 					"client-browser",
 				),
 			),
-		).toBe("Serial • Browser");
+		).toBe("Serial 0403:cc4d:0 • Browser");
+	});
+
+	it("formats extension-host serial candidates with a COM port label", () => {
+		expect(
+			formatHardwareRuntime(
+				createHardwareCandidate(
+					makeDevice({
+						id: "wideband-serial:COM4",
+						name: "AEM Wideband (Serial)",
+						transportName: "serial",
+					}),
+				),
+			),
+		).toBe("Serial COM4 • This machine");
+	});
+
+	it("formats unix serial candidates with a short device path label", () => {
+		expect(
+			formatHardwareRuntime(
+				createHardwareCandidate(
+					makeDevice({
+						id: "wideband-serial:/dev/cu.usbserial-1410",
+						name: "AEM Wideband (Serial)",
+						transportName: "serial",
+					}),
+				),
+			),
+		).toBe("Serial cu.usbserial-1410 • This machine");
 	});
 });
