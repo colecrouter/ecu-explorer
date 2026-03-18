@@ -24,7 +24,7 @@ export interface TableSessionUpdateMessage {
 	type: "update";
 	snapshot: ReturnType<typeof snapshotTable>;
 	rom: number[];
-	reason: "undo" | "redo";
+	reason: "undo" | "redo" | "sync";
 }
 
 export interface TableSessionMoveResult {
@@ -36,8 +36,12 @@ export class TableEditSession {
 	readonly id: TableSessionId;
 	readonly tableUri: vscode.Uri;
 	readonly tableDef: TableDefinition;
-	readonly romDocument: RomDocument;
 	readonly history = new HistoryStack<EditTransaction>();
+	private _romDocument: RomDocument;
+	private readonly listeners = new Set<
+		(message: TableSessionUpdateMessage) => void
+	>();
+	private disposeDocumentListener: (() => void) | null = null;
 
 	private panel: vscode.WebviewPanel | null;
 
@@ -45,8 +49,13 @@ export class TableEditSession {
 		this.id = options.id;
 		this.tableUri = options.tableUri;
 		this.tableDef = options.tableDef;
-		this.romDocument = options.romDocument;
+		this._romDocument = options.romDocument;
 		this.panel = options.panel ?? null;
+		this.bindRomDocument(options.romDocument);
+	}
+
+	get romDocument(): RomDocument {
+		return this._romDocument;
 	}
 
 	get activePanel(): vscode.WebviewPanel | null {
@@ -81,13 +90,13 @@ export class TableEditSession {
 
 	createExecutor(): VsCodeHistoryExecutor {
 		return new VsCodeHistoryExecutor(
-			this.romDocument.romBytes,
-			this.romDocument,
+			this._romDocument.romBytes,
+			this._romDocument,
 		);
 	}
 
 	isForRom(romDocument: RomDocument): boolean {
-		return this.romDocument === romDocument;
+		return this._romDocument === romDocument;
 	}
 
 	markSavedIfForRom(romDocument: RomDocument): boolean {
@@ -104,6 +113,24 @@ export class TableEditSession {
 			return;
 		}
 		this.history.record(transaction);
+	}
+
+	attachRomDocument(romDocument: RomDocument): void {
+		if (this._romDocument === romDocument) {
+			return;
+		}
+
+		this.bindRomDocument(romDocument);
+		this.emitUpdate("sync");
+	}
+
+	onDidUpdate(
+		listener: (message: TableSessionUpdateMessage) => void,
+	): () => void {
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
 	}
 
 	undo(): TableSessionMoveResult | null {
@@ -138,10 +165,28 @@ export class TableEditSession {
 		};
 	}
 
+	private bindRomDocument(romDocument: RomDocument): void {
+		this.disposeDocumentListener?.();
+		this._romDocument = romDocument;
+		const subscription = romDocument.onDidUpdateBytes(() => {
+			this.emitUpdate("sync");
+		});
+		this.disposeDocumentListener = () => {
+			subscription.dispose();
+		};
+	}
+
+	private emitUpdate(reason: TableSessionUpdateMessage["reason"]): void {
+		const message = this.createUpdateMessage(reason);
+		for (const listener of this.listeners) {
+			listener(message);
+		}
+	}
+
 	private createUpdateMessage(
 		reason: TableSessionUpdateMessage["reason"],
 	): TableSessionUpdateMessage {
-		const romBytes = this.romDocument.romBytes;
+		const romBytes = this._romDocument.romBytes;
 		return {
 			type: "update",
 			snapshot: snapshotTable(this.tableDef, romBytes),

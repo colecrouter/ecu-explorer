@@ -321,6 +321,22 @@ function resolveSettingPaths(
 	);
 }
 
+function findTableSession(
+	romPath: string,
+	tableId: string,
+): TableEditSession | undefined {
+	for (const session of tableSessions.values()) {
+		if (
+			session.romDocument.uri.fsPath === romPath &&
+			session.tableDef.id === tableId
+		) {
+			return session;
+		}
+	}
+
+	return undefined;
+}
+
 /**
  * Re-initialize definition providers based on current settings.
  * Clears the existing registry, reads updated settings, and re-registers providers.
@@ -426,6 +442,7 @@ export async function activate(
 			// Handle selection change from graph
 			selectionManager.updateSelection(romPath, tableId, selection);
 		},
+		(romPath: string, tableId: string) => findTableSession(romPath, tableId),
 	);
 
 	// Initialize context setters for handler modules
@@ -452,6 +469,9 @@ export async function activate(
 					panelToDocument.delete(panel);
 				}),
 			);
+		},
+		notifyTableSessionAvailable: (session) => {
+			graphPanelManager?.handleTableSessionAvailable(session);
 		},
 		handleCellEdit,
 		handleUndo: () => handleUndo(),
@@ -1508,6 +1528,7 @@ export async function activate(
 	// Subscribe to new ROM document openings
 	ctx.subscriptions.push(
 		newEditorProvider.onDidOpenRomDocument((doc) => {
+			graphPanelManager?.handleRomDocumentOpened(doc);
 			watchRomDocument(doc);
 		}),
 	);

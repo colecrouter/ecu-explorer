@@ -45,6 +45,15 @@ describe("Graph Windows E2E", () => {
 			) => Promise<RomDocument>
 		>
 	>;
+	let mockEnsureRomDocument: ReturnType<
+		typeof vi.fn<
+			(
+				uri: vscode.Uri,
+				token: vscode.CancellationToken,
+				definitionUri?: string,
+			) => Promise<RomDocument>
+		>
+	>;
 	let mockRomEditorProvider: RomEditorProvider;
 	let cellSelectionCallback: (
 		romPath: string,
@@ -111,6 +120,18 @@ describe("Graph Windows E2E", () => {
 				throw new Error(`ROM file not loaded (${uri.fsPath})`);
 			},
 		);
+		mockEnsureRomDocument = vi.fn(
+			async (
+				uri: vscode.Uri,
+				_token: vscode.CancellationToken,
+				_definitionUri?: string,
+			): Promise<RomDocument> => {
+				if (uri.fsPath.includes("test")) {
+					return createMockDocument(uri.fsPath);
+				}
+				throw new Error(`ROM file not loaded (${uri.fsPath})`);
+			},
+		);
 
 		// Create mock RomEditorProvider
 		mockRomEditorProvider = Object.assign(
@@ -118,6 +139,7 @@ describe("Graph Windows E2E", () => {
 			{
 				getDocument: (uri: vscode.Uri) => mockGetDocument(uri.fsPath),
 				openCustomDocument: mockOpenCustomDocument,
+				ensureRomDocument: mockEnsureRomDocument,
 			},
 		);
 
@@ -248,22 +270,24 @@ describe("Graph Windows E2E", () => {
 			asMockWebview(panel)._simulateMessage({ type: "ready" });
 
 			// Should send init message
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "init",
-				snapshot,
-				tableId: "table1",
-				tableName: "Test Table",
-				romPath: "/test/rom.hex",
-				themeColors: expect.objectContaining({
-					gradient: expect.objectContaining({
-						low: expect.any(String),
-						mid: expect.any(String),
-						high: expect.any(String),
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "init",
+					snapshot,
+					tableId: "table1",
+					tableName: "Test Table",
+					romPath: "/test/rom.hex",
+					themeColors: expect.objectContaining({
+						gradient: expect.objectContaining({
+							low: expect.any(String),
+							mid: expect.any(String),
+							high: expect.any(String),
+						}),
+						ui: expect.any(Object),
+						isHighContrast: expect.any(Boolean),
 					}),
-					ui: expect.any(Object),
-					isHighContrast: expect.any(Boolean),
 				}),
-			});
+			);
 		});
 	});
 
@@ -285,10 +309,12 @@ describe("Graph Windows E2E", () => {
 			manager.broadcastSnapshot("/test/rom.hex", "table1", updatedSnapshot);
 
 			// Graph should receive update
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "update",
-				snapshot: updatedSnapshot,
-			});
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot: updatedSnapshot,
+				}),
+			);
 		});
 
 		it("should update graph when user performs undo", () => {
@@ -308,10 +334,12 @@ describe("Graph Windows E2E", () => {
 			manager.broadcastSnapshot("/test/rom.hex", "table1", undoSnapshot);
 
 			// Graph should receive update
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "update",
-				snapshot: undoSnapshot,
-			});
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot: undoSnapshot,
+				}),
+			);
 		});
 
 		it("should update graph when user performs redo", () => {
@@ -331,10 +359,12 @@ describe("Graph Windows E2E", () => {
 			manager.broadcastSnapshot("/test/rom.hex", "table1", redoSnapshot);
 
 			// Graph should receive update
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "update",
-				snapshot: redoSnapshot,
-			});
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot: redoSnapshot,
+				}),
+			);
 		});
 
 		it("should update all open graphs for same table", () => {
@@ -356,10 +386,12 @@ describe("Graph Windows E2E", () => {
 			manager.broadcastSnapshot("/test/rom.hex", "table1", updatedSnapshot);
 
 			// Panel should receive update
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "update",
-				snapshot: updatedSnapshot,
-			});
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot: updatedSnapshot,
+				}),
+			);
 		});
 	});
 
@@ -484,22 +516,24 @@ describe("Graph Windows E2E", () => {
 			asMockWebview(panel)._simulateMessage({ type: "ready" });
 
 			// Should receive init
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "init",
-				snapshot,
-				tableId: "table1",
-				tableName: "Test Table",
-				romPath: "/test/rom.hex",
-				themeColors: expect.objectContaining({
-					gradient: expect.objectContaining({
-						low: expect.any(String),
-						mid: expect.any(String),
-						high: expect.any(String),
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "init",
+					snapshot,
+					tableId: "table1",
+					tableName: "Test Table",
+					romPath: "/test/rom.hex",
+					themeColors: expect.objectContaining({
+						gradient: expect.objectContaining({
+							low: expect.any(String),
+							mid: expect.any(String),
+							high: expect.any(String),
+						}),
+						ui: expect.any(Object),
+						isHighContrast: expect.any(Boolean),
 					}),
-					ui: expect.any(Object),
-					isHighContrast: expect.any(Boolean),
 				}),
-			});
+			);
 
 			// 3. User edits cell in table
 			asMockWebview(panel)._clearMessages();
@@ -507,10 +541,12 @@ describe("Graph Windows E2E", () => {
 			manager.broadcastSnapshot("/test/rom.hex", "table1", updatedSnapshot);
 
 			// Graph should update
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "update",
-				snapshot: updatedSnapshot,
-			});
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot: updatedSnapshot,
+				}),
+			);
 
 			// 4. User clicks cell in graph
 			asMockWebview(panel)._simulateMessage({
@@ -554,10 +590,12 @@ describe("Graph Windows E2E", () => {
 			manager.broadcastSnapshot("/test/rom.hex", "table1", update1);
 
 			// Only panel1 should update
-			expect(panel1.webview.postMessage).toHaveBeenCalledWith({
-				type: "update",
-				snapshot: update1,
-			});
+			expect(panel1.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot: update1,
+				}),
+			);
 			expect(panel2.webview.postMessage).not.toHaveBeenCalled();
 
 			// 3. User edits table2
@@ -568,10 +606,12 @@ describe("Graph Windows E2E", () => {
 
 			// Only panel2 should update
 			expect(panel1.webview.postMessage).not.toHaveBeenCalled();
-			expect(panel2.webview.postMessage).toHaveBeenCalledWith({
-				type: "update",
-				snapshot: update2,
-			});
+			expect(panel2.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot: update2,
+				}),
+			);
 		});
 
 		it("should handle graph close and reopen", () => {
@@ -654,20 +694,16 @@ describe("Graph Windows E2E", () => {
 
 			await serializer.deserializeWebviewPanel(restoredPanel, savedState);
 
-			expect(mockOpenCustomDocument).toHaveBeenCalledWith(
+			expect(mockEnsureRomDocument).toHaveBeenCalledWith(
 				expect.objectContaining({
-					scheme: "ecu-table",
-					fsPath: path.normalize("/test/reload.hex/Test Table"),
-					query: "table=table1&name=Test+Table",
+					scheme: "file",
+					fsPath: path.normalize("/test/reload.hex"),
 				}),
-				{
-					backupId: undefined,
-					untitledDocumentData: undefined,
-				},
 				expect.objectContaining({
 					isCancellationRequested: false,
 					onCancellationRequested: expect.any(Function),
 				}),
+				undefined,
 			);
 			expect(manager.getPanel("/test/reload.hex", "table1")).toBe(
 				restoredPanel,

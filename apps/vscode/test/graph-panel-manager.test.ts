@@ -9,7 +9,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { GraphPanelManager } from "../src/graph-panel-manager.js";
 import type { RomDocument } from "../src/rom/document.js";
+import { RomDocument as ConcreteRomDocument } from "../src/rom/document.js";
 import {
+	createGraphDefinition,
 	createGraphDocument,
 	createGraphSnapshot,
 	FIRST_GRAPH_PANEL_CASE,
@@ -264,10 +266,105 @@ describe("GraphPanelManager", () => {
 				snapshot2,
 			);
 
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "update",
-				snapshot: snapshot2,
-			});
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot: snapshot2,
+				}),
+			);
+		});
+	});
+
+	describe("Restore Rebinding", () => {
+		it("rebinds restored panels to the latest ROM document on ready", () => {
+			const snapshot = createGraphSnapshot();
+			let currentDocument = new ConcreteRomDocument(
+				vscode.Uri.file(GRAPH_ROM_PATH),
+				new Uint8Array([10, 20, 30, 40]),
+				createGraphDefinition(),
+			);
+
+			const rebindingManager = new GraphPanelManager(
+				toExtensionContext(mockContext),
+				() => currentDocument,
+				() => snapshot,
+				mockOnCellSelect,
+			);
+
+			const panel = createMockWebviewPanel(
+				"Restored Panel",
+			) as vscode.WebviewPanel;
+			rebindingManager.registerRestoredPanel(
+				panel,
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
+			);
+
+			// Simulate document replacement during restore ordering.
+			currentDocument = new ConcreteRomDocument(
+				vscode.Uri.file(GRAPH_ROM_PATH),
+				new Uint8Array([50, 60, 70, 80]),
+				createGraphDefinition(),
+			);
+
+			asMockWebview(panel.webview)._clearMessages();
+			asMockWebview(panel.webview)._simulateMessage({ type: "ready" });
+			asMockWebview(panel.webview)._clearMessages();
+
+			currentDocument.updateBytes(new Uint8Array([90, 60, 70, 80]), 0, 1, true);
+
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot,
+				}),
+			);
+		});
+
+		it("rebinds already-ready panels when a newer ROM document opens later", () => {
+			const snapshot = createGraphSnapshot();
+			let currentDocument = new ConcreteRomDocument(
+				vscode.Uri.file(GRAPH_ROM_PATH),
+				new Uint8Array([10, 20, 30, 40]),
+				createGraphDefinition(),
+			);
+
+			const rebindingManager = new GraphPanelManager(
+				toExtensionContext(mockContext),
+				() => currentDocument,
+				() => snapshot,
+				mockOnCellSelect,
+			);
+
+			const panel = createMockWebviewPanel(
+				"Restored Panel",
+			) as vscode.WebviewPanel;
+			rebindingManager.registerRestoredPanel(
+				panel,
+				GRAPH_ROM_PATH,
+				GRAPH_TABLE_ID,
+				GRAPH_TABLE_NAME,
+			);
+
+			asMockWebview(panel.webview)._simulateMessage({ type: "ready" });
+			asMockWebview(panel.webview)._clearMessages();
+
+			currentDocument = new ConcreteRomDocument(
+				vscode.Uri.file(GRAPH_ROM_PATH),
+				new Uint8Array([50, 60, 70, 80]),
+				createGraphDefinition(),
+			);
+			rebindingManager.handleRomDocumentOpened(currentDocument);
+
+			currentDocument.updateBytes(new Uint8Array([90, 60, 70, 80]), 0, 1, true);
+
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "update",
+					snapshot,
+				}),
+			);
 		});
 	});
 
@@ -531,22 +628,24 @@ describe("GraphPanelManager", () => {
 			// Simulate ready message from webview
 			asMockWebview(panel.webview)._simulateMessage({ type: "ready" });
 
-			expect(panel.webview.postMessage).toHaveBeenCalledWith({
-				type: "init",
-				snapshot,
-				tableId: "table1",
-				tableName: "Test Table",
-				romPath: "/test/rom.hex",
-				themeColors: expect.objectContaining({
-					gradient: expect.objectContaining({
-						low: expect.any(String),
-						mid: expect.any(String),
-						high: expect.any(String),
+			expect(panel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "init",
+					snapshot,
+					tableId: "table1",
+					tableName: "Test Table",
+					romPath: "/test/rom.hex",
+					themeColors: expect.objectContaining({
+						gradient: expect.objectContaining({
+							low: expect.any(String),
+							mid: expect.any(String),
+							high: expect.any(String),
+						}),
+						ui: expect.any(Object),
+						isHighContrast: expect.any(Boolean),
 					}),
-					ui: expect.any(Object),
-					isHighContrast: expect.any(Boolean),
 				}),
-			});
+			);
 		});
 
 		it("should forward cell selection from graph to table", () => {
@@ -679,19 +778,21 @@ describe("GraphPanelManager", () => {
 				GRAPH_ROM_PATH,
 				GRAPH_TABLE_ID,
 			);
-			expect(restoredPanel.webview.postMessage).toHaveBeenCalledWith({
-				type: "init",
-				snapshot: createMockSnapshot(),
-				tableId: GRAPH_TABLE_ID,
-				tableName: GRAPH_TABLE_NAME,
-				romPath: GRAPH_ROM_PATH,
-				preferredChartType: undefined,
-				themeColors: expect.objectContaining({
-					gradient: expect.any(Object),
-					ui: expect.any(Object),
-					isHighContrast: expect.any(Boolean),
+			expect(restoredPanel.webview.postMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "init",
+					snapshot: createMockSnapshot(),
+					tableId: GRAPH_TABLE_ID,
+					tableName: GRAPH_TABLE_NAME,
+					romPath: GRAPH_ROM_PATH,
+					preferredChartType: undefined,
+					themeColors: expect.objectContaining({
+						gradient: expect.any(Object),
+						ui: expect.any(Object),
+						isHighContrast: expect.any(Boolean),
+					}),
 				}),
-			});
+			);
 		});
 	});
 

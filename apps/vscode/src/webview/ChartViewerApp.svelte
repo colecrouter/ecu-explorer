@@ -21,6 +21,8 @@
 	 */
 
 	import { Chart, ChartState } from "@ecu-explorer/ui";
+	import { ROMView } from "@ecu-explorer/ui";
+	import type { ROMDefinition, TableDefinition } from "@ecu-explorer/core";
 	import type { TableSnapshot, ThemeColors } from "@ecu-explorer/ui";
 	import { onMount } from "svelte";
 
@@ -36,6 +38,8 @@
 	// State
 	let chartState = new ChartState();
 	let snapshot = $state<TableSnapshot | null>(null);
+	let romView = $state<ROMView | null>(null);
+	let reactiveTableId = $state<string | null>(null);
 	let tableId = $state("");
 	let tableName = $state("");
 	let romPath = $state("");
@@ -65,6 +69,12 @@
 
 	// Sync chartState with snapshot reactively
 	$effect(() => {
+		if (romView && reactiveTableId) {
+			const table = romView.table(reactiveTableId);
+			chartState.snapshot = table?.snapshot ?? null;
+			return;
+		}
+
 		if (snapshot) {
 			chartState.snapshot = snapshot;
 		}
@@ -138,6 +148,8 @@
 	function handleInit(message: {
 		type: "init";
 		snapshot: TableSnapshot;
+		romBytes?: number[];
+		tableDefinition?: TableDefinition;
 		tableId: string;
 		tableName: string;
 		romPath: string;
@@ -150,6 +162,17 @@
 		tableName = message.tableName;
 		romPath = message.romPath;
 		definitionUri = message.definitionUri ?? "";
+		if (message.romBytes && message.tableDefinition) {
+			romView = createGraphRomView(
+				message.tableName,
+				message.tableDefinition,
+				message.romBytes,
+			);
+			reactiveTableId = message.tableDefinition.id;
+		} else {
+			romView = null;
+			reactiveTableId = null;
+		}
 
 		if (message.preferredChartType) {
 			chartState.setChartType(message.preferredChartType);
@@ -181,9 +204,14 @@
 	function handleUpdate(message: {
 		type: "update";
 		snapshot: TableSnapshot;
+		romBytes?: number[];
 		preferredChartType?: "line" | "heatmap";
 	}) {
-		snapshot = message.snapshot;
+		if (romView && message.romBytes) {
+			romView.replaceBytes(Uint8Array.from(message.romBytes));
+		} else {
+			snapshot = message.snapshot;
+		}
 		if (message.preferredChartType) {
 			chartState.setChartType(message.preferredChartType);
 		}
@@ -222,6 +250,22 @@
 			window.removeEventListener("message", handleMessage);
 		};
 	});
+
+	function createGraphRomView(
+		name: string,
+		tableDefinition: TableDefinition,
+		romBytes: number[],
+	) {
+		const definition: ROMDefinition = {
+			uri: definitionUri || `graph://${tableDefinition.id}`,
+			name,
+			fingerprints: [],
+			platform: {},
+			tables: [tableDefinition],
+		};
+
+		return new ROMView(Uint8Array.from(romBytes), definition);
+	}
 </script>
 
 <div class="chart-viewer">

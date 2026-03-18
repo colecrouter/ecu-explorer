@@ -52,6 +52,7 @@ let getStateRefs:
 				document: RomDocument,
 				disposables: vscode.Disposable[],
 			) => void;
+			notifyTableSessionAvailable: (session: TableEditSession) => void;
 			handleCellEdit: (
 				msg: CellEditMessage,
 				def: TableDefinition,
@@ -334,7 +335,9 @@ export async function handleTableOpen(
 	if (!tableSession) {
 		throw new Error("Failed to get table edit session for table");
 	}
+	tableSession.attachRomDocument(romDocument);
 	tableSession.setPanel(panel);
+	state.notifyTableSessionAvailable(tableSession);
 	// Compute snapshot
 	const snapshot = snapshotTable(selectedTable, rom.bytes);
 	let didInit = false;
