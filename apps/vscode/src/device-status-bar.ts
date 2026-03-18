@@ -53,7 +53,6 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 			vscode.StatusBarAlignment.Left,
 			101,
 		);
-		this.hardwareItem.command = "ecuExplorer.manageHardware";
 		this.widebandItem = vscode.window.createStatusBarItem(
 			vscode.StatusBarAlignment.Left,
 			100,
@@ -168,8 +167,8 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 	}
 
 	private updateHardwareItem(connection: ActiveConnection | undefined): void {
-		this.hardwareItem.show();
 		if (connection != null) {
+			this.hardwareItem.show();
 			const runtime = formatHardwareRuntime(
 				createHardwareCandidate(
 					connection.connection.deviceInfo,
@@ -183,7 +182,7 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 			}
 			if (connection.state === "failed") {
 				this.hardwareItem.text = `$(warning) ${runtime}`;
-				this.hardwareItem.tooltip = `${connection.deviceName}\n${runtime}\nHardware is currently unavailable. Connect to retry or manage hardware devices.`;
+				this.hardwareItem.tooltip = `${connection.deviceName}\n${runtime}\nHardware is currently unavailable. Connect to retry.`;
 				return;
 			}
 			if (connection.state === "degraded") {
@@ -192,12 +191,13 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 				return;
 			}
 			this.hardwareItem.text = `$(chip) ${runtime}`;
-			this.hardwareItem.tooltip = `${connection.deviceName}\n${runtime}\nManage remembered hardware devices`;
+			this.hardwareItem.tooltip = `${connection.deviceName}\n${runtime}`;
 			return;
 		}
 
 		const rememberedSelection = this.hardwareSelectionService?.getSelection();
 		if (rememberedSelection != null) {
+			this.hardwareItem.show();
 			const runtime = formatHardwareRuntime(
 				createHardwareCandidate(
 					{
@@ -210,13 +210,11 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 				),
 			);
 			this.hardwareItem.text = `$(chip) ${rememberedSelection.name}`;
-			this.hardwareItem.tooltip = `${runtime}\nRemembered hardware device\nManage remembered hardware devices`;
+			this.hardwareItem.tooltip = `${runtime}\nRemembered hardware device`;
 			return;
 		}
 
-		this.hardwareItem.text = "$(chip) Manage Hardware";
-		this.hardwareItem.text = "$(chip)";
-		this.hardwareItem.tooltip = "Manage Hardware";
+		this.hardwareItem.hide();
 	}
 
 	private updateWidebandItem(): void {

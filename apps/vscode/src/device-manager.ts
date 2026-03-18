@@ -274,20 +274,6 @@ export class DeviceManagerImpl implements DeviceManager {
 		return this._activeConnection;
 	}
 
-	async manageHardwareSelection(): Promise<HardwareCandidate> {
-		const selectedCandidate = await selectHardwareCandidateFromSource({
-			source: this.createTransportHardwareSource(),
-			emptyMessage:
-				"No hardware found. Connect a device or use a browser hardware request action if available.",
-		});
-		this.hardwareSelectionStrategy?.rememberCandidate(selectedCandidate);
-		return selectedCandidate;
-	}
-
-	getHardwareManagementSource(): HardwareCandidateSource {
-		return this.createTransportHardwareSource();
-	}
-
 	private createTransportHardwareSource(): HardwareCandidateSource {
 		return {
 			listCandidates: async () => {

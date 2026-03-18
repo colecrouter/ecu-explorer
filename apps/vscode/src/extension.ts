@@ -38,13 +38,9 @@ import {
 } from "./handlers/index.js";
 import {
 	HardwareSelectionService,
-	promptForHardwareCandidate,
 	WorkspaceHardwareSelectionStrategy,
 } from "./hardware-selection.js";
-import {
-	createAggregatedHardwareSelection,
-	selectHardwareCandidateFromSource,
-} from "./hardware-source.js";
+import { selectHardwareCandidateFromSource } from "./hardware-source.js";
 import type { TableEditSession } from "./history/table-edit-session.js";
 import { LiveDataPanelManager } from "./live-data-panel-manager.js";
 import { LoggingManager, openLogsFolder } from "./logging-manager.js";
@@ -1043,59 +1039,6 @@ export async function activate(
 		),
 		vscode.commands.registerCommand("ecuExplorer.selectDevice", () => {
 			vscode.window.showInformationMessage("Select Device is coming soon.");
-		}),
-		vscode.commands.registerCommand("ecuExplorer.manageHardware", async () => {
-			if (!deviceManager) {
-				vscode.window.showErrorMessage("Device manager is not initialized.");
-				return;
-			}
-
-			try {
-				const aggregatedSelection = await createAggregatedHardwareSelection([
-					{
-						source: deviceManager.getHardwareManagementSource(),
-						strategy: ecuSelectionStrategy,
-					},
-					...(widebandSerialSource != null
-						? [
-								{
-									source: widebandSerialSource,
-									strategy: widebandSelectionStrategy,
-								},
-							]
-						: []),
-				]);
-				if (
-					aggregatedSelection.candidates.length === 0 &&
-					aggregatedSelection.requestActions.length === 0
-				) {
-					throw new Error(
-						"No hardware found. Connect a device or use a browser hardware request action if available.",
-					);
-				}
-				const candidate = await promptForHardwareCandidate(
-					aggregatedSelection.candidates,
-					aggregatedSelection.requestActions,
-					aggregatedSelection.promptOptions,
-				);
-				aggregatedSelection.rememberCandidate(candidate);
-				vscode.window.showInformationMessage(
-					`Preferred hardware set to ${candidate.device.name}.`,
-				);
-			} catch (err) {
-				if (err instanceof vscode.CancellationError) {
-					return;
-				}
-				if (
-					err instanceof Error &&
-					err.message === "Device selection cancelled by user"
-				) {
-					return;
-				}
-				vscode.window.showErrorMessage(
-					`Failed to manage hardware: ${err instanceof Error ? err.message : String(err)}`,
-				);
-			}
 		}),
 		// Device connection commands
 		vscode.commands.registerCommand("ecuExplorer.connectDevice", async () => {
