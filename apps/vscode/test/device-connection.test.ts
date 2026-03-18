@@ -27,7 +27,10 @@ import {
 	promptForHardwareCandidate,
 	WorkspaceHardwareSelectionStrategy,
 } from "../src/hardware-selection.js";
-import type { ActiveWidebandSession } from "../src/wideband-manager.js";
+import type {
+	ActiveWidebandSession,
+	WidebandConnectionState,
+} from "../src/wideband-manager.js";
 import { WorkspaceState } from "../src/workspace-state.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -73,14 +76,26 @@ function createMockStatusBarItem() {
 function createMockWidebandManager(): WidebandStatusSource & {
 	emitSession: (session: ActiveWidebandSession | undefined) => void;
 	emitReading: (reading: WidebandReading | undefined) => void;
+	emitState: (
+		state: WidebandConnectionState,
+		candidate?: ActiveWidebandSession["candidate"],
+	) => void;
 } {
 	let activeSession: ActiveWidebandSession | undefined;
 	let latestReading: WidebandReading | undefined;
+	let lastCandidate: ActiveWidebandSession["candidate"] | undefined;
+	let connectionState: WidebandConnectionState;
 	const sessionListeners = new Set<
 		(session: ActiveWidebandSession | undefined) => void
 	>();
 	const readingListeners = new Set<
 		(reading: WidebandReading | undefined) => void
+	>();
+	const stateListeners = new Set<
+		(event: {
+			state: WidebandConnectionState;
+			candidate: ActiveWidebandSession["candidate"] | undefined;
+		}) => void
 	>();
 
 	return {
@@ -89,6 +104,12 @@ function createMockWidebandManager(): WidebandStatusSource & {
 		},
 		get latestReading() {
 			return latestReading;
+		},
+		get lastCandidate() {
+			return lastCandidate;
+		},
+		get connectionState() {
+			return connectionState;
 		},
 		onDidChangeSession(listener: (session: typeof activeSession) => void) {
 			sessionListeners.add(listener);
@@ -104,8 +125,20 @@ function createMockWidebandManager(): WidebandStatusSource & {
 				dispose: () => readingListeners.delete(listener),
 			};
 		},
+		onDidChangeState(
+			listener: (event: {
+				state: WidebandConnectionState;
+				candidate: ActiveWidebandSession["candidate"] | undefined;
+			}) => void,
+		) {
+			stateListeners.add(listener);
+			return {
+				dispose: () => stateListeners.delete(listener),
+			};
+		},
 		emitSession(session: typeof activeSession) {
 			activeSession = session;
+			lastCandidate = session?.candidate ?? lastCandidate;
 			for (const listener of sessionListeners) {
 				listener(session);
 			}
@@ -114,6 +147,18 @@ function createMockWidebandManager(): WidebandStatusSource & {
 			latestReading = reading;
 			for (const listener of readingListeners) {
 				listener(reading);
+			}
+		},
+		emitState(
+			state: WidebandConnectionState,
+			candidate?: ActiveWidebandSession["candidate"],
+		) {
+			connectionState = state;
+			if (candidate !== undefined) {
+				lastCandidate = candidate;
+			}
+			for (const listener of stateListeners) {
+				listener({ state, candidate: lastCandidate });
 			}
 		},
 	};
@@ -920,6 +965,26 @@ describe("DeviceStatusBarManager", () => {
 		expect(widebandItem.text).toContain("14.70 AFR");
 		expect(widebandItem.tooltip).toContain("Browser");
 		expect(widebandItem.command).toBe("ecuExplorer.disconnectWideband");
+	});
+
+	it("shows wideband reconnecting state after an active session fails", () => {
+		const candidate = createHardwareCandidate(
+			{
+				id: "wideband-serial:COM4",
+				name: "AEM Wideband (Serial)",
+				transportName: "serial",
+				connected: false,
+			},
+			"extension-host",
+		);
+
+		mockWidebandManager.emitState("reconnecting", candidate);
+
+		const widebandItem = getRequiredStatusBarItem(createdItems, 1);
+		expect(widebandItem.text).toContain("sync~spin");
+		expect(widebandItem.tooltip).toContain("Attempting to reconnect");
+		expect(widebandItem.tooltip).toContain("COM4");
+		expect(widebandItem.command).toBe("ecuExplorer.connectWideband");
 	});
 
 	it("should dispose all status bar items on dispose()", () => {

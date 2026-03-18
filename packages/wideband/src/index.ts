@@ -30,7 +30,10 @@ export interface WidebandHardwareCandidate {
 export interface WidebandSession {
 	readonly id: string;
 	readonly name: string;
-	startStream(onReading: (reading: WidebandReading) => void): Promise<void>;
+	startStream(
+		onReading: (reading: WidebandReading) => void,
+		onError?: (error: Error) => void,
+	): Promise<void>;
 	stopStream(): Promise<void>;
 	close(): Promise<void>;
 }
@@ -111,6 +114,7 @@ export class AemSerialWidebandSession implements WidebandSession {
 
 	async startStream(
 		onReading: (reading: WidebandReading) => void,
+		onError?: (error: Error) => void,
 	): Promise<void> {
 		if (this.streaming) {
 			return;
@@ -120,7 +124,7 @@ export class AemSerialWidebandSession implements WidebandSession {
 		}
 
 		this.streaming = true;
-		this.streamTask = this.readLoop(onReading);
+		this.streamTask = this.readLoop(onReading, onError);
 	}
 
 	async stopStream(): Promise<void> {
@@ -140,16 +144,23 @@ export class AemSerialWidebandSession implements WidebandSession {
 
 	private async readLoop(
 		onReading: (reading: WidebandReading) => void,
+		onError?: (error: Error) => void,
 	): Promise<void> {
 		while (this.streaming) {
 			let chunk: Uint8Array;
 			try {
 				chunk = await this.port.read(64, 250);
-			} catch {
+			} catch (error) {
 				if (!this.streaming) {
 					return;
 				}
-				continue;
+				this.streaming = false;
+				onError?.(
+					error instanceof Error
+						? error
+						: new Error("Wideband serial stream read failed"),
+				);
+				return;
 			}
 
 			if (chunk.length === 0) {

@@ -672,6 +672,7 @@ export async function activate(
 					return false;
 				}
 				try {
+					reconnectWidebandManager.setReconnectState("reconnecting");
 					const reconnected = await reconnectPreferredWideband({
 						manager: reconnectWidebandManager,
 						selectionService: widebandSelectionService,
@@ -683,6 +684,7 @@ export async function activate(
 					}
 					return reconnected;
 				} catch {
+					reconnectWidebandManager.setReconnectState("failed");
 					activeWidebandMode = undefined;
 					return false;
 				}

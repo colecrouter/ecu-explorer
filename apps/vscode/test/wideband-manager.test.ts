@@ -36,7 +36,12 @@ function createSession(name = "Test Wideband"): WidebandSession {
 		id: "session-1",
 		name,
 		startStream: vi
-			.fn<(onReading: (reading: WidebandReading) => void) => Promise<void>>()
+			.fn<
+				(
+					onReading: (reading: WidebandReading) => void,
+					onError?: (error: Error) => void,
+				) => Promise<void>
+			>()
 			.mockResolvedValue(undefined),
 		stopStream: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
 		close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -186,5 +191,35 @@ describe("WidebandManager", () => {
 			},
 		]);
 		expect(manager.latestReading).toEqual(readings[0]);
+	});
+
+	it("marks the session failed when the active stream errors", async () => {
+		const candidate = createCandidate({
+			id: "wideband-1",
+			name: "Wideband Serial",
+			transportName: "serial",
+		});
+		const session = createSession();
+		vi.mocked(session.startStream).mockImplementation(
+			async (_onReading, onError) => {
+				onError?.(new Error("Serial disconnected"));
+			},
+		);
+		const adapter: WidebandAdapter = {
+			id: "test-wideband",
+			name: "Test Wideband",
+			canOpen: vi.fn<WidebandAdapter["canOpen"]>().mockResolvedValue(true),
+			open: vi.fn<WidebandAdapter["open"]>().mockResolvedValue(session),
+		};
+		const manager = new WidebandManager(async () => [candidate]);
+		manager.registerAdapter(adapter);
+
+		await manager.openCandidate(candidate);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(manager.activeSession).toBeUndefined();
+		expect(manager.connectionState).toBe("failed");
+		expect(manager.lastCandidate).toEqual(candidate);
+		expect(session.close).toHaveBeenCalledTimes(1);
 	});
 });

@@ -13,10 +13,18 @@ export interface ActiveWidebandSession {
 	session: WidebandSession;
 }
 
+export type WidebandConnectionState =
+	| "connected"
+	| "reconnecting"
+	| "failed"
+	| undefined;
+
 export class WidebandManager implements vscode.Disposable {
 	private adapters: WidebandAdapter[] = [];
 	private _activeSession: ActiveWidebandSession | undefined;
 	private _latestReading: WidebandReading | undefined;
+	private _lastCandidate: HardwareCandidate | undefined;
+	private _connectionState: WidebandConnectionState;
 	private readonly onDidChangeSessionEmitter = new vscode.EventEmitter<
 		ActiveWidebandSession | undefined
 	>();
@@ -25,6 +33,10 @@ export class WidebandManager implements vscode.Disposable {
 	private readonly onDidChangeReadingEmitter = new vscode.EventEmitter<
 		WidebandReading | undefined
 	>();
+	private readonly onDidChangeStateEmitter = new vscode.EventEmitter<{
+		state: WidebandConnectionState;
+		candidate: HardwareCandidate | undefined;
+	}>();
 
 	constructor(
 		private readonly listHardwareCandidates: () => Promise<
@@ -35,6 +47,7 @@ export class WidebandManager implements vscode.Disposable {
 	readonly onDidChangeSession = this.onDidChangeSessionEmitter.event;
 	readonly onDidRead = this.onDidReadEmitter.event;
 	readonly onDidChangeReading = this.onDidChangeReadingEmitter.event;
+	readonly onDidChangeState = this.onDidChangeStateEmitter.event;
 
 	get activeSession(): ActiveWidebandSession | undefined {
 		return this._activeSession;
@@ -42,6 +55,14 @@ export class WidebandManager implements vscode.Disposable {
 
 	get latestReading(): WidebandReading | undefined {
 		return this._latestReading;
+	}
+
+	get lastCandidate(): HardwareCandidate | undefined {
+		return this._lastCandidate;
+	}
+
+	get connectionState(): WidebandConnectionState {
+		return this._connectionState;
 	}
 
 	registerAdapter(adapter: WidebandAdapter): void {
@@ -82,18 +103,29 @@ export class WidebandManager implements vscode.Disposable {
 		}
 
 		const session = await adapter.open(toWidebandHardwareCandidate(candidate));
-		await session.startStream((reading) => {
-			this._latestReading = reading;
-			this.onDidReadEmitter.fire(reading);
-			this.onDidChangeReadingEmitter.fire(reading);
-		});
-		this._activeSession = {
+		const activeSession: ActiveWidebandSession = {
 			adapter,
 			candidate,
 			session,
 		};
+		this._activeSession = activeSession;
+		this._lastCandidate = candidate;
+		await session.startStream(
+			(reading) => {
+				this._latestReading = reading;
+				this.onDidReadEmitter.fire(reading);
+				this.onDidChangeReadingEmitter.fire(reading);
+			},
+			(error) => {
+				void this.handleSessionError(candidate, session, error);
+			},
+		);
+		if (this._activeSession?.session !== session) {
+			return activeSession;
+		}
+		this.setConnectionState("connected", candidate);
 		this.onDidChangeSessionEmitter.fire(this._activeSession);
-		return this._activeSession;
+		return activeSession;
 	}
 
 	async disconnect(): Promise<void> {
@@ -104,6 +136,8 @@ export class WidebandManager implements vscode.Disposable {
 		await this._activeSession.session.close();
 		this._activeSession = undefined;
 		this._latestReading = undefined;
+		this._lastCandidate = undefined;
+		this.setConnectionState(undefined, undefined);
 		this.onDidChangeSessionEmitter.fire(undefined);
 		this.onDidChangeReadingEmitter.fire(undefined);
 	}
@@ -113,6 +147,13 @@ export class WidebandManager implements vscode.Disposable {
 		this.onDidReadEmitter.dispose();
 		this.onDidChangeReadingEmitter.dispose();
 		this.onDidChangeSessionEmitter.dispose();
+		this.onDidChangeStateEmitter.dispose();
+	}
+
+	setReconnectState(
+		state: Exclude<WidebandConnectionState, "connected" | undefined>,
+	): void {
+		this.setConnectionState(state, this._lastCandidate);
 	}
 
 	private async canAnyAdapterOpen(
@@ -135,6 +176,35 @@ export class WidebandManager implements vscode.Disposable {
 			}
 		}
 		return undefined;
+	}
+
+	private setConnectionState(
+		state: WidebandConnectionState,
+		candidate: HardwareCandidate | undefined,
+	): void {
+		this._connectionState = state;
+		this.onDidChangeStateEmitter.fire({ state, candidate });
+	}
+
+	private async handleSessionError(
+		candidate: HardwareCandidate,
+		session: WidebandSession,
+		_error: Error,
+	): Promise<void> {
+		if (this._activeSession?.session !== session) {
+			return;
+		}
+		try {
+			await session.close();
+		} catch {
+			// Ignore close errors while transitioning into recovery.
+		}
+		this._activeSession = undefined;
+		this._latestReading = undefined;
+		this._lastCandidate = candidate;
+		this.setConnectionState("failed", candidate);
+		this.onDidChangeSessionEmitter.fire(undefined);
+		this.onDidChangeReadingEmitter.fire(undefined);
 	}
 }
 

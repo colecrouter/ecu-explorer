@@ -9,16 +9,27 @@ import {
 	formatHardwareRuntime,
 	type HardwareSelectionService,
 } from "./hardware-selection.js";
-import type { ActiveWidebandSession } from "./wideband-manager.js";
+import type {
+	ActiveWidebandSession,
+	WidebandConnectionState,
+} from "./wideband-manager.js";
 
 export interface WidebandStatusSource {
 	readonly activeSession: ActiveWidebandSession | undefined;
 	readonly latestReading: WidebandReading | undefined;
+	readonly lastCandidate: ActiveWidebandSession["candidate"] | undefined;
+	readonly connectionState: WidebandConnectionState;
 	onDidChangeSession(
 		listener: (session: ActiveWidebandSession | undefined) => void,
 	): vscode.Disposable;
 	onDidChangeReading(
 		listener: (reading: WidebandReading | undefined) => void,
+	): vscode.Disposable;
+	onDidChangeState(
+		listener: (event: {
+			state: WidebandConnectionState;
+			candidate: ActiveWidebandSession["candidate"] | undefined;
+		}) => void,
 	): vscode.Disposable;
 }
 
@@ -42,6 +53,8 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 	private loggingState: "idle" | "recording" | "paused" = "idle";
 	private activeWidebandSession: ActiveWidebandSession | undefined;
 	private latestWidebandReading: WidebandReading | undefined;
+	private lastWidebandCandidate: ActiveWidebandSession["candidate"] | undefined;
+	private widebandConnectionState: WidebandConnectionState;
 	private disposables: vscode.Disposable[] = [];
 
 	constructor(
@@ -113,6 +126,8 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 		if (widebandManager != null) {
 			this.activeWidebandSession = widebandManager.activeSession;
 			this.latestWidebandReading = widebandManager.latestReading;
+			this.lastWidebandCandidate = widebandManager.lastCandidate;
+			this.widebandConnectionState = widebandManager.connectionState;
 			this.disposables.push(
 				widebandManager.onDidChangeSession((session) => {
 					this.activeWidebandSession = session;
@@ -123,6 +138,11 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 				}),
 				widebandManager.onDidChangeReading((reading) => {
 					this.latestWidebandReading = reading;
+					this.updateWidebandItem();
+				}),
+				widebandManager.onDidChangeState(({ state, candidate }) => {
+					this.widebandConnectionState = state;
+					this.lastWidebandCandidate = candidate;
 					this.updateWidebandItem();
 				}),
 			);
@@ -219,6 +239,23 @@ export class DeviceStatusBarManager implements vscode.Disposable {
 
 	private updateWidebandItem(): void {
 		if (this.activeWidebandSession == null) {
+			if (
+				this.widebandConnectionState != null &&
+				this.lastWidebandCandidate != null
+			) {
+				const runtime = formatHardwareRuntime(this.lastWidebandCandidate);
+				const deviceName = this.lastWidebandCandidate.device.name;
+				if (this.widebandConnectionState === "reconnecting") {
+					this.widebandItem.text = "$(sync~spin) Wideband";
+					this.widebandItem.tooltip = `${deviceName}\n${runtime}\nAttempting to reconnect`;
+				} else {
+					this.widebandItem.text = "$(warning) Wideband";
+					this.widebandItem.tooltip = `${deviceName}\n${runtime}\nWideband is currently unavailable. Connect to retry.`;
+				}
+				this.widebandItem.command = "ecuExplorer.connectWideband";
+				this.widebandItem.show();
+				return;
+			}
 			this.widebandItem.text = "$(dashboard)";
 			this.widebandItem.tooltip = "Connect Wideband";
 			this.widebandItem.command = "ecuExplorer.connectWideband";
