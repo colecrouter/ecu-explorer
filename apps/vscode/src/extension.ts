@@ -732,7 +732,10 @@ export async function activate(
 			},
 		),
 		vscode.commands.registerCommand("ecuExplorer.connectWideband", async () => {
-			widebandAutoReconnectController?.resume(false);
+			// Keep reconnect suppressed while the user is explicitly choosing a
+			// replacement device so the previous preferred device cannot reclaim
+			// the session in the background during the picker flow.
+			widebandAutoReconnectController?.suppress();
 			if (widebandManager == null || widebandSerialSource == null) {
 				vscode.window.showErrorMessage(
 					"Wideband serial runtime is not available in this host.",
@@ -769,6 +772,7 @@ export async function activate(
 					mode,
 				);
 				activeWidebandMode = mode;
+				widebandAutoReconnectController?.resume(false);
 				vscode.window.showInformationMessage(
 					`Connected to ${candidate.device.name}.`,
 				);
