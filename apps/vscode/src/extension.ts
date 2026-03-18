@@ -38,9 +38,13 @@ import {
 } from "./handlers/index.js";
 import {
 	HardwareSelectionService,
+	promptForHardwareCandidate,
 	WorkspaceHardwareSelectionStrategy,
 } from "./hardware-selection.js";
-import { selectHardwareCandidateFromSource } from "./hardware-source.js";
+import {
+	createAggregatedHardwareSelection,
+	selectHardwareCandidateFromSource,
+} from "./hardware-source.js";
 import type { TableEditSession } from "./history/table-edit-session.js";
 import { LiveDataPanelManager } from "./live-data-panel-manager.js";
 import { LoggingManager, openLogsFolder } from "./logging-manager.js";
@@ -560,6 +564,10 @@ export async function activate(
 	if (workspaceState == null) {
 		throw new Error("Workspace state not initialized");
 	}
+	const ecuSelectionStrategy = new WorkspaceHardwareSelectionStrategy(
+		new HardwareSelectionService(workspaceState),
+	);
+	deviceManager.setHardwareSelectionStrategy(ecuSelectionStrategy);
 	const widebandSelectionService = new HardwareSelectionService(
 		workspaceState,
 		DEFAULT_WIDEBAND_SELECTION_SLOT,
@@ -1043,7 +1051,34 @@ export async function activate(
 			}
 
 			try {
-				const candidate = await deviceManager.manageHardwareSelection();
+				const aggregatedSelection = await createAggregatedHardwareSelection([
+					{
+						source: deviceManager.getHardwareManagementSource(),
+						strategy: ecuSelectionStrategy,
+					},
+					...(widebandSerialSource != null
+						? [
+								{
+									source: widebandSerialSource,
+									strategy: widebandSelectionStrategy,
+								},
+							]
+						: []),
+				]);
+				if (
+					aggregatedSelection.candidates.length === 0 &&
+					aggregatedSelection.requestActions.length === 0
+				) {
+					throw new Error(
+						"No hardware found. Connect a device or use a browser hardware request action if available.",
+					);
+				}
+				const candidate = await promptForHardwareCandidate(
+					aggregatedSelection.candidates,
+					aggregatedSelection.requestActions,
+					aggregatedSelection.promptOptions,
+				);
+				aggregatedSelection.rememberCandidate(candidate);
 				vscode.window.showInformationMessage(
 					`Preferred hardware set to ${candidate.device.name}.`,
 				);
@@ -1429,12 +1464,6 @@ export async function activate(
 		newEditorProvider.onDidOpenRomDocument((doc) => {
 			watchRomDocument(doc);
 		}),
-	);
-
-	deviceManager?.setHardwareSelectionStrategy(
-		new WorkspaceHardwareSelectionStrategy(
-			new HardwareSelectionService(workspaceState),
-		),
 	);
 
 	// Create and register ECU Explorer tree provider

@@ -281,6 +281,10 @@ export class DeviceManagerImpl implements DeviceManager {
 		return selectedCandidate;
 	}
 
+	getHardwareManagementSource(): HardwareCandidateSource {
+		return this.createTransportHardwareSource();
+	}
+
 	private createTransportHardwareSource(): HardwareCandidateSource {
 		return {
 			listCandidates: async () => {
