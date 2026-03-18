@@ -500,6 +500,8 @@ export async function activate(
 		editorProvider,
 	}));
 
+	workspaceState = new WorkspaceState(ctx.workspaceState);
+
 	// Initialize DeviceManager and register transport/protocol
 	deviceManager = new DeviceManagerImpl();
 	deviceManager.setHardwareCandidateLocality(
@@ -554,11 +556,10 @@ export async function activate(
 		}),
 	);
 
-	// Initialize and register DeviceStatusBarManager
+	const hardwareLocality = options?.hardwareLocality ?? "extension-host";
 	if (workspaceState == null) {
 		throw new Error("Workspace state not initialized");
 	}
-	const hardwareLocality = options?.hardwareLocality ?? "extension-host";
 	const widebandSelectionService = new HardwareSelectionService(
 		workspaceState,
 		DEFAULT_WIDEBAND_SELECTION_SLOT,
@@ -573,19 +574,6 @@ export async function activate(
 					hardwareLocality,
 				)
 			: undefined;
-	const deviceStatusBarManager = new DeviceStatusBarManager(
-		deviceManager,
-		new HardwareSelectionService(workspaceState),
-	);
-	ctx.subscriptions.push(deviceStatusBarManager);
-
-	// Initialize LiveDataPanelManager
-	liveDataPanelManager = new LiveDataPanelManager(ctx, deviceManager);
-
-	// Initialize LoggingManager
-	loggingManager = new LoggingManager();
-	ctx.subscriptions.push(loggingManager);
-
 	if (widebandSerialSource != null) {
 		widebandManager = new WidebandManager(() =>
 			widebandSerialSource.listCandidates(),
@@ -618,6 +606,20 @@ export async function activate(
 			false,
 		);
 	}
+
+	const deviceStatusBarManager = new DeviceStatusBarManager(
+		deviceManager,
+		new HardwareSelectionService(workspaceState),
+		widebandManager ?? undefined,
+	);
+	ctx.subscriptions.push(deviceStatusBarManager);
+
+	// Initialize LiveDataPanelManager
+	liveDataPanelManager = new LiveDataPanelManager(ctx, deviceManager);
+
+	// Initialize LoggingManager
+	loggingManager = new LoggingManager();
+	ctx.subscriptions.push(loggingManager);
 
 	// Wire LoggingManager state changes to DeviceStatusBarManager
 	ctx.subscriptions.push(
@@ -1429,8 +1431,6 @@ export async function activate(
 		}),
 	);
 
-	// Initialize workspace state
-	workspaceState = new WorkspaceState(ctx.workspaceState);
 	deviceManager?.setHardwareSelectionStrategy(
 		new WorkspaceHardwareSelectionStrategy(
 			new HardwareSelectionService(workspaceState),

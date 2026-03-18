@@ -12,10 +12,14 @@ import type {
 	DeviceTransport,
 	EcuProtocol,
 } from "@ecu-explorer/device";
+import type { WidebandReading } from "@ecu-explorer/wideband";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { DeviceManagerImpl } from "../src/device-manager.js";
-import { DeviceStatusBarManager } from "../src/device-status-bar.js";
+import {
+	DeviceStatusBarManager,
+	type WidebandStatusSource,
+} from "../src/device-status-bar.js";
 import {
 	createHardwareCandidate,
 	FORGET_HARDWARE_BUTTON,
@@ -23,6 +27,7 @@ import {
 	promptForHardwareCandidate,
 	WorkspaceHardwareSelectionStrategy,
 } from "../src/hardware-selection.js";
+import type { ActiveWidebandSession } from "../src/wideband-manager.js";
 import { WorkspaceState } from "../src/workspace-state.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -62,6 +67,55 @@ function createMockStatusBarItem() {
 		show: vi.fn(),
 		hide: vi.fn(),
 		dispose: vi.fn(),
+	};
+}
+
+function createMockWidebandManager(): WidebandStatusSource & {
+	emitSession: (session: ActiveWidebandSession | undefined) => void;
+	emitReading: (reading: WidebandReading | undefined) => void;
+} {
+	let activeSession: ActiveWidebandSession | undefined;
+	let latestReading: WidebandReading | undefined;
+	const sessionListeners = new Set<
+		(session: ActiveWidebandSession | undefined) => void
+	>();
+	const readingListeners = new Set<
+		(reading: WidebandReading | undefined) => void
+	>();
+
+	return {
+		get activeSession() {
+			return activeSession;
+		},
+		get latestReading() {
+			return latestReading;
+		},
+		onDidChangeSession(listener: (session: typeof activeSession) => void) {
+			sessionListeners.add(listener);
+			return {
+				dispose: () => sessionListeners.delete(listener),
+			};
+		},
+		onDidChangeReading(
+			listener: (reading: WidebandReading | undefined) => void,
+		) {
+			readingListeners.add(listener);
+			return {
+				dispose: () => readingListeners.delete(listener),
+			};
+		},
+		emitSession(session: typeof activeSession) {
+			activeSession = session;
+			for (const listener of sessionListeners) {
+				listener(session);
+			}
+		},
+		emitReading(reading: WidebandReading | undefined) {
+			latestReading = reading;
+			for (const listener of readingListeners) {
+				listener(reading);
+			}
+		},
 	};
 }
 
@@ -691,6 +745,7 @@ describe("DeviceStatusBarManager", () => {
 	let statusBarManager: DeviceStatusBarManager;
 	let mockConnection: ReturnType<typeof createMockConnection>;
 	let mockProtocol: ReturnType<typeof createMockProtocol>;
+	let mockWidebandManager: ReturnType<typeof createMockWidebandManager>;
 
 	// Track created status bar items
 	let createdItems: ReturnType<typeof createMockStatusBarItem>[];
@@ -708,26 +763,33 @@ describe("DeviceStatusBarManager", () => {
 		manager = new DeviceManagerImpl();
 		mockConnection = createMockConnection();
 		mockProtocol = createMockProtocol();
+		mockWidebandManager = createMockWidebandManager();
 
 		vi.spyOn(manager, "selectDeviceAndProtocol").mockResolvedValue(
 			createResolvedSelection(mockConnection, mockProtocol),
 		);
 
-		statusBarManager = new DeviceStatusBarManager(manager);
+		statusBarManager = new DeviceStatusBarManager(
+			manager,
+			undefined,
+			mockWidebandManager,
+		);
 	});
 
-	it("should create 6 status bar items", () => {
-		expect(vscode.window.createStatusBarItem).toHaveBeenCalledTimes(6);
+	it("should create 7 status bar items", () => {
+		expect(vscode.window.createStatusBarItem).toHaveBeenCalledTimes(7);
 	});
 
 	it("should show hardware and Connect items when disconnected", () => {
 		const hardwareItem = getRequiredStatusBarItem(createdItems, 0);
-		const connectItem = getRequiredStatusBarItem(createdItems, 1);
+		const widebandItem = getRequiredStatusBarItem(createdItems, 1);
+		const connectItem = getRequiredStatusBarItem(createdItems, 2);
 		expect(hardwareItem.show).toHaveBeenCalled();
+		expect(widebandItem.show).toHaveBeenCalled();
 		expect(connectItem.show).toHaveBeenCalled();
 
 		// All other items should be hidden
-		for (let i = 2; i < createdItems.length; i++) {
+		for (let i = 3; i < createdItems.length; i++) {
 			expect(createdItems[i]?.hide).toHaveBeenCalled();
 		}
 	});
@@ -736,9 +798,9 @@ describe("DeviceStatusBarManager", () => {
 		await manager.connect();
 
 		const hardwareItem = getRequiredStatusBarItem(createdItems, 0);
-		const connectItem = getRequiredStatusBarItem(createdItems, 1);
-		const disconnectItem = getRequiredStatusBarItem(createdItems, 2);
-		const startLogItem = getRequiredStatusBarItem(createdItems, 3);
+		const connectItem = getRequiredStatusBarItem(createdItems, 2);
+		const disconnectItem = getRequiredStatusBarItem(createdItems, 3);
+		const startLogItem = getRequiredStatusBarItem(createdItems, 4);
 
 		// After connect, connectItem should be hidden
 		expect(connectItem.hide).toHaveBeenCalled();
@@ -752,7 +814,7 @@ describe("DeviceStatusBarManager", () => {
 		await manager.connect();
 		await manager.disconnect();
 
-		const connectItem = getRequiredStatusBarItem(createdItems, 1);
+		const connectItem = getRequiredStatusBarItem(createdItems, 2);
 		// After disconnect, connectItem should be shown again
 		const showCallCount = connectItem.show.mock.calls.length;
 		expect(showCallCount).toBeGreaterThanOrEqual(2); // initial + after disconnect
@@ -761,7 +823,7 @@ describe("DeviceStatusBarManager", () => {
 	it("should set disconnect tooltip to device name when connected", async () => {
 		await manager.connect();
 
-		const disconnectItem = getRequiredStatusBarItem(createdItems, 2);
+		const disconnectItem = getRequiredStatusBarItem(createdItems, 3);
 		expect(disconnectItem.tooltip).toContain("Test Device");
 	});
 
@@ -784,6 +846,7 @@ describe("DeviceStatusBarManager", () => {
 		statusBarManager = new DeviceStatusBarManager(
 			manager,
 			new HardwareSelectionService(rememberedWorkspaceState),
+			mockWidebandManager,
 		);
 
 		const hardwareItem = getRequiredStatusBarItem(createdItems, 0);
@@ -796,14 +859,51 @@ describe("DeviceStatusBarManager", () => {
 		await manager.reconnectActiveConnection("write");
 
 		const hardwareItem = getRequiredStatusBarItem(createdItems, 0);
-		const connectItem = getRequiredStatusBarItem(createdItems, 1);
-		const disconnectItem = getRequiredStatusBarItem(createdItems, 2);
+		const connectItem = getRequiredStatusBarItem(createdItems, 2);
+		const disconnectItem = getRequiredStatusBarItem(createdItems, 3);
 
 		expect(hardwareItem.text).toContain("warning");
 		expect(hardwareItem.tooltip).toContain("currently unavailable");
 		expect(connectItem.show).toHaveBeenCalled();
 		expect(connectItem.text).toContain("Reconnect");
 		expect(disconnectItem.hide).toHaveBeenCalled();
+	});
+
+	it("shows wideband reading and disconnect action when a wideband is active", () => {
+		mockWidebandManager.emitSession({
+			adapter: {
+				id: "aem-serial-wideband",
+				name: "AEM Serial Wideband",
+				canOpen: vi.fn(),
+				open: vi.fn(),
+			},
+			candidate: createHardwareCandidate(
+				{
+					id: "wideband-serial:/dev/cu.usbserial-1",
+					name: "AEM Wideband (Serial)",
+					transportName: "serial",
+					connected: false,
+				},
+				"client-browser",
+			),
+			session: {
+				id: "wideband-session",
+				name: "AEM Wideband",
+				startStream: vi.fn(),
+				stopStream: vi.fn(),
+				close: vi.fn(),
+			},
+		});
+		mockWidebandManager.emitReading({
+			kind: "afr",
+			value: 14.7,
+			timestamp: 1234,
+		});
+
+		const widebandItem = getRequiredStatusBarItem(createdItems, 1);
+		expect(widebandItem.text).toContain("14.70 AFR");
+		expect(widebandItem.tooltip).toContain("Browser");
+		expect(widebandItem.command).toBe("ecuExplorer.disconnectWideband");
 	});
 
 	it("should dispose all status bar items on dispose()", () => {
@@ -833,9 +933,9 @@ describe("DeviceStatusBarManager", () => {
 		it("should show Pause + Stop items when recording", () => {
 			statusBarManager.updateLoggingState("recording");
 
-			const startLogItem = getRequiredStatusBarItem(createdItems, 3);
-			const pauseLogItem = getRequiredStatusBarItem(createdItems, 4);
-			const stopLogItem = getRequiredStatusBarItem(createdItems, 5);
+			const startLogItem = getRequiredStatusBarItem(createdItems, 4);
+			const pauseLogItem = getRequiredStatusBarItem(createdItems, 5);
+			const stopLogItem = getRequiredStatusBarItem(createdItems, 6);
 
 			expect(startLogItem.hide).toHaveBeenCalled();
 			expect(pauseLogItem.show).toHaveBeenCalled();
@@ -845,9 +945,9 @@ describe("DeviceStatusBarManager", () => {
 		it("should show Resume + Stop items when paused", () => {
 			statusBarManager.updateLoggingState("paused");
 
-			const startLogItem = getRequiredStatusBarItem(createdItems, 3);
-			const pauseLogItem = getRequiredStatusBarItem(createdItems, 4);
-			const stopLogItem = getRequiredStatusBarItem(createdItems, 5);
+			const startLogItem = getRequiredStatusBarItem(createdItems, 4);
+			const pauseLogItem = getRequiredStatusBarItem(createdItems, 5);
+			const stopLogItem = getRequiredStatusBarItem(createdItems, 6);
 
 			expect(startLogItem.hide).toHaveBeenCalled();
 			expect(pauseLogItem.show).toHaveBeenCalled();
@@ -859,7 +959,7 @@ describe("DeviceStatusBarManager", () => {
 			clearStatusBarItemCallHistory();
 			statusBarManager.updateLoggingState("idle");
 
-			const startLogItem = getRequiredStatusBarItem(createdItems, 3);
+			const startLogItem = getRequiredStatusBarItem(createdItems, 4);
 			expect(startLogItem.show).toHaveBeenCalled();
 		});
 	});
