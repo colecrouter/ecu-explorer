@@ -590,9 +590,13 @@ export class GraphPanelManager {
 
 		context.documentSubscription?.dispose();
 		context.subscribedDocument = doc;
-		context.documentSubscription = doc.onDidUpdateBytes((_e) => {
+		context.documentSubscription = doc.onDidUpdateBytes((event) => {
 			const panel = this.panels.get(context.romPath)?.get(context.tableId);
 			if (!panel) {
+				return;
+			}
+
+			if (context.subscribedSessionId) {
 				return;
 			}
 
@@ -601,6 +605,19 @@ export class GraphPanelManager {
 				const newSnapshot = this.getSnapshot(context.romPath, context.tableId);
 				if (newSnapshot) {
 					context.snapshot = newSnapshot;
+					const romPatch = createRomPatch(
+						doc.romBytes,
+						event.offset,
+						event.length,
+					);
+					if (context.tableDefinition && romPatch) {
+						panel.webview.postMessage({
+							type: "update",
+							romPatch,
+						});
+						return;
+					}
+
 					panel.webview.postMessage({
 						type: "update",
 						snapshot: newSnapshot,
@@ -637,12 +654,21 @@ export class GraphPanelManager {
 		message: TableSessionUpdateMessage,
 	): void {
 		context.snapshot = message.snapshot;
+		if (context.tableDefinition && message.romPatch) {
+			panel.webview.postMessage({
+				type: "update",
+				romPatch: message.romPatch,
+			});
+			return;
+		}
+
 		panel.webview.postMessage({
 			type: "update",
 			snapshot: message.snapshot,
 			...(context.tableDefinition
 				? {
-						romBytes: message.rom,
+						...(message.rom ? { romBytes: message.rom } : {}),
+						...(message.romPatch ? { romPatch: message.romPatch } : {}),
 					}
 				: {}),
 		});
@@ -740,4 +766,24 @@ function isStructuredCloneSafe(value: unknown): boolean {
 	}
 
 	return false;
+}
+
+function createRomPatch(
+	romBytes: Uint8Array,
+	offset?: number,
+	length?: number,
+): { offset: number; bytes: number[] } | undefined {
+	if (offset === undefined || length === undefined || length <= 0) {
+		return undefined;
+	}
+
+	const end = Math.min(offset + length, romBytes.length);
+	if (offset < 0 || offset >= end) {
+		return undefined;
+	}
+
+	return {
+		offset,
+		bytes: Array.from(romBytes.slice(offset, end)),
+	};
 }

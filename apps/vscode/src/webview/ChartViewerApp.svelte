@@ -203,13 +203,22 @@
 	 */
 	function handleUpdate(message: {
 		type: "update";
-		snapshot: TableSnapshot;
+		snapshot?: TableSnapshot;
 		romBytes?: number[];
+		romPatch?: {
+			offset: number;
+			bytes: number[];
+		};
 		preferredChartType?: "line" | "heatmap";
 	}) {
-		if (romView && message.romBytes) {
+		if (romView && message.romPatch) {
+			romView.patchBytes(
+				message.romPatch.offset,
+				Uint8Array.from(message.romPatch.bytes),
+			);
+		} else if (romView && message.romBytes) {
 			romView.replaceBytes(Uint8Array.from(message.romBytes));
-		} else {
+		} else if (message.snapshot) {
 			snapshot = message.snapshot;
 		}
 		if (message.preferredChartType) {

@@ -81,6 +81,7 @@ describe("Table to Graph live synchronization", () => {
 
 		const panelToDocument = new Map<vscode.WebviewPanel, RomDocument>();
 		const tableSessions = new Map();
+		let graphManager: GraphPanelManager;
 
 		setTableHandlerContext(() => ({
 			activeRom: null,
@@ -98,7 +99,9 @@ describe("Table to Graph live synchronization", () => {
 			registerPanel: (panel, document) => {
 				panelToDocument.set(panel, document);
 			},
-			notifyTableSessionAvailable: () => {},
+			notifyTableSessionAvailable: (session) => {
+				graphManager.handleTableSessionAvailable(session);
+			},
 			handleCellEdit: () => {},
 			handleUndo: () => {},
 			handleRedo: () => {},
@@ -107,7 +110,7 @@ describe("Table to Graph live synchronization", () => {
 			openTableInCustomEditor: async () => {},
 		}));
 
-		const graphManager = new GraphPanelManager(
+		graphManager = new GraphPanelManager(
 			context as vscode.ExtensionContext,
 			(romPath) => (romPath === romUri.fsPath ? romDocument : undefined),
 			(romPath, tableId) => {
@@ -115,6 +118,14 @@ describe("Table to Graph live synchronization", () => {
 					return undefined;
 				}
 				return snapshotTable(TABLE_DEF, romDocument.romBytes);
+			},
+			undefined,
+			undefined,
+			(romPath, tableId) => {
+				if (romPath !== romUri.fsPath || tableId !== TABLE_DEF.id) {
+					return undefined;
+				}
+				return tableSessions.get(tableUri.toString());
 			},
 		);
 
@@ -147,10 +158,9 @@ describe("Table to Graph live synchronization", () => {
 		expect(graphPanel.webview.postMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				type: "update",
-				snapshot: expect.objectContaining({
-					kind: "table1d",
-					name: TABLE_DEF.name,
-					z: [42, 20, 30, 40],
+				romPatch: expect.objectContaining({
+					offset: 0,
+					bytes: [42],
 				}),
 			}),
 		);

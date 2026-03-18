@@ -317,7 +317,10 @@ describe("GraphPanelManager", () => {
 			expect(panel.webview.postMessage).toHaveBeenCalledWith(
 				expect.objectContaining({
 					type: "update",
-					snapshot,
+					romPatch: {
+						offset: 0,
+						bytes: [90],
+					},
 				}),
 			);
 		});
@@ -362,7 +365,10 @@ describe("GraphPanelManager", () => {
 			expect(panel.webview.postMessage).toHaveBeenCalledWith(
 				expect.objectContaining({
 					type: "update",
-					snapshot,
+					romPatch: {
+						offset: 0,
+						bytes: [90],
+					},
 				}),
 			);
 		});
