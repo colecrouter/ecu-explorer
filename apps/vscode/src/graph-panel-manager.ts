@@ -14,7 +14,17 @@
 
 import type { TableSnapshot } from "@ecu-explorer/ui";
 import * as vscode from "vscode";
+import type {
+	TableEditSession,
+	TableSessionUpdateMessage,
+} from "./history/table-edit-session.js";
 import type { RomDocument } from "./rom/document.js";
+import type {
+	TableSessionInitMessage,
+	TableSessionUpdateMessage as TableSessionProtocolUpdateMessage,
+	TableSessionSelectCellsMessage,
+	TableSessionThemeMessage,
+} from "./table-session-protocol.js";
 import { getThemeColors, type ThemeColors } from "./theme-colors.js";
 
 /**
@@ -34,8 +44,59 @@ interface PanelContext {
 	tableName: string;
 	definitionUri?: string;
 	snapshot?: TableSnapshot;
-	preferredChartType?: "line" | "heatmap" | undefined;
 	disposables: vscode.Disposable[];
+	documentSubscription?: vscode.Disposable;
+	subscribedDocument?: RomDocument;
+	sessionSubscription?: () => void;
+	subscribedSessionId?: string;
+	tableUri?: string;
+}
+
+interface PersistedGraphPanelState {
+	romPath: string;
+	tableId: string;
+	tableName: string;
+	definitionUri?: string;
+}
+
+const GRAPH_PANEL_STATE_KEY = "ecuExplorer.graphPanelStates";
+
+function normalizePersistedGraphState(
+	state: unknown,
+): PersistedGraphPanelState | undefined {
+	if (!state || typeof state !== "object") {
+		return undefined;
+	}
+
+	const candidate = state as Partial<
+		Record<keyof PersistedGraphPanelState, unknown>
+	>;
+	if (
+		typeof candidate.romPath === "string" &&
+		candidate.romPath.length > 0 &&
+		typeof candidate.tableId === "string" &&
+		candidate.tableId.length > 0 &&
+		typeof candidate.tableName === "string" &&
+		candidate.tableName.length > 0
+	) {
+		const state: PersistedGraphPanelState = {
+			romPath: candidate.romPath,
+			tableId: candidate.tableId,
+			tableName: candidate.tableName,
+		};
+
+		if (typeof candidate.definitionUri === "string") {
+			state.definitionUri = candidate.definitionUri;
+		}
+
+		return state;
+	}
+
+	return undefined;
+}
+
+function makeGraphPanelStateId(state: PersistedGraphPanelState): string {
+	return `${state.romPath}::${state.tableId}`;
 }
 
 /**
@@ -66,6 +127,10 @@ export class GraphPanelManager {
 			tableId: string,
 			selection: { row: number; col: number } | null,
 		) => void,
+		private getTableSession?: (
+			romPath: string,
+			tableId: string,
+		) => TableEditSession | undefined,
 	) {}
 
 	/**
@@ -78,10 +143,11 @@ export class GraphPanelManager {
 	) {
 		const panel = this.panels.get(romPath)?.get(tableId);
 		if (panel) {
-			panel.webview.postMessage({
+			const message: TableSessionSelectCellsMessage = {
 				type: "selectCells",
 				selection,
-			});
+			};
+			panel.webview.postMessage(message);
 		}
 	}
 
@@ -95,7 +161,6 @@ export class GraphPanelManager {
 	 * @param tableId - Table identifier
 	 * @param tableName - Human-readable table name
 	 * @param snapshot - Initial table snapshot
-	 * @param preferredChartType - Optional preferred chart type ('line' | 'heatmap')
 	 * @returns Webview panel
 	 */
 	getOrCreatePanel(
@@ -103,7 +168,6 @@ export class GraphPanelManager {
 		tableId: string,
 		tableName: string,
 		snapshot: TableSnapshot,
-		preferredChartType?: "line" | "heatmap",
 		definitionUri?: string,
 	): vscode.WebviewPanel {
 		// Check if panel already exists
@@ -113,17 +177,14 @@ export class GraphPanelManager {
 
 			const context = this.panelContext.get(existing);
 			if (context) {
-				context.preferredChartType = preferredChartType;
 				if (definitionUri !== undefined) {
 					context.definitionUri = definitionUri;
 				}
 			}
 
-			// Send updated snapshot and preferred type to existing panel
 			existing.webview.postMessage({
 				type: "update",
 				snapshot,
-				preferredChartType,
 			});
 			return existing;
 		}
@@ -152,7 +213,6 @@ export class GraphPanelManager {
 			tableId,
 			tableName,
 			snapshot,
-			preferredChartType,
 			definitionUri,
 		);
 
@@ -201,7 +261,6 @@ export class GraphPanelManager {
 			romPath,
 			tableId,
 			tableName,
-			undefined,
 			undefined,
 			definitionUri,
 		);
@@ -275,10 +334,11 @@ export class GraphPanelManager {
 	broadcastThemeColors(themeColors: ThemeColors): void {
 		for (const romPanels of this.panels.values()) {
 			for (const panel of romPanels.values()) {
-				panel.webview.postMessage({
+				const payload: TableSessionThemeMessage = {
 					type: "themeChanged",
 					themeColors,
-				});
+				};
+				panel.webview.postMessage(payload);
 			}
 		}
 	}
@@ -321,6 +381,56 @@ export class GraphPanelManager {
 		// Clear maps
 		this.panels.clear();
 		this.panelContext.clear();
+	}
+
+	/**
+	 * Rebind all graph panels for a ROM to the latest RomDocument instance.
+	 *
+	 * This is primarily used during restore/reload flows where a panel may be
+	 * restored before the final RomDocument instance has been opened.
+	 */
+	handleRomDocumentOpened(document: RomDocument): void {
+		const romPath = document.uri.fsPath;
+		const romPanels = this.panels.get(romPath);
+		if (!romPanels) {
+			return;
+		}
+
+		for (const panel of romPanels.values()) {
+			const context = this.panelContext.get(panel);
+			if (context) {
+				this.attachDocumentSubscription(panel, context);
+			}
+		}
+	}
+
+	consumePersistedState(): PersistedGraphPanelState | undefined {
+		const states = this.readPersistedStates();
+		if (states.length === 0) {
+			return undefined;
+		}
+
+		const [first, ...rest] = states;
+		this.context.workspaceState
+			.update(GRAPH_PANEL_STATE_KEY, rest)
+			.then(() => {});
+		return first;
+	}
+
+	handleTableSessionAvailable(session: TableEditSession): void {
+		const romPath = session.romDocument.uri.fsPath;
+		const romPanels = this.panels.get(romPath);
+		if (!romPanels) {
+			return;
+		}
+
+		for (const panel of romPanels.values()) {
+			const context = this.panelContext.get(panel);
+			if (!context || context.tableId !== session.tableDef.id) {
+				continue;
+			}
+			this.attachTableSessionSubscription(panel, context);
+		}
 	}
 
 	/**
@@ -373,6 +483,11 @@ export class GraphPanelManager {
 			`[GraphPanelManager] Sending initial snapshot for table: ${context.tableName}`,
 		);
 
+		// Restored panels can outlive document instances across reload/order changes.
+		// Re-attach to the current RomDocument whenever the panel initializes.
+		this.attachDocumentSubscription(panel, context);
+		this.attachTableSessionSubscription(panel, context);
+
 		// Restored panels do not carry an in-memory snapshot, so rebuild it on demand.
 		if (!context.snapshot && this.getSnapshot) {
 			const snapshot = this.getSnapshot(context.romPath, context.tableId);
@@ -389,8 +504,7 @@ export class GraphPanelManager {
 		}
 
 		const themeColors = getThemeColors();
-
-		panel.webview.postMessage({
+		const payload: TableSessionInitMessage = {
 			type: "init",
 			snapshot: context.snapshot,
 			tableId: context.tableId,
@@ -399,9 +513,9 @@ export class GraphPanelManager {
 			...(context.definitionUri
 				? { definitionUri: context.definitionUri }
 				: {}),
-			preferredChartType: context.preferredChartType,
 			themeColors,
-		});
+		};
+		panel.webview.postMessage(payload);
 
 		console.log(
 			`[GraphPanelManager] Initial snapshot sent for table: ${context.tableName}`,
@@ -436,7 +550,6 @@ export class GraphPanelManager {
 		tableId: string,
 		tableName: string,
 		snapshot?: TableSnapshot,
-		preferredChartType?: "line" | "heatmap",
 		definitionUri?: string,
 	): void {
 		let romPanels = this.panels.get(romPath);
@@ -446,37 +559,147 @@ export class GraphPanelManager {
 		}
 		romPanels.set(tableId, panel);
 
-		const disposables: vscode.Disposable[] = [];
-
-		// Subscribe to ROM document updates
-		const doc = this.getDocument(romPath);
-		if (doc) {
-			disposables.push(
-				doc.onDidUpdateBytes((_e) => {
-					// ROM bytes changed — get a fresh snapshot and broadcast to the graph panel
-					if (this.getSnapshot) {
-						const newSnapshot = this.getSnapshot(romPath, tableId);
-						if (newSnapshot) {
-							const context = this.panelContext.get(panel);
-							if (context) {
-								context.snapshot = newSnapshot;
-							}
-							this.broadcastSnapshot(romPath, tableId, newSnapshot);
-						}
-					}
-				}),
-			);
-		}
-
 		this.panelContext.set(panel, {
 			romPath,
 			tableId,
 			tableName,
 			...(definitionUri ? { definitionUri } : {}),
 			...(snapshot !== undefined && { snapshot }),
-			preferredChartType,
-			disposables,
+			tableUri: createTableUri(
+				romPath,
+				tableId,
+				tableName,
+				definitionUri,
+			).toString(),
+			disposables: [],
 		});
+
+		this.upsertPersistedState({
+			romPath,
+			tableId,
+			tableName,
+			...(definitionUri ? { definitionUri } : {}),
+		});
+
+		const context = this.panelContext.get(panel);
+		if (context) {
+			this.attachDocumentSubscription(panel, context);
+			this.attachTableSessionSubscription(panel, context);
+		}
+	}
+
+	private readPersistedStates(): PersistedGraphPanelState[] {
+		const states = this.context.workspaceState.get<unknown[]>(
+			GRAPH_PANEL_STATE_KEY,
+		);
+		if (!Array.isArray(states)) {
+			return [];
+		}
+
+		const normalized = states
+			.map((state) => normalizePersistedGraphState(state))
+			.filter((state): state is PersistedGraphPanelState => Boolean(state));
+
+		return normalized;
+	}
+
+	private upsertPersistedState(state: PersistedGraphPanelState): void {
+		const states = this.readPersistedStates();
+		const id = makeGraphPanelStateId(state);
+		const filtered = states.filter(
+			(entry) => makeGraphPanelStateId(entry) !== id,
+		);
+		filtered.unshift(state);
+		this.context.workspaceState
+			.update(GRAPH_PANEL_STATE_KEY, filtered.slice(0, 20))
+			.then(() => {});
+	}
+
+	private removePersistedState(state: {
+		romPath: string;
+		tableId: string;
+	}): void {
+		const states = this.readPersistedStates();
+		const id = `${state.romPath}::${state.tableId}`;
+		const filtered = states.filter(
+			(entry) => makeGraphPanelStateId(entry) !== id,
+		);
+		if (filtered.length !== states.length) {
+			this.context.workspaceState
+				.update(GRAPH_PANEL_STATE_KEY, filtered)
+				.then(() => {});
+		}
+	}
+
+	private attachTableSessionSubscription(
+		panel: vscode.WebviewPanel,
+		context: PanelContext,
+	): void {
+		const session = this.getTableSession?.(context.romPath, context.tableId);
+		if (!session || context.subscribedSessionId === session.id) {
+			return;
+		}
+
+		context.sessionSubscription?.();
+		context.subscribedSessionId = session.id;
+		context.tableUri = session.tableUri.toString();
+		context.sessionSubscription = session.onDidUpdate((message) => {
+			this.applySessionUpdate(panel, context, session, message);
+		});
+	}
+
+	private attachDocumentSubscription(
+		_panel: vscode.WebviewPanel,
+		context: PanelContext,
+	): void {
+		const doc = this.getDocument(context.romPath);
+		if (!doc) {
+			return;
+		}
+
+		if (context.subscribedDocument === doc) {
+			return;
+		}
+
+		context.documentSubscription?.dispose();
+		context.subscribedDocument = doc;
+		context.documentSubscription = doc.onDidUpdateBytes((_event) => {
+			const panel = this.panels.get(context.romPath)?.get(context.tableId);
+			if (!panel) {
+				return;
+			}
+
+			if (context.subscribedSessionId) {
+				return;
+			}
+
+			// ROM bytes changed — get a fresh snapshot and broadcast to the graph panel
+			if (this.getSnapshot) {
+				const newSnapshot = this.getSnapshot(context.romPath, context.tableId);
+				if (newSnapshot) {
+					context.snapshot = newSnapshot;
+					const message: TableSessionProtocolUpdateMessage = {
+						type: "update",
+						snapshot: newSnapshot,
+					};
+					panel.webview.postMessage(message);
+				}
+			}
+		});
+	}
+
+	private applySessionUpdate(
+		panel: vscode.WebviewPanel,
+		context: PanelContext,
+		_session: TableEditSession,
+		message: TableSessionUpdateMessage,
+	): void {
+		context.snapshot = message.snapshot;
+		const payload: TableSessionProtocolUpdateMessage = {
+			type: "update",
+			snapshot: message.snapshot,
+		};
+		panel.webview.postMessage(payload);
 	}
 
 	/**
@@ -485,12 +708,15 @@ export class GraphPanelManager {
 	private disposePanel(panel: vscode.WebviewPanel): void {
 		const context = this.panelContext.get(panel);
 		if (context) {
+			context.sessionSubscription?.();
+			context.documentSubscription?.dispose();
 			// Dispose all subscriptions
 			for (const d of context.disposables) {
 				d.dispose();
 			}
 			this.panels.get(context.romPath)?.delete(context.tableId);
 			this.panelContext.delete(panel);
+			this.removePersistedState(context);
 		}
 	}
 
@@ -524,4 +750,23 @@ export class GraphPanelManager {
 </body>
 </html>`;
 	}
+}
+
+function createTableUri(
+	romPath: string,
+	tableId: string,
+	tableName: string,
+	definitionUri?: string,
+): vscode.Uri {
+	const params = new URLSearchParams({ table: tableId });
+	if (tableName) {
+		params.set("name", tableName);
+	}
+	if (definitionUri) {
+		params.set("definition", definitionUri);
+	}
+
+	const uriPath = vscode.Uri.file(romPath).path;
+	const displayPath = `${uriPath}/${encodeURIComponent(tableName)}`;
+	return vscode.Uri.parse(`ecu-table://${displayPath}?${params.toString()}`);
 }

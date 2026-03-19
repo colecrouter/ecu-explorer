@@ -226,6 +226,47 @@ export class RomEditorProvider
 	}
 
 	/**
+	 * Ensure a ROM document is loaded and, when available, enriched with the
+	 * provided definition URI without replacing the document instance.
+	 */
+	async ensureRomDocument(
+		uri: vscode.Uri,
+		token: vscode.CancellationToken,
+		definitionUri?: string,
+	): Promise<RomDocument> {
+		if (uri.scheme !== "file") {
+			throw new Error(
+				`Unsupported URI scheme "${uri.scheme}" for ROM document. Only file:// URIs are supported.`,
+			);
+		}
+
+		let romDocument = this.documents.get(uri.toString());
+		if (!romDocument) {
+			if (definitionUri) {
+				this.stateManager.saveRomDefinition(uri.fsPath, definitionUri);
+			}
+			romDocument = await this.openRomDocument(
+				uri,
+				{ backupId: undefined, untitledDocumentData: undefined },
+				token,
+			);
+		}
+
+		if (!romDocument.definition && definitionUri) {
+			const definition = await parseDefinitionByUri(
+				this.providerRegistry,
+				definitionUri,
+			);
+			if (definition) {
+				this.stateManager.saveRomDefinition(uri.fsPath, definitionUri);
+				romDocument.setDefinition(definition);
+			}
+		}
+
+		return romDocument;
+	}
+
+	/**
 	 * Open a ROM document
 	 * Extracted from openCustomDocument to support both direct ROM opening and table URIs
 	 */
@@ -312,47 +353,16 @@ export class RomEditorProvider
 			throw new Error(`Invalid table URI: ${uri.toString()}`);
 		}
 
-		// Find or open the parent ROM document
 		const romUri = vscode.Uri.file(tableUri.romPath);
-		let romDocument = this.documents.get(romUri.toString());
-
-		if (!romDocument) {
-			if (tableUri.definitionUri) {
-				this.stateManager.saveRomDefinition(
-					tableUri.romPath,
-					tableUri.definitionUri,
-				);
-			}
-
-			// Open the ROM document first
-			const openContext: vscode.CustomDocumentOpenContext = {
-				backupId: undefined,
-				untitledDocumentData: undefined,
-			};
-			romDocument = await this.openRomDocument(romUri, openContext, token);
-			if (!romDocument.definition) {
-				if (tableUri.definitionUri) {
-					const definition = await parseDefinitionByUri(
-						this.providerRegistry,
-						tableUri.definitionUri,
-					);
-
-					if (definition) {
-						romDocument = new RomDocument(
-							romUri,
-							romDocument.romBytes,
-							definition,
-						);
-						this.documents.set(romUri.toString(), romDocument);
-					}
-				}
-
-				if (!romDocument.definition) {
-					throw new Error(
-						`Failed to load ROM definition for ${tableUri.romPath}; table open aborted before resolving ${tableUri.tableId}`,
-					);
-				}
-			}
+		const romDocument = await this.ensureRomDocument(
+			romUri,
+			token,
+			tableUri.definitionUri,
+		);
+		if (!romDocument.definition) {
+			throw new Error(
+				`Failed to load ROM definition for ${tableUri.romPath}; table open aborted before resolving ${tableUri.tableId}`,
+			);
 		}
 
 		// Find the table definition

@@ -13,10 +13,7 @@
 import type { CancellationToken } from "vscode";
 import * as vscode from "vscode";
 import type { GraphPanelManager } from "./graph-panel-manager.js";
-import type { RomDocument } from "./rom/document.js";
 import type { RomEditorProvider } from "./rom/editor-provider.js";
-import type { TableDocument } from "./table-document.js";
-import { createTableUri } from "./table-fs-uri.js";
 
 /**
  * State saved by ChartViewerApp for persistence
@@ -26,34 +23,30 @@ interface GraphPanelState {
 	tableId: string;
 	tableName: string;
 	definitionUri?: string;
-	// Chart view state (optional)
-	zoom?: number;
-	pan?: { x: number; y: number };
-	layer?: number;
+}
+
+function isGraphPanelState(value: unknown): value is GraphPanelState {
+	if (!value || typeof value !== "object") {
+		return false;
+	}
+
+	const candidate = value as Partial<
+		Record<keyof GraphPanelState, string | undefined>
+	>;
+	return (
+		typeof candidate.romPath === "string" &&
+		candidate.romPath.length > 0 &&
+		typeof candidate.tableId === "string" &&
+		candidate.tableId.length > 0 &&
+		typeof candidate.tableName === "string" &&
+		candidate.tableName.length > 0
+	);
 }
 
 const NON_CANCELLABLE_TOKEN: CancellationToken = {
 	isCancellationRequested: false,
 	onCancellationRequested: () => ({ dispose() {} }),
 };
-
-function isRomDocument(
-	document:
-		| RomDocument
-		| Awaited<ReturnType<RomEditorProvider["openCustomDocument"]>>,
-): document is RomDocument {
-	return "definition" in document && "romBytes" in document;
-}
-
-function isTableDocument(
-	document:
-		| RomDocument
-		| Awaited<ReturnType<RomEditorProvider["openCustomDocument"]>>,
-): document is TableDocument {
-	return (
-		"romDocument" in document && "tableId" in document && "tableDef" in document
-	);
-}
 
 /**
  * Serializer for graph webview panels
@@ -75,49 +68,38 @@ export class GraphPanelSerializer implements vscode.WebviewPanelSerializer {
 		webviewPanel: vscode.WebviewPanel,
 		state: unknown,
 	): Promise<void> {
-		// Validate state
-		if (!state || typeof state !== "object") {
-			console.error("[GraphPanelSerializer] Invalid state:", state);
-			vscode.window.showErrorMessage("Failed to restore graph: Invalid state");
-			webviewPanel.dispose();
-			return;
+		let panelState = isGraphPanelState(state) ? state : undefined;
+		if (!panelState) {
+			const fallbackState = this.graphPanelManager.consumePersistedState();
+			if (fallbackState) {
+				panelState = fallbackState;
+				console.warn(
+					"[GraphPanelSerializer] Restoring graph panel from fallback persisted state",
+					fallbackState,
+				);
+			} else {
+				console.error("[GraphPanelSerializer] Invalid state:", state);
+				vscode.window.showErrorMessage(
+					"Failed to restore graph: Missing graph session state",
+				);
+				webviewPanel.dispose();
+				return;
+			}
 		}
 
-		const panelState = state as GraphPanelState;
 		const { romPath, tableId, tableName, definitionUri } = panelState;
-
-		// Validate required fields
-		if (!romPath || !tableId || !tableName) {
-			console.error(
-				"[GraphPanelSerializer] Missing required fields in state:",
-				panelState,
-			);
-			vscode.window.showErrorMessage(
-				"Failed to restore graph: Missing required state",
-			);
-			webviewPanel.dispose();
-			return;
-		}
 
 		try {
 			const romUri = vscode.Uri.file(romPath);
-			const reopened = await this.romEditorProvider.openCustomDocument(
-				createTableUri(romPath, tableId, tableName, definitionUri),
-				{
-					backupId: undefined,
-					untitledDocumentData: undefined,
-				},
+			const document = await this.romEditorProvider.ensureRomDocument(
+				romUri,
 				NON_CANCELLABLE_TOKEN,
+				definitionUri,
 			);
-			const document = isTableDocument(reopened)
-				? reopened.romDocument
-				: isRomDocument(reopened)
-					? reopened
-					: this.romEditorProvider.getDocument(romUri);
 
 			if (!document) {
 				console.error(
-					`[GraphPanelSerializer] ROM document not found after reopening table: ${romPath}`,
+					`[GraphPanelSerializer] ROM document not found after reopening ROM: ${romPath}`,
 				);
 				vscode.window.showErrorMessage(
 					`Failed to restore graph: ROM file not loaded (${romPath})`,
@@ -140,10 +122,9 @@ export class GraphPanelSerializer implements vscode.WebviewPanelSerializer {
 			}
 
 			// Find table definition
-			const tableDef = isTableDocument(reopened)
-				? reopened.tableDef
-				: (definition.tables.find((t) => t.id === tableId) ??
-					definition.tables.find((t) => t.name === tableName));
+			const tableDef =
+				definition.tables.find((t) => t.id === tableId) ??
+				definition.tables.find((t) => t.name === tableName);
 			if (!tableDef) {
 				console.error(
 					`[GraphPanelSerializer] Table not found: ${tableId} (${tableName}) in ROM: ${romPath}`,

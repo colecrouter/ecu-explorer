@@ -51,7 +51,25 @@
 	interface PlotlyHTMLElement extends HTMLDivElement {
 		data?: unknown[];
 		on?: (event: string, callback: (data: any) => void) => void;
+		layout?: {
+			xaxis?: { range?: [number, number] };
+			yaxis?: { range?: [number, number] };
+			scene?: { camera?: unknown };
+		};
+		_fullLayout?: {
+			xaxis?: { range?: [number, number] };
+			yaxis?: { range?: [number, number] };
+			scene?: { camera?: unknown };
+		};
 	}
+
+	type AxisRange = [number, number];
+
+	type PersistedViewState = {
+		xRange?: AxisRange;
+		yRange?: AxisRange;
+		sceneCamera?: unknown;
+	};
 
 	// State
 	let plotDiv = $state<PlotlyHTMLElement | null>(null);
@@ -60,6 +78,8 @@
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
 	let mousePosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+	let persistedViewState = $state<PersistedViewState>({});
+	let interactionHandlersAttached = $state(false);
 
 	/**
 	 * Resolves a CSS variable string to its computed color value at runtime.
@@ -248,6 +268,8 @@
 			autosize: true,
 			margin: { l: 60, r: 60, t: 60, b: 60 },
 			hovermode: "closest",
+			// Keep user pan/zoom/camera state stable when host data refreshes.
+			uirevision: snap.name,
 			paper_bgcolor: bgColor,
 			plot_bgcolor: bgColor,
 			font: { color: fgColor },
@@ -265,6 +287,12 @@
 					titlefont: { color: fgColor },
 					tickfont: { color: fgColor },
 					zerolinecolor: gridColor,
+					...(persistedViewState.xRange
+						? {
+								range: persistedViewState.xRange,
+								autorange: false,
+							}
+						: {}),
 				},
 				yaxis: {
 					title: "Value",
@@ -274,6 +302,12 @@
 					titlefont: { color: fgColor },
 					tickfont: { color: fgColor },
 					zerolinecolor: gridColor,
+					...(persistedViewState.yRange
+						? {
+								range: persistedViewState.yRange,
+								autorange: false,
+							}
+						: {}),
 				},
 			};
 		}
@@ -285,6 +319,10 @@
 				return {
 					...baseLayout,
 					scene: {
+						uirevision: snap.name,
+						...(persistedViewState.sceneCamera
+							? { camera: persistedViewState.sceneCamera }
+							: {}),
 						xaxis: {
 							title: "X",
 							gridcolor: gridColor,
@@ -319,6 +357,12 @@
 					titlefont: { color: fgColor },
 					tickfont: { color: fgColor },
 					zerolinecolor: gridColor,
+					...(persistedViewState.xRange
+						? {
+								range: persistedViewState.xRange,
+								autorange: false,
+							}
+						: {}),
 				},
 				yaxis: {
 					title: "Y",
@@ -328,6 +372,12 @@
 					titlefont: { color: fgColor },
 					tickfont: { color: fgColor },
 					zerolinecolor: gridColor,
+					...(persistedViewState.yRange
+						? {
+								range: persistedViewState.yRange,
+								autorange: false,
+							}
+						: {}),
 				},
 			};
 		}
@@ -345,6 +395,86 @@
 			displaylogo: false,
 			scrollZoom: true,
 		} satisfies Partial<Plotly.Config>;
+	}
+
+	function captureCurrentViewState() {
+		if (!plotDiv) {
+			return;
+		}
+
+		const layout = plotDiv.layout;
+		const fullLayout = plotDiv._fullLayout;
+		if (!layout && !fullLayout) {
+			return;
+		}
+
+		const nextState: PersistedViewState = { ...persistedViewState };
+		const xRange = layout?.xaxis?.range ?? fullLayout?.xaxis?.range;
+		const yRange = layout?.yaxis?.range ?? fullLayout?.yaxis?.range;
+		const sceneCamera = layout?.scene?.camera ?? fullLayout?.scene?.camera;
+
+		if (
+			Array.isArray(xRange) &&
+			xRange.length === 2 &&
+			typeof xRange[0] === "number" &&
+			typeof xRange[1] === "number"
+		) {
+			nextState.xRange = [xRange[0], xRange[1]];
+		}
+
+		if (
+			Array.isArray(yRange) &&
+			yRange.length === 2 &&
+			typeof yRange[0] === "number" &&
+			typeof yRange[1] === "number"
+		) {
+			nextState.yRange = [yRange[0], yRange[1]];
+		}
+
+		if (sceneCamera && typeof sceneCamera === "object") {
+			nextState.sceneCamera = sceneCamera;
+		}
+
+		persistedViewState = nextState;
+	}
+
+	function updatePersistedViewStateFromRelayout(
+		eventData: Record<string, unknown>,
+	) {
+		const x0 = eventData["xaxis.range[0]"];
+		const x1 = eventData["xaxis.range[1]"];
+		const y0 = eventData["yaxis.range[0]"];
+		const y1 = eventData["yaxis.range[1]"];
+		const sceneCamera = eventData["scene.camera"];
+		const autorangeReset =
+			eventData["xaxis.autorange"] === true ||
+			eventData["yaxis.autorange"] === true;
+
+		if (autorangeReset) {
+			const { sceneCamera } = persistedViewState;
+			persistedViewState = sceneCamera ? { sceneCamera } : {};
+		}
+
+		if (typeof x0 === "number" && typeof x1 === "number") {
+			persistedViewState = {
+				...persistedViewState,
+				xRange: [x0, x1],
+			};
+		}
+
+		if (typeof y0 === "number" && typeof y1 === "number") {
+			persistedViewState = {
+				...persistedViewState,
+				yRange: [y0, y1],
+			};
+		}
+
+		if (sceneCamera && typeof sceneCamera === "object") {
+			persistedViewState = {
+				...persistedViewState,
+				sceneCamera,
+			};
+		}
 	}
 
 	/**
@@ -379,62 +509,73 @@
 			const hasExistingPlot = !!plotDiv.data;
 
 			if (hasExistingPlot) {
+				captureCurrentViewState();
 				await plotly.react(plotDiv, data as any, layout as any, config);
 			} else {
 				await plotly.newPlot(plotDiv, data as any, layout as any, config);
 			}
 
-			// Attach click handler
-			plotDiv.on?.("plotly_click", (eventData: any) => {
-				const point = eventData.points?.[0];
-				if (point && onCellSelect) {
-					// For heatmap/surface, x/y are indices
-					// For line plot, x is index, y is value
-					const col = typeof point.x === "number" ? Math.round(point.x) : 0;
-					const row = typeof point.y === "number" ? Math.round(point.y) : 0;
-					onCellSelect(row, col);
-				}
-			});
-
-			// Attach hover handler
-			plotDiv.on?.("plotly_hover", (eventData: any) => {
-				const point = eventData.points?.[0];
-				if (point) {
-					const col = typeof point.x === "number" ? Math.round(point.x) : 0;
-					const row = typeof point.y === "number" ? Math.round(point.y) : 0;
-					const value =
-						typeof point.z === "number"
-							? point.z
-							: typeof point.y === "number"
-								? point.y
-								: 0;
-
-					// Get axis values if available
-					let xValue: number | undefined;
-					let yValue: number | undefined;
-
-					if (snapshot.kind === "table1d") {
-						xValue = snapshot.x?.[col];
-					} else if (snapshot.kind === "table2d") {
-						xValue = snapshot.x?.[col];
-						yValue = snapshot.y?.[row];
+			if (!interactionHandlersAttached) {
+				// Attach click handler
+				plotDiv.on?.("plotly_click", (eventData: any) => {
+					const point = eventData.points?.[0];
+					if (point && onCellSelect) {
+						// For heatmap/surface, x/y are indices
+						// For line plot, x is index, y is value
+						const col = typeof point.x === "number" ? Math.round(point.x) : 0;
+						const row = typeof point.y === "number" ? Math.round(point.y) : 0;
+						onCellSelect(row, col);
 					}
+				});
 
-					const cell: HoveredCell = {
-						row,
-						col,
-						value,
-						...(xValue !== undefined && { xValue }),
-						...(yValue !== undefined && { yValue }),
-					};
+				// Attach hover handler
+				plotDiv.on?.("plotly_hover", (eventData: any) => {
+					const point = eventData.points?.[0];
+					if (point && snapshot) {
+						const col = typeof point.x === "number" ? Math.round(point.x) : 0;
+						const row = typeof point.y === "number" ? Math.round(point.y) : 0;
+						const value =
+							typeof point.z === "number"
+								? point.z
+								: typeof point.y === "number"
+									? point.y
+									: 0;
 
-					chartState.setHoveredCell(cell);
-				}
-			});
+						// Get axis values if available
+						let xValue: number | undefined;
+						let yValue: number | undefined;
 
-			plotDiv.on?.("plotly_unhover", () => {
-				chartState.setHoveredCell(null);
-			});
+						if (snapshot.kind === "table1d") {
+							xValue = snapshot.x?.[col];
+						} else if (snapshot.kind === "table2d") {
+							xValue = snapshot.x?.[col];
+							yValue = snapshot.y?.[row];
+						}
+
+						const cell: HoveredCell = {
+							row,
+							col,
+							value,
+							...(xValue !== undefined && { xValue }),
+							...(yValue !== undefined && { yValue }),
+						};
+
+						chartState.setHoveredCell(cell);
+					}
+				});
+
+				plotDiv.on?.("plotly_unhover", () => {
+					chartState.setHoveredCell(null);
+				});
+
+				plotDiv.on?.(
+					"plotly_relayouting",
+					updatePersistedViewStateFromRelayout,
+				);
+				plotDiv.on?.("plotly_relayout", updatePersistedViewStateFromRelayout);
+
+				interactionHandlersAttached = true;
+			}
 
 			isLoading = false;
 		} catch (err) {

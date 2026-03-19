@@ -321,6 +321,22 @@ function resolveSettingPaths(
 	);
 }
 
+function findTableSession(
+	romPath: string,
+	tableId: string,
+): TableEditSession | undefined {
+	for (const session of tableSessions.values()) {
+		if (
+			session.romDocument.uri.fsPath === romPath &&
+			session.tableDef.id === tableId
+		) {
+			return session;
+		}
+	}
+
+	return undefined;
+}
+
 /**
  * Re-initialize definition providers based on current settings.
  * Clears the existing registry, reads updated settings, and re-registers providers.
@@ -426,6 +442,7 @@ export async function activate(
 			// Handle selection change from graph
 			selectionManager.updateSelection(romPath, tableId, selection);
 		},
+		(romPath: string, tableId: string) => findTableSession(romPath, tableId),
 	);
 
 	// Initialize context setters for handler modules
@@ -452,6 +469,9 @@ export async function activate(
 					panelToDocument.delete(panel);
 				}),
 			);
+		},
+		notifyTableSessionAvailable: (session) => {
+			graphPanelManager?.handleTableSessionAvailable(session);
 		},
 		handleCellEdit,
 		handleUndo: () => handleUndo(),
@@ -1314,17 +1334,17 @@ export async function activate(
 		// Graph window commands
 		vscode.commands.registerCommand(
 			"ecuExplorer.open2DGraphForActiveTable",
-			() => handleOpenGraph("line"),
+			() => handleOpenGraph(),
 		),
 		vscode.commands.registerCommand(
 			"ecuExplorer.open3DGraphForActiveTable",
-			() => handleOpenGraph("heatmap"),
+			() => handleOpenGraph(),
 		),
 		vscode.commands.registerCommand(
 			"ecuExplorer.open2DGraph",
 			async (treeItem?: RomTreeItem) => {
 				if (editorProvider) {
-					await handleOpenGraphParameterized(treeItem, editorProvider, "line");
+					await handleOpenGraphParameterized(treeItem, editorProvider);
 				}
 			},
 		),
@@ -1332,11 +1352,7 @@ export async function activate(
 			"ecuExplorer.open3DGraph",
 			async (treeItem?: RomTreeItem) => {
 				if (editorProvider) {
-					await handleOpenGraphParameterized(
-						treeItem,
-						editorProvider,
-						"heatmap",
-					);
+					await handleOpenGraphParameterized(treeItem, editorProvider);
 				}
 			},
 		),
@@ -1508,6 +1524,7 @@ export async function activate(
 	// Subscribe to new ROM document openings
 	ctx.subscriptions.push(
 		newEditorProvider.onDidOpenRomDocument((doc) => {
+			graphPanelManager?.handleRomDocumentOpened(doc);
 			watchRomDocument(doc);
 		}),
 	);
@@ -1685,7 +1702,7 @@ export async function activate(
  * Handle open graph command
  * Opens a graph window for the currently active table
  */
-async function handleOpenGraph(chartType?: "line" | "heatmap"): Promise<void> {
+async function handleOpenGraph(): Promise<void> {
 	console.log(
 		"[DEBUG] handleOpenGraph: graphPanelManager =",
 		!!graphPanelManager,
@@ -1748,7 +1765,6 @@ async function handleOpenGraph(chartType?: "line" | "heatmap"): Promise<void> {
 			tableId,
 			tableName,
 			snapshot,
-			chartType,
 			definitionUri,
 		);
 	} catch (error) {
@@ -1765,7 +1781,6 @@ async function handleOpenGraph(chartType?: "line" | "heatmap"): Promise<void> {
 async function handleOpenGraphParameterized(
 	treeItem: RomTreeItem | undefined,
 	editorProvider: RomEditorProvider,
-	chartType?: "line" | "heatmap",
 ): Promise<void> {
 	if (!graphPanelManager) {
 		vscode.window.showErrorMessage("Graph panel manager not initialized");
@@ -1802,7 +1817,6 @@ async function handleOpenGraphParameterized(
 				tableId,
 				tableName,
 				snapshot,
-				chartType,
 				document.definition.uri,
 			);
 		} catch (error) {
@@ -1814,7 +1828,7 @@ async function handleOpenGraphParameterized(
 	}
 
 	// If called from command palette without arguments, fall back to active table
-	await handleOpenGraph(chartType);
+	await handleOpenGraph();
 }
 
 /**
