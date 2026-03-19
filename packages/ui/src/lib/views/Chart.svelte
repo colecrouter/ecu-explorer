@@ -51,6 +51,16 @@
 	interface PlotlyHTMLElement extends HTMLDivElement {
 		data?: unknown[];
 		on?: (event: string, callback: (data: any) => void) => void;
+		layout?: {
+			xaxis?: { range?: [number, number] };
+			yaxis?: { range?: [number, number] };
+			scene?: { camera?: unknown };
+		};
+		_fullLayout?: {
+			xaxis?: { range?: [number, number] };
+			yaxis?: { range?: [number, number] };
+			scene?: { camera?: unknown };
+		};
 	}
 
 	type AxisRange = [number, number];
@@ -392,24 +402,16 @@
 			return;
 		}
 
-		const layout = (
-			plotDiv as HTMLDivElement & {
-				layout?: {
-					xaxis?: { range?: [number, number] };
-					yaxis?: { range?: [number, number] };
-					scene?: { camera?: unknown };
-				};
-			}
-		).layout;
-
-		if (!layout) {
+		const layout = plotDiv.layout;
+		const fullLayout = plotDiv._fullLayout;
+		if (!layout && !fullLayout) {
 			return;
 		}
 
 		const nextState: PersistedViewState = { ...persistedViewState };
-		const xRange = layout.xaxis?.range;
-		const yRange = layout.yaxis?.range;
-		const sceneCamera = layout.scene?.camera;
+		const xRange = layout?.xaxis?.range ?? fullLayout?.xaxis?.range;
+		const yRange = layout?.yaxis?.range ?? fullLayout?.yaxis?.range;
+		const sceneCamera = layout?.scene?.camera ?? fullLayout?.scene?.camera;
 
 		if (
 			Array.isArray(xRange) &&
@@ -434,6 +436,45 @@
 		}
 
 		persistedViewState = nextState;
+	}
+
+	function updatePersistedViewStateFromRelayout(
+		eventData: Record<string, unknown>,
+	) {
+		const x0 = eventData["xaxis.range[0]"];
+		const x1 = eventData["xaxis.range[1]"];
+		const y0 = eventData["yaxis.range[0]"];
+		const y1 = eventData["yaxis.range[1]"];
+		const sceneCamera = eventData["scene.camera"];
+		const autorangeReset =
+			eventData["xaxis.autorange"] === true ||
+			eventData["yaxis.autorange"] === true;
+
+		if (autorangeReset) {
+			const { sceneCamera } = persistedViewState;
+			persistedViewState = sceneCamera ? { sceneCamera } : {};
+		}
+
+		if (typeof x0 === "number" && typeof x1 === "number") {
+			persistedViewState = {
+				...persistedViewState,
+				xRange: [x0, x1],
+			};
+		}
+
+		if (typeof y0 === "number" && typeof y1 === "number") {
+			persistedViewState = {
+				...persistedViewState,
+				yRange: [y0, y1],
+			};
+		}
+
+		if (sceneCamera && typeof sceneCamera === "object") {
+			persistedViewState = {
+				...persistedViewState,
+				sceneCamera,
+			};
+		}
 	}
 
 	/**
@@ -528,44 +569,10 @@
 				});
 
 				plotDiv.on?.(
-					"plotly_relayout",
-					(eventData: Record<string, unknown>) => {
-						const x0 = eventData["xaxis.range[0]"];
-						const x1 = eventData["xaxis.range[1]"];
-						const y0 = eventData["yaxis.range[0]"];
-						const y1 = eventData["yaxis.range[1]"];
-						const sceneCamera = eventData["scene.camera"];
-						const autorangeReset =
-							eventData["xaxis.autorange"] === true ||
-							eventData["yaxis.autorange"] === true;
-
-						if (autorangeReset) {
-							const { sceneCamera } = persistedViewState;
-							persistedViewState = sceneCamera ? { sceneCamera } : {};
-						}
-
-						if (typeof x0 === "number" && typeof x1 === "number") {
-							persistedViewState = {
-								...persistedViewState,
-								xRange: [x0, x1],
-							};
-						}
-
-						if (typeof y0 === "number" && typeof y1 === "number") {
-							persistedViewState = {
-								...persistedViewState,
-								yRange: [y0, y1],
-							};
-						}
-
-						if (sceneCamera && typeof sceneCamera === "object") {
-							persistedViewState = {
-								...persistedViewState,
-								sceneCamera,
-							};
-						}
-					},
+					"plotly_relayouting",
+					updatePersistedViewStateFromRelayout,
 				);
+				plotDiv.on?.("plotly_relayout", updatePersistedViewStateFromRelayout);
 
 				interactionHandlersAttached = true;
 			}
