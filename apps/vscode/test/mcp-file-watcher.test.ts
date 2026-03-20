@@ -354,6 +354,21 @@ describe("ROM File Watcher – per-document watchRomDocument logic", () => {
 		);
 	});
 
+	it("builds a correct RelativePattern for a Windows-style ROM path", () => {
+		const uri = {
+			fsPath: "C:\\roms\\outside-workspace.hex",
+			toString: () => "file:///c%3A/roms/outside-workspace.hex",
+		} as vscode.Uri;
+		const mockDoc = createMockRomDocument(uri, new Uint8Array([0x01]));
+
+		simulateWatchRomDocument(mockDoc, null, null, null);
+
+		const [pattern] = vi.mocked(vscode.workspace.createFileSystemWatcher).mock
+			.calls[0] as [vscode.RelativePattern, boolean, boolean, boolean];
+		expect(pattern.base).toEqual(vscode.Uri.file("C:\\roms"));
+		expect(pattern.pattern).toBe("outside-workspace.hex");
+	});
+
 	it("attaches onDidChange and onDidCreate handlers to the watcher", () => {
 		const uri = vscode.Uri.file("/roms/test.hex");
 		const mockDoc = createMockRomDocument(uri, new Uint8Array([0x01]));

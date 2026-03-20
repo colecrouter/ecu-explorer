@@ -1461,10 +1461,15 @@ export async function activate(
 		const uriStr = uri.toString();
 		if (romDocumentWatchers.has(uriStr)) return; // already watching
 
-		const dir = vscode.Uri.file(
-			uri.fsPath.substring(0, uri.fsPath.lastIndexOf("/")),
+		const lastSeparator = Math.max(
+			uri.fsPath.lastIndexOf("/"),
+			uri.fsPath.lastIndexOf("\\"),
 		);
-		const fileName = uri.fsPath.substring(uri.fsPath.lastIndexOf("/") + 1);
+		const dirPath =
+			lastSeparator >= 0 ? uri.fsPath.slice(0, lastSeparator) : uri.fsPath;
+		const fileName =
+			lastSeparator >= 0 ? uri.fsPath.slice(lastSeparator + 1) : uri.fsPath;
+		const dir = vscode.Uri.file(dirPath);
 		const pattern = new vscode.RelativePattern(dir, fileName);
 
 		const watcher = vscode.workspace.createFileSystemWatcher(
