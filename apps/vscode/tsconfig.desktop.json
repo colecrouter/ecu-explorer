@@ -3,9 +3,11 @@
 	"compilerOptions": {
 		"baseUrl": ".",
 		"types": ["svelte", "vite/client", "@types/vscode", "node"],
-		"composite": true,
 		"skipLibCheck": true
 	},
-	"include": ["src/**/*.ts"],
-	"exclude": ["src/extension.web.ts", "src/webview/**/*"]
+	"files": [
+		"src/extension.ts",
+		"src/extension.desktop.ts",
+		"src/mcp-provider.ts"
+	]
 }

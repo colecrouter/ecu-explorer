@@ -1,5 +1,5 @@
 import type { TableDefinition } from "@ecu-explorer/core";
-import { type TableSnapshot, type ThemeColors } from "@ecu-explorer/ui";
+import type { TableSnapshot, ThemeColors } from "@ecu-explorer/ui";
 import type {
 	TableSessionHostMessage,
 	TableSessionInitMessage,

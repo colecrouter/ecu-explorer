@@ -8,14 +8,8 @@
 			"@types/vscode",
 			"@types/vscode-webview"
 		],
-		"composite": true,
 		"skipLibCheck": true,
 		"lib": ["ESNext", "DOM"]
 	},
-	"include": ["src/**/*"],
-	"exclude": [
-		"src/mcp-provider.ts",
-		"src/extension.desktop.ts",
-		"src/webview/**/*"
-	]
+	"files": ["src/extension.ts", "src/extension.web.ts"]
 }
