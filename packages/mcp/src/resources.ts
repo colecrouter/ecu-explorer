@@ -69,6 +69,6 @@ export function buildQuerySyntaxResourceText(): string {
 		"- `RPM (rpm) >= 3000 && Load (g/rev) <= 2.0`",
 		"- `Coolant Temp (C) >= 60 && Coolant Temp (C) <= 90`",
 		"",
-		"For table selectors, equality matches exact breakpoint values only.",
+		"For table selectors, equality first tries exact breakpoint values, then falls back to a unique match on the displayed breakpoint value when possible.",
 	].join("\n");
 }

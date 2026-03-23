@@ -99,6 +99,84 @@ describe("handleReadTable", () => {
 		);
 	});
 
+	it("accepts displayed equality values when they uniquely map to a breakpoint", async () => {
+		romBytes = Uint8Array.from([10, 20]);
+		const tempTable = {
+			id: "temp-table",
+			name: "Idle RPM",
+			kind: "table1d",
+			rows: 2,
+			x: {
+				id: "x-temp",
+				kind: "static",
+				name: "Coolant Temperature",
+				values: [-0.40000000000006253, 17.59999999999991],
+			},
+			z: {
+				id: "z-temp",
+				name: "values",
+				address: 0,
+				dtype: "u8",
+			},
+		} satisfies Table1DDefinition;
+		definition = {
+			uri: "file:///tmp/sample.xml",
+			name: "Sample Definition",
+			fingerprints: [],
+			platform: {},
+			tables: [tempTable],
+		};
+
+		const result = await handleReadTable(
+			"/tmp/sample.hex",
+			"Idle RPM",
+			config,
+			"Coolant Temperature == -0.4",
+		);
+
+		expect(result).toContain("where: Coolant Temperature == -0.4");
+		expect(result).toContain("| -0.4");
+		expect(result).not.toContain("| 17.6");
+	});
+
+	it("raises an ambiguity error when displayed equality matches multiple breakpoints", async () => {
+		romBytes = Uint8Array.from([10, 20, 30]);
+		const tempTable = {
+			id: "ambiguous-temp-table",
+			name: "Ambiguous Idle RPM",
+			kind: "table1d",
+			rows: 3,
+			x: {
+				id: "x-ambiguous-temp",
+				kind: "static",
+				name: "Coolant Temperature",
+				values: [1.00001, 1.00002, 2],
+			},
+			z: {
+				id: "z-ambiguous-temp",
+				name: "values",
+				address: 0,
+				dtype: "u8",
+			},
+		} satisfies Table1DDefinition;
+		definition = {
+			uri: "file:///tmp/sample.xml",
+			name: "Sample Definition",
+			fingerprints: [],
+			platform: {},
+			tables: [tempTable],
+		};
+
+		await expect(
+			handleReadTable(
+				"/tmp/sample.hex",
+				"Ambiguous Idle RPM",
+				config,
+				"Coolant Temperature == 1",
+			),
+		).rejects.toThrow(/Ambiguous == selector for Coolant Temperature/);
+	});
+
 	it("uses ranked table suggestions when an exact table name is missing", async () => {
 		await expect(
 			handleReadTable("/tmp/sample.hex", "ignitoin rpm", config),
