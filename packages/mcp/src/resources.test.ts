@@ -44,7 +44,7 @@ describe("buildOpenDocumentsContextPayload", () => {
 });
 
 describe("buildQuerySyntaxResourceText", () => {
-	it("documents raw field names and exact table equality behavior", () => {
+	it("documents raw field names and table equality fallback behavior", () => {
 		const text = buildQuerySyntaxResourceText();
 
 		expect(text).toContain(
@@ -52,7 +52,7 @@ describe("buildQuerySyntaxResourceText", () => {
 		);
 		expect(text).toContain("Engine RPM > 3000 && Knock Sum > 0");
 		expect(text).toContain(
-			"For table selectors, equality matches exact breakpoint values only.",
+			"For table selectors, equality first tries exact breakpoint values, then falls back to a unique match on the displayed breakpoint value when possible.",
 		);
 	});
 });

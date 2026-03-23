@@ -30,6 +30,75 @@ function uniqueSorted(values: number[]): number[] {
 	return [...new Set(values)].sort((a, b) => a - b);
 }
 
+function formatSelectorNumber(value: number): string {
+	if (!Number.isFinite(value)) return String(value);
+	const s = value.toFixed(4);
+	return s.replace(/\.?0+$/, "");
+}
+
+function resolveDisplayEqualityValue(
+	axisName: string,
+	axisValues: number[],
+	requested: number,
+): { exactOrResolved?: number; ambiguousValues?: number[] } {
+	if (axisValues.some((value) => value === requested)) {
+		return { exactOrResolved: requested };
+	}
+
+	const requestedDisplay = formatSelectorNumber(requested);
+	const displayMatches = axisValues.filter(
+		(value) => formatSelectorNumber(value) === requestedDisplay,
+	);
+	const uniqueMatches = uniqueSorted(displayMatches);
+
+	if (uniqueMatches.length === 1) {
+		const exactOrResolved = uniqueMatches[0];
+		return exactOrResolved === undefined ? {} : { exactOrResolved };
+	}
+
+	if (uniqueMatches.length > 1) {
+		return { ambiguousValues: uniqueMatches };
+	}
+
+	void axisName;
+	return {};
+}
+
+function rewriteEqualityComparisons(
+	where: string,
+	axisName: string,
+	axisValues: number[],
+): string {
+	const escaped = escapeRegex(axisName);
+	const re = new RegExp(
+		`(^|[^A-Za-z0-9_])(${escaped})\\s*(==|!=)\\s*(-?\\d+(?:\\.\\d+)?)`,
+		"g",
+	);
+
+	return where.replace(re, (full, prefix, field, operator, literal) => {
+		const requested = Number(literal);
+		if (!Number.isFinite(requested)) return full;
+
+		const { exactOrResolved, ambiguousValues } = resolveDisplayEqualityValue(
+			axisName,
+			axisValues,
+			requested,
+		);
+
+		if (ambiguousValues !== undefined) {
+			throw new Error(
+				`Ambiguous ${operator} selector for ${axisName}: ${literal} matches multiple displayed breakpoints (${ambiguousValues.join(", ")}). Use one of the exact breakpoint values instead.`,
+			);
+		}
+
+		if (exactOrResolved === undefined) {
+			return full;
+		}
+
+		return `${prefix}${field} ${operator} ${String(exactOrResolved)}`;
+	});
+}
+
 function getSelectorAxes(table: TableDefinition): string[] {
 	const axes: string[] = [];
 	if (table.x?.name) axes.push(table.x.name);
@@ -86,14 +155,34 @@ export function selectTableCells(
 	}
 
 	const selectorAxes = getSelectorAxes(table);
+	let normalizedWhere = where;
+
+	if (table.x?.name) {
+		normalizedWhere = rewriteEqualityComparisons(
+			normalizedWhere,
+			table.x.name,
+			xAxisValues,
+		);
+	}
+	if ((table.kind === "table2d" || table.kind === "table3d") && table.y?.name) {
+		normalizedWhere = rewriteEqualityComparisons(
+			normalizedWhere,
+			table.y.name,
+			yAxisValues,
+		);
+	}
+
 	const { fieldToAlias } = buildFieldAliasMap(selectorAxes, "__axis_");
-	const unknownFragments = detectUnknownFieldFragments(where, selectorAxes);
+	const unknownFragments = detectUnknownFieldFragments(
+		normalizedWhere,
+		selectorAxes,
+	);
 	if (unknownFragments.length > 0) {
 		throw buildUnknownFieldError("axis name", unknownFragments, selectorAxes);
 	}
 
 	const rewritten = rewriteExpressionWithAliases(
-		normalizeExpression(where),
+		normalizeExpression(normalizedWhere),
 		fieldToAlias,
 	);
 
