@@ -92,6 +92,17 @@ npm run tools:read-log -- --logs-dir ./logs --file session.csv
 npm run tools:normalize-log -- --input ./EvoScanDataLog.csv --format evoscan
 ```
 
+## Agent Skills
+
+Install it with the `skills` CLI:
+
+```bash
+npx skills add https://github.com/colecrouter/vscode-ecu-explorer
+```
+
+See [docs/skills.md](docs/skills.md) for more detail, and [skills/](skills/README.md)
+for the repo-side layout.
+
 ---
 
 ## Contributing

@@ -217,7 +217,7 @@ describe("handleReadLog", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
-	it("expands matched rows into merged time windows and applies step_ms after selection", async () => {
+	it("applies step_ms after row selection", async () => {
 		const tempDir = await mkdtemp(path.join(os.tmpdir(), "ecu-mcp-read-log-"));
 		const target = path.join(tempDir, "session.csv");
 		await writeFile(target, "");
@@ -243,9 +243,9 @@ describe("handleReadLog", () => {
 				headers: ["Timestamp (ms)", "Engine RPM", "Knock Sum"],
 				rows: [
 					{ "Timestamp (ms)": 100, "Engine RPM": 2000, "Knock Sum": 1 },
-					{ "Timestamp (ms)": 180, "Engine RPM": 2200, "Knock Sum": 0 },
+					{ "Timestamp (ms)": 180, "Engine RPM": 2200, "Knock Sum": 1 },
 					{ "Timestamp (ms)": 260, "Engine RPM": 2400, "Knock Sum": 1 },
-					{ "Timestamp (ms)": 340, "Engine RPM": 2600, "Knock Sum": 0 },
+					{ "Timestamp (ms)": 340, "Engine RPM": 2600, "Knock Sum": 1 },
 					{ "Timestamp (ms)": 500, "Engine RPM": 2800, "Knock Sum": 0 },
 				],
 			}),
@@ -255,8 +255,6 @@ describe("handleReadLog", () => {
 			{
 				file: "session.csv",
 				where: "Knock Sum > 0",
-				beforeMs: 100,
-				afterMs: 100,
 				stepMs: 70,
 			},
 			config,

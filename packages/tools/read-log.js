@@ -18,8 +18,6 @@ prog
 	.option("--channels", "Optional comma-separated channel subset")
 	.option("--start-s", "Optional start time in seconds")
 	.option("--end-s", "Optional end time in seconds")
-	.option("--before-ms", "Optional context window before each match")
-	.option("--after-ms", "Optional context window after each match")
 	.option("--step-ms", "Optional minimum time spacing between rows")
 	.action((opts) => {
 		if (!opts.file) {
@@ -42,10 +40,6 @@ prog
 			if (startS !== undefined) readOptions.startS = startS;
 			const endS = parseOptionalNumber(opts["end-s"], "end-s", 0);
 			if (endS !== undefined) readOptions.endS = endS;
-			const beforeMs = parseOptionalNumber(opts["before-ms"], "before-ms", 0);
-			if (beforeMs !== undefined) readOptions.beforeMs = beforeMs;
-			const afterMs = parseOptionalNumber(opts["after-ms"], "after-ms", 0);
-			if (afterMs !== undefined) readOptions.afterMs = afterMs;
 			const stepMs = parseOptionalNumber(opts["step-ms"], "step-ms", 1);
 			if (stepMs !== undefined) readOptions.stepMs = stepMs;
 			return handleReadLog(readOptions, config);

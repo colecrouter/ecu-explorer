@@ -178,8 +178,6 @@ Pagination belongs here because discovery lists can be long.
 | `channels` | `string[]` | No | Restrict returned columns to the listed channels |
 | `start_s` | `number` | No | Start time in seconds |
 | `end_s` | `number` | No | End time in seconds |
-| `before_ms` | `number` | No | Include this much context before each match |
-| `after_ms` | `number` | No | Include this much context after each match |
 | `step_ms` | `number` | No | Return at most one row every N milliseconds; no averaging |
 
 ### Behavior
@@ -208,9 +206,7 @@ When additional inputs are provided, `read_log` SHALL return rows from the selec
 Semantics:
 
 1. select candidate rows using `where` and/or `start_s` / `end_s`
-2. expand windows using `before_ms` / `after_ms` if present
-3. merge overlapping windows
-4. apply `step_ms` last
+2. apply `step_ms` last
 
 `step_ms` SHALL mean thinning by time spacing only. It SHALL NOT average, resample, or aggregate values.
 

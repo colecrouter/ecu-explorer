@@ -21,6 +21,8 @@ import { z } from "zod";
 import { loadConfig } from "./config.js";
 import { setupContextIpc } from "./context-ipc.js";
 import {
+	buildLogAnalysisResourceText,
+	buildLogFormatResourceText,
 	buildOpenDocumentsContextPayload,
 	buildQuerySyntaxResourceText,
 } from "./resources.js";
@@ -142,6 +144,34 @@ server.resource(
 				uri: "ecu-explorer://docs/query-syntax",
 				mimeType: "text/markdown",
 				text: buildQuerySyntaxResourceText(),
+			},
+		],
+	}),
+);
+
+server.resource(
+	"ecu-explorer://docs/log-format",
+	"ecu-explorer://docs/log-format",
+	async () => ({
+		contents: [
+			{
+				uri: "ecu-explorer://docs/log-format",
+				mimeType: "text/markdown",
+				text: buildLogFormatResourceText(),
+			},
+		],
+	}),
+);
+
+server.resource(
+	"ecu-explorer://docs/log-analysis",
+	"ecu-explorer://docs/log-analysis",
+	async () => ({
+		contents: [
+			{
+				uri: "ecu-explorer://docs/log-analysis",
+				mimeType: "text/markdown",
+				text: buildLogAnalysisResourceText(),
 			},
 		],
 	}),
@@ -470,16 +500,6 @@ server.tool(
 			.nonnegative()
 			.optional()
 			.describe("Optional end time in seconds"),
-		before_ms: z
-			.number()
-			.nonnegative()
-			.optional()
-			.describe("Optional context window before each where match"),
-		after_ms: z
-			.number()
-			.nonnegative()
-			.optional()
-			.describe("Optional context window after each where match"),
 		step_ms: z
 			.number()
 			.positive()
@@ -488,24 +508,13 @@ server.tool(
 				"Optional minimum time spacing between returned rows in milliseconds",
 			),
 	},
-	async ({
-		file,
-		where,
-		channels,
-		start_s,
-		end_s,
-		before_ms,
-		after_ms,
-		step_ms,
-	}) => {
+	async ({ file, where, channels, start_s, end_s, step_ms }) => {
 		try {
 			const readLogOptions: Parameters<typeof handleReadLog>[0] = { file };
 			if (where !== undefined) readLogOptions.where = where;
 			if (channels !== undefined) readLogOptions.channels = channels;
 			if (start_s !== undefined) readLogOptions.startS = start_s;
 			if (end_s !== undefined) readLogOptions.endS = end_s;
-			if (before_ms !== undefined) readLogOptions.beforeMs = before_ms;
-			if (after_ms !== undefined) readLogOptions.afterMs = after_ms;
 			if (step_ms !== undefined) readLogOptions.stepMs = step_ms;
 
 			const content = await handleReadLog(readLogOptions, config);
