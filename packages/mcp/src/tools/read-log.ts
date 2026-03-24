@@ -28,14 +28,7 @@ export interface ReadLogOptions {
 	channels?: string[];
 	startS?: number;
 	endS?: number;
-	beforeMs?: number;
-	afterMs?: number;
 	stepMs?: number;
-}
-
-interface TimeWindow {
-	startMs: number;
-	endMs: number;
 }
 
 function resolveLogFilePath(
@@ -87,49 +80,12 @@ function toSeconds(timestampMs: number): number {
 	return timestampMs / 1000;
 }
 
-function mergeWindows(windows: TimeWindow[]): TimeWindow[] {
-	if (windows.length === 0) return [];
-	const sorted = [...windows].sort((a, b) => a.startMs - b.startMs);
-	const merged: TimeWindow[] = [sorted[0] as TimeWindow];
-
-	for (let i = 1; i < sorted.length; i++) {
-		const current = sorted[i] as TimeWindow;
-		const last = merged[merged.length - 1] as TimeWindow;
-
-		if (current.startMs <= last.endMs) {
-			last.endMs = Math.max(last.endMs, current.endMs);
-		} else {
-			merged.push({ ...current });
-		}
-	}
-
-	return merged;
-}
-
-function clipWindows(
-	windows: TimeWindow[],
-	startMs?: number,
-	endMs?: number,
-): TimeWindow[] {
-	return windows
-		.map((window) => ({
-			startMs:
-				startMs !== undefined
-					? Math.max(window.startMs, startMs)
-					: window.startMs,
-			endMs: endMs !== undefined ? Math.min(window.endMs, endMs) : window.endMs,
-		}))
-		.filter((window) => window.startMs <= window.endMs);
-}
-
 function isSchemaOnlyRequest(options: ReadLogOptions): boolean {
 	return (
 		options.where === undefined &&
 		options.channels === undefined &&
 		options.startS === undefined &&
 		options.endS === undefined &&
-		options.beforeMs === undefined &&
-		options.afterMs === undefined &&
 		options.stepMs === undefined
 	);
 }
@@ -159,8 +115,7 @@ export async function handleReadLog(
 	options: ReadLogOptions,
 	config: McpConfig,
 ): Promise<string> {
-	const { file, where, channels, startS, endS, beforeMs, afterMs, stepMs } =
-		options;
+	const { file, where, channels, startS, endS, stepMs } = options;
 	const { logPath, outsideLogsDir } = resolveLogFilePath(config.logsDir, file);
 	const warningNote = outsideLogsDir
 		? `Warning: ${logPath} is outside the configured logs directory ${config.logsDir}. Parsing may fail if the log file is not in the expected format.`
@@ -214,15 +169,11 @@ export async function handleReadLog(
 	const endMs = endS !== undefined ? endS * 1000 : undefined;
 
 	if (
-		(startMs !== undefined ||
-			endMs !== undefined ||
-			beforeMs !== undefined ||
-			afterMs !== undefined ||
-			stepMs !== undefined) &&
+		(startMs !== undefined || endMs !== undefined || stepMs !== undefined) &&
 		!timeColumnName
 	) {
 		throw new Error(
-			`Log ${file} does not expose a time column required for range/window options.`,
+			`Log ${file} does not expose a time column required for range options.`,
 		);
 	}
 
@@ -284,31 +235,6 @@ export async function handleReadLog(
 	});
 
 	let selectedRows = matchedRows;
-
-	if (
-		(beforeMs !== undefined || afterMs !== undefined) &&
-		where !== undefined &&
-		timeColumnName
-	) {
-		const windows = matchedRows
-			.filter((entry) => entry.timeMs !== undefined)
-			.map((entry) => ({
-				startMs: (entry.timeMs as number) - (beforeMs ?? 0),
-				endMs: (entry.timeMs as number) + (afterMs ?? 0),
-			}));
-
-		const effectiveWindows = clipWindows(mergeWindows(windows), startMs, endMs);
-
-		selectedRows = baseRows.filter((entry) => {
-			if (entry.timeMs === undefined) return false;
-			return effectiveWindows.some(
-				(window) =>
-					entry.timeMs !== undefined &&
-					entry.timeMs >= window.startMs &&
-					entry.timeMs <= window.endMs,
-			);
-		});
-	}
 
 	if (stepMs !== undefined) {
 		let lastIncludedTime: number | undefined;

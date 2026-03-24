@@ -272,7 +272,7 @@ total_files: 12
 
 ### 6. `read_log`
 
-**Description**: Read one selected log file. `read_log(file)` returns schema/details. Add `where` and optional range/window parameters to return a log slice. Field names come from the selected log’s schema.
+**Description**: Read one selected log file. `read_log(file)` returns schema/details. Add `where` and optional range parameters to return a log slice. Field names come from the selected log’s schema.
 
 #### Input Parameters
 
@@ -283,8 +283,6 @@ total_files: 12
 | `channels` | `string[]` | No | Exact channels to include in row output |
 | `start_s` | `number` | No | Start time in seconds |
 | `end_s` | `number` | No | End time in seconds |
-| `before_ms` | `number` | No | Expand matched rows backward into a continuous time window |
-| `after_ms` | `number` | No | Expand matched rows forward into a continuous time window |
 | `step_ms` | `number` | No | Keep at most one row every N milliseconds after selection |
 
 #### Output Format
