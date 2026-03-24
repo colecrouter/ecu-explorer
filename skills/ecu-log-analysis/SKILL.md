@@ -36,6 +36,9 @@ Use that reference to:
 When the task depends on whether closed-loop, open-loop, or mixed fueling logic
 applies, read [`references/fueling-modes.md`](references/fueling-modes.md).
 
+When making tuning recommendations from incomplete or conflicting evidence, read
+[`references/tuning-safety.md`](references/tuning-safety.md).
+
 ## MCP Resources
 
 If the ECU Explorer MCP server is available, consult:
