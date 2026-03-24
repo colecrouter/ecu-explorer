@@ -42,6 +42,9 @@ When making tuning recommendations from incomplete or conflicting evidence, read
 When diagnosing boost behavior, wastegate behavior, or boost-control tables,
 read [`references/boost-control.md`](references/boost-control.md).
 
+When troubleshooting a problem from logs and calibration data more broadly, read
+[`references/diagnostic-flow.md`](references/diagnostic-flow.md).
+
 ## MCP Resources
 
 If the ECU Explorer MCP server is available, consult:
