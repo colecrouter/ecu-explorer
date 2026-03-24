@@ -1,11 +1,15 @@
 ---
 name: ecu-log-analysis
-description: Analyze ECU log CSVs with a lean MCP-first workflow and shell-native fallbacks.
+description: Analyze ECU log CSVs, especially for tuning workflows like MAF scaling, using a lean MCP-first workflow with shell-native fallbacks.
 ---
 
 # ECU Log Analysis
 
 Use this skill for ECU log inspection and tuning-oriented analysis.
+
+Prefer concise, auditable workflows. Do not invent missing channels, units, or
+ECU strategy details. When prerequisites are unknown, determine them first or
+stop and explain what is missing.
 
 ## Preferred Workflow
 
@@ -16,6 +20,19 @@ Use this skill for ECU log inspection and tuning-oriented analysis.
    - use Python with `csv.DictReader` on macOS/Linux
    - use `awk` for simple scans and summaries
 
+## MAF Scaling
+
+When the task is MAF scaling or MAF-related fueling analysis, read
+[`references/maf-scaling.md`](references/maf-scaling.md) before proceeding.
+
+Use that reference to:
+
+- determine whether the log is usable for MAF analysis
+- map source channels into canonical concepts
+- choose the appropriate analysis mode
+- decide whether to refuse or proceed cautiously
+- format findings and proposed changes for review
+
 ## MCP Resources
 
 If the ECU Explorer MCP server is available, consult:
@@ -24,8 +41,11 @@ If the ECU Explorer MCP server is available, consult:
 - `ecu-explorer://docs/log-format`
 - `ecu-explorer://docs/log-analysis`
 
-## Notes
+## Operating Rules
 
 - Native ECU Explorer logs are expected to have numeric-only data rows.
 - Prefer MCP for discovery and simple structured queries.
 - Prefer shell-native analysis for sequence detection or multi-row reasoning.
+- Treat skills as workflow guidance and MCP resources as supporting reference.
+- If MCP is unavailable, continue with shell-native workflows instead of failing.
+- For tuning recommendations, state confidence, assumptions, and missing inputs.
