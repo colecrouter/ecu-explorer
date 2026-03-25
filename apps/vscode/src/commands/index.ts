@@ -7,6 +7,7 @@
 export {
 	handleMathOpAdd,
 	handleMathOpClamp,
+	handleMathOpFormula,
 	handleMathOpMultiply,
 	handleMathOpSmooth,
 	handleRedo,

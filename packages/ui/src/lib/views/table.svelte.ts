@@ -7,6 +7,7 @@ import type {
 } from "@ecu-explorer/core";
 import {
 	addConstant,
+	applyFormula,
 	clampValues,
 	multiplyConstant,
 	smoothValues,
@@ -851,52 +852,10 @@ export class TableView<T extends TableDefinition> {
 		result: MathOpResult;
 		transaction: Transaction | null;
 	} {
-		const selected = this.getSelectedCells();
-		if (selected.length === 0) {
-			return {
-				result: {
-					values: [],
-					warnings: ["No cells selected"],
-					changedCount: 0,
-				},
-				transaction: null,
-			};
-		}
-
-		// Get current values (scaled)
-		const values: number[] = [];
-		for (const coord of selected) {
-			const address = this.addressForCoord(coord);
-			const bytes = this.readBytes(address);
-			const raw = this.decodeScalarValue(bytes);
-			values.push(raw);
-		}
-
-		// Get constraints
-		const constraints = this.getConstraints();
-
-		// Apply operation
-		const result = addConstant(values, constant, constraints);
-
-		// Stage changes
-		for (let i = 0; i < selected.length; i++) {
-			const coord = selected[i];
-			if (!coord) throw new Error(`Missing coordinate for index ${i}`);
-			const newScaled = result.values[i];
-			if (newScaled === undefined)
-				throw new Error(`Missing result value for index ${i}`);
-			// Unscale before encoding
-			const newRaw = newScaled;
-			const bytes = this.encodeScalarValue(newRaw);
-			this.stageCell(this.stageLocation(coord), bytes);
-		}
-
-		// Commit
-		const transaction = this.commit(
-			`Add ${constant} to ${selected.length} cells`,
+		return this.applyScalarSelectionOperation(
+			(values, constraints) => addConstant(values, constant, constraints),
+			`Add ${constant} to {count} cells`,
 		);
-
-		return { result, transaction };
 	}
 
 	/**
@@ -911,77 +870,23 @@ export class TableView<T extends TableDefinition> {
 		result: MathOpResult;
 		transaction: Transaction | null;
 	} {
-		const selected = this.getSelectedCells();
-		if (selected.length === 0) {
-			return {
-				result: {
-					values: [],
-					warnings: ["No cells selected"],
-					changedCount: 0,
-				},
-				transaction: null,
-			};
-		}
+		return this.applyFormulaOperation(
+			`${value}`,
+			`Set {count} cells to ${value}`,
+		);
+	}
 
-		// Get current values (scaled)
-		const currentValues: number[] = [];
-		for (const coord of selected) {
-			const address = this.addressForCoord(coord);
-			const bytes = this.readBytes(address);
-			const raw = this.decodeScalarValue(bytes);
-			currentValues.push(raw);
-		}
-
-		// Get constraints
-		const constraints = this.getConstraints();
-
-		// Apply constraints to the new value
-		let constrainedValue = value;
-		const warnings: string[] = [];
-
-		if (constraints.min !== undefined && constrainedValue < constraints.min) {
-			constrainedValue = constraints.min;
-			warnings.push(`Value clamped to minimum ${constraints.min}`);
-		}
-
-		if (constraints.max !== undefined && constrainedValue > constraints.max) {
-			constrainedValue = constraints.max;
-			warnings.push(`Value clamped to maximum ${constraints.max}`);
-		}
-
-		// Create result with all cells set to the same value
-		const resultValues = selected.map(() => constrainedValue);
-
-		// Count changes
-		let changedCount = 0;
-		for (let i = 0; i < currentValues.length; i++) {
-			const currentValue = currentValues[i];
-			if (
-				currentValue !== undefined &&
-				Math.abs(currentValue - constrainedValue) > 0.001
-			) {
-				changedCount++;
-			}
-		}
-
-		const result: MathOpResult = {
-			values: resultValues,
-			warnings,
-			changedCount,
-		};
-
-		// Stage changes
-		for (const coord of selected) {
-			// Unscale before encoding
-			const newRaw = constrainedValue;
-			const bytes = this.encodeScalarValue(newRaw);
-			this.stageCell(this.stageLocation(coord), bytes);
-		}
-
-		// Commit
-		const transaction = this.commit(`Set ${selected.length} cells to ${value}`);
-
-		return { result, transaction };
+	public applyFormulaOperation(
+		expression: string,
+		labelTemplate = `Apply formula "${expression}" to {count} cells`,
+	): {
+		result: MathOpResult;
+		transaction: Transaction | null;
+	} {
+		return this.applyScalarSelectionOperation(
+			(values, constraints) => applyFormula(values, expression, constraints),
+			labelTemplate,
+		);
 	}
 
 	/**
@@ -996,53 +901,10 @@ export class TableView<T extends TableDefinition> {
 		result: MathOpResult;
 		transaction: Transaction | null;
 	} {
-		const selected = this.getSelectedCells();
-		if (selected.length === 0) {
-			return {
-				result: {
-					values: [],
-					warnings: ["No cells selected"],
-					changedCount: 0,
-				},
-				transaction: null,
-			};
-		}
-
-		// Get current values (scaled)
-		const values: number[] = [];
-		for (const coord of selected) {
-			const address = this.addressForCoord(coord);
-			const bytes = this.readBytes(address);
-			const raw = this.decodeScalarValue(bytes);
-			values.push(raw);
-		}
-
-		// Get constraints
-		const constraints = this.getConstraints();
-
-		// Apply operation
-		const result = multiplyConstant(values, factor, constraints);
-
-		// Stage changes
-		for (let i = 0; i < selected.length; i++) {
-			const coord = selected[i];
-			if (!coord) throw new Error(`Missing coordinate for index ${i}`);
-
-			const newScaled = result.values[i];
-			if (newScaled === undefined)
-				throw new Error(`Missing result value for index ${i}`);
-			// Unscale before encoding
-			const newRaw = newScaled;
-			const bytes = this.encodeScalarValue(newRaw);
-			this.stageCell(this.stageLocation(coord), bytes);
-		}
-
-		// Commit
-		const transaction = this.commit(
-			`Multiply by ${factor} for ${selected.length} cells`,
+		return this.applyScalarSelectionOperation(
+			(values, constraints) => multiplyConstant(values, factor, constraints),
+			`Multiply by ${factor} for {count} cells`,
 		);
-
-		return { result, transaction };
 	}
 
 	/**
@@ -1217,6 +1079,61 @@ export class TableView<T extends TableDefinition> {
 			max: range.max * scale + offset,
 			dtype,
 		};
+	}
+
+	private applyScalarSelectionOperation(
+		operation: (
+			values: number[],
+			constraints: MathOpConstraints,
+		) => MathOpResult,
+		labelTemplate: string,
+	): {
+		result: MathOpResult;
+		transaction: Transaction | null;
+	} {
+		const selected = this.getSelectedCells();
+		if (selected.length === 0) {
+			return {
+				result: {
+					values: [],
+					warnings: ["No cells selected"],
+					changedCount: 0,
+				},
+				transaction: null,
+			};
+		}
+
+		const values: number[] = [];
+		for (const coord of selected) {
+			const address = this.addressForCoord(coord);
+			const bytes = this.readBytes(address);
+			const raw = this.decodeScalarValue(bytes);
+			values.push(raw);
+		}
+
+		const constraints = this.getConstraints();
+		const result = operation(values, constraints);
+
+		for (let i = 0; i < selected.length; i++) {
+			const coord = selected[i];
+			if (!coord) {
+				throw new Error(`Missing coordinate for index ${i}`);
+			}
+
+			const newScaled = result.values[i];
+			if (newScaled === undefined) {
+				throw new Error(`Missing result value for index ${i}`);
+			}
+
+			const bytes = this.encodeScalarValue(newScaled);
+			this.stageCell(this.stageLocation(coord), bytes);
+		}
+
+		const transaction = this.commit(
+			labelTemplate.replace("{count}", String(selected.length)),
+		);
+
+		return { result, transaction };
 	}
 
 	/**

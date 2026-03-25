@@ -127,6 +127,25 @@ describe("TableView Math Operations", () => {
 			expect(rom[0x1000]).toBe(150);
 		});
 
+		it("should apply formula operation using display values", () => {
+			const rom = createROM(0x2000);
+			const def = create1DTableDef(2);
+			def.z.transform = transform;
+			def.z.inverseTransform = inverseTransform;
+			const table = new TableView(rom, def);
+
+			table.selectCell({ row: 0, col: 0 }, "replace");
+			table.selectCell({ row: 0, col: 1 }, "add");
+
+			const { result, transaction } = table.applyFormulaOperation("x + 10");
+
+			expect(result.values).toEqual([10, 12]);
+			expect(transaction).not.toBeNull();
+			expect(transaction?.edits.length).toBe(2);
+			expect(rom[0x1000]).toBe(5);
+			expect(rom[0x1001]).toBe(6);
+		});
+
 		it("should apply add operation to multiple cells in 1D table", () => {
 			const rom = createROM(0x2000);
 			const def = create1DTableDef(16);

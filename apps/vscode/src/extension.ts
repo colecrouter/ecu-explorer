@@ -28,6 +28,7 @@ import {
 import {
 	handleMathOpAdd,
 	handleMathOpClamp,
+	handleMathOpFormula,
 	handleMathOpMultiply,
 	handleMathOpSmooth,
 	handleRedo,
@@ -1324,6 +1325,9 @@ export async function activate(
 		vscode.commands.registerCommand("rom.mathOpAdd", () => handleMathOpAdd()),
 		vscode.commands.registerCommand("rom.mathOpMultiply", () =>
 			handleMathOpMultiply(),
+		),
+		vscode.commands.registerCommand("rom.mathOpFormula", () =>
+			handleMathOpFormula(),
 		),
 		vscode.commands.registerCommand("rom.mathOpClamp", () =>
 			handleMathOpClamp(),

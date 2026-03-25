@@ -10,6 +10,7 @@ import * as vscode from "vscode";
 import {
 	handleMathOpAdd,
 	handleMathOpClamp,
+	handleMathOpFormula,
 	handleMathOpMultiply,
 	handleMathOpSmooth,
 	handleRedo,
@@ -269,6 +270,9 @@ describe("Math Operations Commands", () => {
 			const multiplyCommand = commands.find(
 				(entry) => entry.command === "rom.mathOpMultiply",
 			);
+			const formulaCommand = commands.find(
+				(entry) => entry.command === "rom.mathOpFormula",
+			);
 			const clampCommand = commands.find(
 				(entry) => entry.command === "rom.mathOpClamp",
 			);
@@ -282,12 +286,20 @@ describe("Math Operations Commands", () => {
 			expect(multiplyCommand?.enablement).toBe(
 				"activeCustomEditorId == 'romViewer.tableEditor'",
 			);
+			expect(formulaCommand?.enablement).toBe(
+				"activeCustomEditorId == 'romViewer.tableEditor'",
+			);
 			expect(clampCommand?.enablement).toBe(
 				"activeCustomEditorId == 'romViewer.tableEditor'",
 			);
 			expect(smoothCommand?.enablement).toBe(
 				"activeCustomEditorId == 'romViewer.tableEditor' && ecuExplorer.activeTableIs2D",
 			);
+			expect(
+				commandPaletteEntries.find(
+					(entry) => entry.command === "rom.mathOpFormula",
+				)?.when,
+			).toBe("activeCustomEditorId == 'romViewer.tableEditor'");
 			expect(
 				commandPaletteEntries.find((entry) => entry.command === "rom.mathOpAdd")
 					?.when,
@@ -325,6 +337,13 @@ describe("Math Operations Commands", () => {
 		it("should register rom.mathOpMultiply command", async () => {
 			expect(vscode.commands.registerCommand).toHaveBeenCalledWith(
 				"rom.mathOpMultiply",
+				expect.any(Function),
+			);
+		});
+
+		it("should register rom.mathOpFormula command", async () => {
+			expect(vscode.commands.registerCommand).toHaveBeenCalledWith(
+				"rom.mathOpFormula",
 				expect.any(Function),
 			);
 		});
@@ -466,6 +485,23 @@ describe("Math Operations Commands", () => {
 			showInputBoxSpy.mockRestore();
 		});
 
+		it("should show input box for formula operation", async () => {
+			setMathCommandState({ activePanel: createActivePanel() });
+			const showInputBoxSpy = vi
+				.spyOn(vscode.window, "showInputBox")
+				.mockResolvedValue(undefined);
+
+			await handleMathOpFormula();
+
+			expect(showInputBoxSpy).toHaveBeenCalledWith(
+				expect.objectContaining({
+					prompt: expect.stringContaining("formula"),
+				}),
+			);
+
+			showInputBoxSpy.mockRestore();
+		});
+
 		it("should show input boxes for clamp operation", async () => {
 			setMathCommandState({ activePanel: createActivePanel() });
 			const showInputBoxSpy = vi
@@ -531,8 +567,8 @@ describe("Math Operations Commands", () => {
 
 			expect(panel.webview.postMessage).toHaveBeenCalledWith({
 				type: "mathOp",
-				operation: "add",
-				constant: 5,
+				operation: "formula",
+				expression: "x + (5)",
 			});
 
 			showInputBoxSpy.mockRestore();
@@ -656,6 +692,23 @@ describe("Math Operations Commands", () => {
 				});
 
 			await vscode.commands.executeCommand("rom.mathOpMultiply");
+
+			showInputBoxSpy.mockRestore();
+		});
+
+		it("should validate formula syntax for formula operation", async () => {
+			const showInputBoxSpy = vi
+				.spyOn(vscode.window, "showInputBox")
+				.mockImplementation(async (options) => {
+					if (options?.validateInput) {
+						expect(options.validateInput("x +")).toBeTruthy();
+						expect(options.validateInput("x * 1.5 + 10")).toBeNull();
+						expect(options.validateInput("42")).toBeNull();
+					}
+					return undefined;
+				});
+
+			await vscode.commands.executeCommand("rom.mathOpFormula");
 
 			showInputBoxSpy.mockRestore();
 		});

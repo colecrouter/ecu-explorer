@@ -1,3 +1,4 @@
+import { Parser } from "expr-eval";
 import * as vscode from "vscode";
 import type { TableEditSession } from "../history/table-edit-session.js";
 import type { RomEditorProvider } from "../rom/editor-provider.js";
@@ -99,6 +100,66 @@ function resolveActiveTableContext() {
 	};
 }
 
+const formulaParser = new Parser({
+	allowMemberAccess: false,
+	operators: {
+		add: true,
+		concatenate: false,
+		conditional: false,
+		divide: true,
+		factorial: false,
+		logical: false,
+		multiply: true,
+		power: true,
+		remainder: true,
+		subtract: true,
+		comparison: false,
+		in: false,
+		assignment: false,
+	},
+});
+
+function validateNumberInput(value: string): string | null {
+	const num = Number.parseFloat(value);
+	return Number.isNaN(num) ? "Please enter a valid number" : null;
+}
+
+function validateFormulaInput(value: string): string | null {
+	if (value.trim().length === 0) {
+		return "Formula cannot be empty";
+	}
+
+	try {
+		formulaParser.parse(value);
+		return null;
+	} catch (error) {
+		return error instanceof Error ? error.message : "Invalid formula";
+	}
+}
+
+async function postScalarFormula(
+	expression: string,
+	panel: vscode.WebviewPanel,
+): Promise<void> {
+	await panel.webview.postMessage({
+		type: "mathOp",
+		operation: "formula",
+		expression,
+	});
+}
+
+async function promptForFormula(
+	initialValue = "x",
+): Promise<string | undefined> {
+	return vscode.window.showInputBox({
+		prompt:
+			"Enter formula to apply to selected cells (use x as the current value)",
+		placeHolder: "Examples: 42, x + 5, x * 1.1, (x + 5) / 2",
+		value: initialValue,
+		validateInput: validateFormulaInput,
+	});
+}
+
 /**
  * Handle undo command
  * Integrates with VSCode's undo/redo system
@@ -155,19 +216,12 @@ export async function handleMathOpAdd(): Promise<void> {
 	const constant = await vscode.window.showInputBox({
 		prompt: "Enter constant to add (can be negative)",
 		placeHolder: "e.g., 5 or -10",
-		validateInput: (value) => {
-			const num = Number.parseFloat(value);
-			return Number.isNaN(num) ? "Please enter a valid number" : null;
-		},
+		validateInput: validateNumberInput,
 	});
 
 	if (constant === undefined) return;
 
-	await panel.webview.postMessage({
-		type: "mathOp",
-		operation: "add",
-		constant: Number.parseFloat(constant),
-	});
+	await postScalarFormula(`x + (${Number.parseFloat(constant)})`, panel);
 }
 
 /**
@@ -184,19 +238,31 @@ export async function handleMathOpMultiply(): Promise<void> {
 	const factor = await vscode.window.showInputBox({
 		prompt: "Enter multiplication factor",
 		placeHolder: "e.g., 1.5 or 0.5",
-		validateInput: (value) => {
-			const num = Number.parseFloat(value);
-			return Number.isNaN(num) ? "Please enter a valid number" : null;
-		},
+		validateInput: validateNumberInput,
 	});
 
 	if (factor === undefined) return;
 
-	await panel.webview.postMessage({
-		type: "mathOp",
-		operation: "multiply",
-		factor: Number.parseFloat(factor),
-	});
+	await postScalarFormula(`x * (${Number.parseFloat(factor)})`, panel);
+}
+
+/**
+ * Handle math operation: Apply formula to selection
+ */
+export async function handleMathOpFormula(initialFormula = "x"): Promise<void> {
+	const { panel } = resolveActiveTableContext();
+
+	if (!panel) {
+		vscode.window.showErrorMessage("No active table editor");
+		return;
+	}
+
+	const expression = await promptForFormula(initialFormula);
+	if (expression === undefined) {
+		return;
+	}
+
+	await postScalarFormula(expression, panel);
 }
 
 /**
@@ -214,8 +280,7 @@ export async function handleMathOpClamp(): Promise<void> {
 		prompt: "Enter minimum value",
 		placeHolder: "e.g., 0",
 		validateInput: (value) => {
-			const num = Number.parseFloat(value);
-			return Number.isNaN(num) ? "Please enter a valid number" : null;
+			return validateNumberInput(value);
 		},
 	});
 
@@ -225,8 +290,9 @@ export async function handleMathOpClamp(): Promise<void> {
 		prompt: "Enter maximum value",
 		placeHolder: "e.g., 255",
 		validateInput: (value) => {
+			const numberValidation = validateNumberInput(value);
+			if (numberValidation) return numberValidation;
 			const num = Number.parseFloat(value);
-			if (Number.isNaN(num)) return "Please enter a valid number";
 			if (num < Number.parseFloat(min)) {
 				return "Maximum must be greater than or equal to minimum";
 			}
