@@ -700,6 +700,8 @@ describe("Math Operations Commands", () => {
 			const showInputBoxSpy = vi
 				.spyOn(vscode.window, "showInputBox")
 				.mockImplementation(async (options) => {
+					expect(options?.prompt).toContain("x, row, col, depth, or i");
+					expect(options?.placeHolder).toContain("x + row");
 					if (options?.validateInput) {
 						expect(options.validateInput("x +")).toBeTruthy();
 						expect(options.validateInput("x * 1.5 + 10")).toBeNull();

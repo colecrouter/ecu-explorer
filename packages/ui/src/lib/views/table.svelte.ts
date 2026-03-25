@@ -1,4 +1,5 @@
 import type {
+	MathFormulaVariables,
 	MathOpConstraints,
 	MathOpResult,
 	Table2DDefinition,
@@ -884,7 +885,8 @@ export class TableView<T extends TableDefinition> {
 		transaction: Transaction | null;
 	} {
 		return this.applyScalarSelectionOperation(
-			(values, constraints) => applyFormula(values, expression, constraints),
+			(values, constraints, variables) =>
+				applyFormula(values, expression, constraints, variables),
 			labelTemplate,
 		);
 	}
@@ -1085,6 +1087,7 @@ export class TableView<T extends TableDefinition> {
 		operation: (
 			values: number[],
 			constraints: MathOpConstraints,
+			variables: MathFormulaVariables[],
 		) => MathOpResult,
 		labelTemplate: string,
 	): {
@@ -1104,15 +1107,22 @@ export class TableView<T extends TableDefinition> {
 		}
 
 		const values: number[] = [];
+		const variables: MathFormulaVariables[] = [];
 		for (const coord of selected) {
 			const address = this.addressForCoord(coord);
 			const bytes = this.readBytes(address);
 			const raw = this.decodeScalarValue(bytes);
 			values.push(raw);
+			variables.push({
+				i: variables.length,
+				row: coord.row,
+				col: coord.col,
+				depth: coord.depth ?? 0,
+			});
 		}
 
 		const constraints = this.getConstraints();
-		const result = operation(values, constraints);
+		const result = operation(values, constraints, variables);
 
 		for (let i = 0; i < selected.length; i++) {
 			const coord = selected[i];

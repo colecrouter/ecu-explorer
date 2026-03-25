@@ -153,8 +153,9 @@ async function promptForFormula(
 ): Promise<string | undefined> {
 	return vscode.window.showInputBox({
 		prompt:
-			"Enter formula to apply to selected cells (use x as the current value)",
-		placeHolder: "Examples: 42, x + 5, x * 1.1, (x + 5) / 2",
+			"Enter a formula using x, row, col, depth, or i (all zero-based except x)",
+		placeHolder:
+			"Examples: 42, x + 5, x + row, x + col * 2, x + depth * 10",
 		value: initialValue,
 		validateInput: validateFormulaInput,
 	});

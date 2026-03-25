@@ -3,6 +3,7 @@ import {
 	addConstant,
 	applyFormula,
 	clampValues,
+	type MathFormulaVariables,
 	multiplyConstant,
 	smoothValues,
 } from "../src/math/operations.js";
@@ -139,6 +140,17 @@ describe("Math Operations", () => {
 		it("supports selection index references", () => {
 			const result = applyFormula([10, 10, 10], "x + i");
 			expect(result.values).toEqual([10, 11, 12]);
+		});
+
+		it("supports row and column references when provided", () => {
+			const variables: MathFormulaVariables[] = [
+				{ row: 0, col: 0 },
+				{ row: 0, col: 1 },
+				{ row: 1, col: 0 },
+				{ row: 1, col: 1 },
+			];
+			const result = applyFormula([10, 10, 10, 10], "x + row * 10 + col", undefined, variables);
+			expect(result.values).toEqual([10, 11, 20, 21]);
 		});
 
 		it("clamps formula results to constraints", () => {

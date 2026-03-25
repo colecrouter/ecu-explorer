@@ -42,6 +42,20 @@ export interface MathOpConstraints {
 	dtype?: ScalarType;
 }
 
+/**
+ * Per-cell variables exposed to formula evaluation.
+ */
+export interface MathFormulaVariables {
+	/** Zero-based index within the selected cells */
+	i?: number;
+	/** Zero-based row index for the current cell */
+	row?: number;
+	/** Zero-based column index for the current cell */
+	col?: number;
+	/** Zero-based depth/layer index for the current cell */
+	depth?: number;
+}
+
 const mathFormulaParser = new Parser({
 	allowMemberAccess: false,
 	operators: {
@@ -88,17 +102,20 @@ function applyConstraints(
  * Apply a formula to each value in a selection.
  *
  * The formula can reference `x` for the current cell value and `i` for the
- * zero-based index within the selection.
+ * zero-based index within the selection. Additional position variables may be
+ * provided such as `row`, `col`, and `depth`.
  *
  * @param values - Array of values to modify
  * @param expression - Formula to evaluate for each value
  * @param constraints - Optional min/max constraints
+ * @param variables - Optional per-cell variables aligned with `values`
  * @returns Result with modified values, warnings, and change count
  */
 export function applyFormula(
 	values: number[],
 	expression: string,
 	constraints?: MathOpConstraints,
+	variables?: MathFormulaVariables[],
 ): MathOpResult {
 	const parsedExpression = mathFormulaParser.parse(expression);
 	const result: number[] = [];
@@ -107,7 +124,11 @@ export function applyFormula(
 	let clampedCount = 0;
 
 	for (const [index, value] of values.entries()) {
-		const evaluated = parsedExpression.evaluate({ x: value, i: index });
+		const evaluated = parsedExpression.evaluate({
+			x: value,
+			i: index,
+			...variables?.[index],
+		});
 		if (typeof evaluated !== "number" || !Number.isFinite(evaluated)) {
 			throw new Error(
 				`Formula must evaluate to a finite number for value ${value} at index ${index}`,

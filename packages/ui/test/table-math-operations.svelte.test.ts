@@ -293,5 +293,33 @@ describe("TableView Math Operations", () => {
 				expect(data2d[0]?.[3]?.[0]).toBe(original3 + 10);
 			}
 		});
+
+		it("should apply formula operation using row and column variables", () => {
+			const rom = createROM(0x2000);
+			const def = create2DTableDef(2, 2);
+			const table = new TableView(rom, def);
+
+			table.selectCell({ row: 0, col: 0 }, "replace");
+			table.selectCell({ row: 0, col: 1 }, "add");
+			table.selectCell({ row: 1, col: 0 }, "add");
+			table.selectCell({ row: 1, col: 1 }, "add");
+
+			const { result, transaction } = table.applyFormulaOperation(
+				"row * 10 + col",
+			);
+
+			expect(result.values).toEqual([0, 1, 10, 11]);
+			expect(transaction).not.toBeNull();
+			expect(transaction?.edits.length).toBe(2);
+
+			const data = table.data;
+			if (Array.isArray(data) && Array.isArray(data[0])) {
+				const data2d = data as Uint8Array[][];
+				expect(data2d[0]?.[0]?.[0]).toBe(0);
+				expect(data2d[0]?.[1]?.[0]).toBe(1);
+				expect(data2d[1]?.[0]?.[0]).toBe(10);
+				expect(data2d[1]?.[1]?.[0]).toBe(11);
+			}
+		});
 	});
 });
