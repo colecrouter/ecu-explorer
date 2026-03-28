@@ -5,11 +5,13 @@ import {
 	FLASH_PREPARE_DOWNLOAD_SUBFUNCTION,
 	FLASH_PROGRAMMING_SESSION,
 	FLASH_REQUEST_DOWNLOAD_STAGE1,
+	FLASH_REQUEST_DOWNLOAD_STAGE2,
 	FLASH_REQUEST_TRANSFER_EXIT,
 	FLASH_SECURITY_REQUEST_SEED_SUBFUNCTION,
 	FLASH_SECURITY_SEND_KEY_SUBFUNCTION,
 	FLASH_TRANSFER_DATA_STAGE1_BA,
 	FLASH_TRANSFER_DATA_STAGE1_D4,
+	FLASH_TRANSFER_DATA_STAGE2_BLOCK_CC,
 	Mut3Protocol,
 	SID_SECURITY_ACCESS,
 	SID_VENDOR_SERVICE,
@@ -115,7 +117,9 @@ describe("Mut3Protocol dryRunWrite() â€” traced flash session", () => {
 			])
 			.addStep(Array.from(FLASH_REQUEST_DOWNLOAD_STAGE1), [0x74, 0x01, 0x01])
 			.addStep(Array.from(FLASH_TRANSFER_DATA_STAGE1_BA), [0x76])
-			.addStep(Array.from(FLASH_REQUEST_TRANSFER_EXIT), [0x77]);
+			.addStep(Array.from(FLASH_REQUEST_TRANSFER_EXIT), [0x77])
+			.addStep(Array.from(FLASH_REQUEST_DOWNLOAD_STAGE2), [0x74, 0x01, 0x01])
+			.addStep(Array.from(FLASH_TRANSFER_DATA_STAGE2_BLOCK_CC), [0x76]);
 
 		await expect(
 			protocol.dryRunWrite(fake, rom, onProgress, onEvent),
@@ -176,6 +180,18 @@ describe("Mut3Protocol dryRunWrite() â€” traced flash session", () => {
 				message: "Issuing first traced MUT-III RequestTransferExit",
 			}),
 		);
+		expect(onProgress).toHaveBeenCalledWith(
+			expect.objectContaining({
+				phase: "negotiating",
+				message: "Issuing second traced MUT-III RequestDownload",
+			}),
+		);
+		expect(onProgress).toHaveBeenCalledWith(
+			expect.objectContaining({
+				phase: "negotiating",
+				message: "Sending first traced large MUT-III TransferData block",
+			}),
+		);
 
 		fake.verifyExhausted();
 	});
@@ -233,7 +249,9 @@ describe("Mut3Protocol dryRunWrite() â€” traced flash session", () => {
 				])
 				.addStep(Array.from(FLASH_REQUEST_DOWNLOAD_STAGE1), [0x74, 0x01, 0x01])
 				.addStep(Array.from(FLASH_TRANSFER_DATA_STAGE1_BA), [0x76])
-				.addStep(Array.from(FLASH_REQUEST_TRANSFER_EXIT), [0x77]);
+				.addStep(Array.from(FLASH_REQUEST_TRANSFER_EXIT), [0x77])
+				.addStep(Array.from(FLASH_REQUEST_DOWNLOAD_STAGE2), [0x74, 0x01, 0x01])
+				.addStep(Array.from(FLASH_TRANSFER_DATA_STAGE2_BLOCK_CC), [0x76]);
 
 			await expect(
 				protocol.dryRunWrite(fake, rom, vi.fn()),
