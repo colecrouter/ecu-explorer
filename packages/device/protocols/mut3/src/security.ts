@@ -1,74 +1,12 @@
 /**
- * Computes the SecurityAccess key from a seed for Mitsubishi 4B11T ECUs (EVO X).
+ * Computes the SecurityAccess key from a seed for Mitsubishi diagnostic/read
+ * sessions (service `0x27`, subfunctions `0x01`/`0x02`).
  *
- * ## Scope: Diagnostic / Read Session Only (SecurityAccess subfunction 0x01/0x02)
+ * This 2-byte algorithm is used for ROM readback and diagnostic access, not
+ * for the traced EVO X flash/programming flow.
  *
- * This function implements the **diagnostic/read session** key algorithm for
- * SecurityAccess service 0x27, subfunctions 0x01 (requestSeed) / 0x02 (sendKey).
- * It is used for ROM readback and live-data diagnostic sessions over CAN.
- *
- * ⚠️ **KNOWN RESEARCH GAP — Flash/Programming Session Key (subfunction 0x05/0x06)**
- *
- * The EVO X `mitsucan` ROM write sequence uses a **different** SecurityAccess level:
- *   - requestSeed subfunction: `0x05` (flash-level, not `0x01`)
- *   - sendKey subfunction:     `0x06` (flash-level, not `0x02`)
- *
- * The flash-session key algorithm (for subfunction `0x05`/`0x06`) is **currently
- * unknown**. Live CAN captures now confirm the session flow and provide multiple
- * 4-byte seed/key pairs, but the transformation itself is not yet implemented.
- *
- * The current next step is to derive the algorithm from captured `0x67 0x05` /
- * `0x27 0x06` pairs and then validate it against additional traces or live hardware.
- *
- * ## Algorithm Research Summary
- *
- * The `libmut` library (https://github.com/harshadura/libmut) implements the MUT-II
- * sensor-reading protocol only and contains no SecurityAccess implementation. The
- * referenced `libmut/mut.py` file does not exist in that repository.
- *
- * The EcuFlash binary (ecuflash_138_osx.dmg) was analysed via `otool -tV` and `nm`.
- * Key findings:
- *
- *   - The `mitsuecu` class uses a **proprietary Mitsubishi bootloader protocol**
- *     (`do_init_sequence1` / `do_init_sequence3`) with fixed challenge bytes, not
- *     UDS SecurityAccess (service 0x27). This is the EVO 7/8/9 K-line path.
- *   - The EVO X uses the `mitsucan` flash method (EcuFlash 1.44), which targets the
- *     Renesas M32186F8 CPU via the ECU's built-in CAN bootloader — no kernel upload.
- *   - The `densoecu::do_challenge_response` function calls
- *     `kwp2000::kwp_securityAccess` and then `densoecu::get_subaru_key`, which
- *     dispatches through a vtable slot — this path is for Denso/Subaru ECUs, not
- *     Mitsubishi 4B11T.
- *
- * The algorithm below is the community-documented seed/key formula for Mitsubishi
- * ECUs that expose UDS SecurityAccess (service 0x27 subfunction 0x01/0x02) over
- * CAN (ISO 15765-4). It has been independently verified by multiple community members
- * against live ECU captures and is consistent with the Denso/Mitsubishi security
- * algorithm family used in MUT-III diagnostic sessions.
- *
- * ## Algorithm (read/diagnostic session — subfunction 0x01/0x02)
- *
- * 1. Interpret the 2-byte seed as a 16-bit big-endian unsigned integer.
- * 2. Multiply by the constant 0x4081 (modulo 2^16).
- * 3. Add the constant 0x1234 (modulo 2^16).
- * 4. Return the result as a 2-byte big-endian array.
- *
- * In pseudocode:
- * ```
- * seed16 = (seed[0] << 8) | seed[1]
- * key16  = (seed16 * 0x4081 + 0x1234) & 0xFFFF
- * key    = [key16 >> 8, key16 & 0xFF]
- * ```
- *
- * ## References
- *
- * - https://github.com/harshadura/libmut (MUT-III session layer — no SecurityAccess)
- * - EcuFlash macOS binary analysis (ecuflash_138_osx.dmg, `mitsuecu` class)
- * - EcuFlash 1.44 Windows binary analysis (`mitsucan` flash method, M32186F8 CPU)
- * - Community EvoScan / EvoXForums reverse-engineering documentation
- * - See also: HANDSHAKE_ANALYSIS.md §7.5 for the full EVO X write flash sequence
- *
- * @param seed - 2-byte seed received from ECU SecurityAccess response (0x67 0x01 <seed>)
- * @returns 2-byte key to send in SecurityAccess request (0x27 0x02 <key>)
+ * @param seed - 2-byte seed from `0x67 0x01`
+ * @returns 2-byte key for `0x27 0x02`
  * @throws {RangeError} if seed is not exactly 2 bytes
  */
 export function computeSecurityKey(seed: Uint8Array): Uint8Array {
@@ -78,21 +16,62 @@ export function computeSecurityKey(seed: Uint8Array): Uint8Array {
 		);
 	}
 
-	// Step 1: Combine the 2-byte seed into a 16-bit big-endian unsigned integer.
-	// Ref: Community EvoScan documentation — seed is transmitted high-byte first.
 	const seedHigh = seed[0];
 	const seedLow = seed[1];
 	if (seedHigh === undefined || seedLow === undefined) {
 		throw new RangeError("computeSecurityKey: seed bytes missing");
 	}
+
 	const seed16 = ((seedHigh << 8) | seedLow) & 0xffff;
-
-	// Step 2: Multiply by 0x4081 and add 0x1234, truncated to 16 bits.
-	// This is the Mitsubishi/Denso security algorithm constant pair documented
-	// in community reverse-engineering of MUT-III diagnostic sessions.
-	// Ref: Community EvoScan forum documentation for Mitsubishi 4B11T ECU
 	const key16 = (Math.imul(seed16, 0x4081) + 0x1234) & 0xffff;
-
-	// Step 3: Return the 16-bit key as a 2-byte big-endian array.
 	return new Uint8Array([(key16 >> 8) & 0xff, key16 & 0xff]);
+}
+
+function affineByte(x: number): number {
+	return (Math.imul(0x89, x) + 0xd2) & 0xff;
+}
+
+function carryByte(x: number, additiveConstant: number): number {
+	return ((Math.imul(0x89, x) + additiveConstant) >>> 8) & 0xff;
+}
+
+/**
+ * Computes the SecurityAccess key for the traced EVO X flash/programming
+ * session (`0x27 0x05` / `0x27 0x06`).
+ *
+ * This 4-byte algorithm was derived from 157 unique observed seed/key pairs
+ * captured from real MUT-III flash sessions. It matches the traced structure:
+ *
+ * - `key[1] = (0x89 * seed[1] + 0xD2) & 0xFF`
+ * - `key[3] = (0x89 * seed[3] + 0xD2) & 0xFF`
+ * - `key[0] = (0x89 * seed[0] + 0xD2 + 0x8F + hi(0x89 * seed[1] + 0xD0)) & 0xFF`
+ * - `key[2] = (0x89 * seed[2] + 0xD2 + 0x8F + hi(0x89 * seed[3] + 0xD1)) & 0xFF`
+ *
+ * @param seed - 4-byte seed from `0x67 0x05`
+ * @returns 4-byte key for `0x27 0x06`
+ * @throws {RangeError} if seed is not exactly 4 bytes
+ */
+export function computeFlashSecurityKey(seed: Uint8Array): Uint8Array {
+	if (seed.length !== 4) {
+		throw new RangeError(
+			`computeFlashSecurityKey: expected 4-byte seed, got ${seed.length} bytes`,
+		);
+	}
+
+	const [seed0, seed1, seed2, seed3] = seed;
+	if (
+		seed0 === undefined ||
+		seed1 === undefined ||
+		seed2 === undefined ||
+		seed3 === undefined
+	) {
+		throw new RangeError("computeFlashSecurityKey: seed bytes missing");
+	}
+
+	return new Uint8Array([
+		(affineByte(seed0) + 0x8f + carryByte(seed1, 0xd0)) & 0xff,
+		affineByte(seed1),
+		(affineByte(seed2) + 0x8f + carryByte(seed3, 0xd1)) & 0xff,
+		affineByte(seed3),
+	]);
 }

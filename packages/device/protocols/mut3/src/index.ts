@@ -9,7 +9,7 @@ import type {
 	RomProgress,
 } from "@ecu-explorer/device";
 import { extractAllRaxParameters, RAX_BLOCKS } from "./rax-decoder.js";
-import { computeSecurityKey } from "./security.js";
+import { computeFlashSecurityKey, computeSecurityKey } from "./security.js";
 
 // Ref: https://github.com/harshadura/libmut/blob/master/libmut/mut.py
 // MUT-III ROM readback sequence — start_session(), security_access(), read_memory()
@@ -44,6 +44,20 @@ const FLASH_PROGRAMMING_SESSION = 0x85;
 const FLASH_SECURITY_REQUEST_SEED_SUBFUNCTION = 0x05;
 const FLASH_SECURITY_SEND_KEY_SUBFUNCTION = 0x06;
 const FLASH_PREPARE_DOWNLOAD_SUBFUNCTION = 0x9a;
+const FLASH_PREPARE_DOWNLOAD_REQUEST = new Uint8Array([
+	SID_VENDOR_SERVICE,
+	FLASH_PREPARE_DOWNLOAD_SUBFUNCTION,
+	0x01,
+	0x01,
+	0x00,
+	0x26,
+	0x03,
+	0x27,
+	0x00,
+	0x00,
+	0x00,
+	0x01,
+]);
 
 // MUT-III serial/CAN direct memory commands (K-line / RAX streaming)
 // Reference: EvoScan_Protocol_Analysis.md — commands E0-E6
@@ -501,9 +515,11 @@ export class Mut3Protocol implements EcuProtocol {
 	 *   1. `0x10 0x92`
 	 *   2. `0x10 0x85` (may reply with `0x7F 0x10 0x78` before success)
 	 *   3. `0x27 0x05` (4-byte seed)
+	 *   4. `0x27 0x06` (derived from observed seed/key fixtures)
+	 *   5. `0x3B 0x9A` (traced pre-download request)
 	 *
-	 * The method stops after receiving the seed because the `0x27 0x06`
-	 * seed-to-key algorithm is not yet implemented.
+	 * The method stops after the trace-confirmed `0x3B 0x9A` handshake and does
+	 * not enter `0x34` / `0x36` transfer traffic.
 	 */
 	async dryRunWrite(
 		connection: DeviceConnection,
@@ -569,13 +585,73 @@ export class Mut3Protocol implements EcuProtocol {
 		}
 
 		const seed = seedResponse.slice(2);
-		const seedHex = Array.from(seed)
-			.map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-			.join(" ");
+		const key = computeFlashSecurityKey(seed);
 
-		throw new Error(
-			`MUT-III flash-session key algorithm for subfunction 0x${FLASH_SECURITY_SEND_KEY_SUBFUNCTION.toString(16).toUpperCase()} is not implemented yet; captured seed=${seedHex}`,
+		onProgress({
+			phase: "negotiating",
+			bytesProcessed: 0,
+			totalBytes: ROM_SIZE,
+			percentComplete: 0,
+			message: "Sending traced MUT-III flash key",
+		});
+
+		const sendKeyResponse = await connection.sendFrame(
+			new Uint8Array([
+				SID_SECURITY_ACCESS,
+				FLASH_SECURITY_SEND_KEY_SUBFUNCTION,
+				...key,
+			]),
 		);
+
+		if (
+			sendKeyResponse[0] !== 0x67 ||
+			sendKeyResponse[1] !== FLASH_SECURITY_SEND_KEY_SUBFUNCTION
+		) {
+			throw new Error(
+				`Flash key request failed: ECU returned [${Array.from(sendKeyResponse)
+					.map((b) => `0x${b.toString(16)}`)
+					.join(", ")}]`,
+			);
+		}
+
+		onEvent?.({
+			type: "SECURITY_ACCESS_GRANTED",
+			timestamp: Date.now(),
+		});
+
+		onProgress({
+			phase: "negotiating",
+			bytesProcessed: 0,
+			totalBytes: ROM_SIZE,
+			percentComplete: 0,
+			message: "Issuing traced MUT-III pre-download vendor request",
+		});
+
+		let prepareDownloadResponse = await connection.sendFrame(
+			FLASH_PREPARE_DOWNLOAD_REQUEST,
+		);
+		if (
+			prepareDownloadResponse[0] === 0x7f &&
+			prepareDownloadResponse[1] === SID_VENDOR_SERVICE &&
+			prepareDownloadResponse[2] === 0x78
+		) {
+			prepareDownloadResponse = await connection.sendFrame(
+				FLASH_PREPARE_DOWNLOAD_REQUEST,
+			);
+		}
+
+		if (
+			prepareDownloadResponse[0] !== SID_VENDOR_SERVICE + 0x40 ||
+			prepareDownloadResponse[1] !== FLASH_PREPARE_DOWNLOAD_SUBFUNCTION
+		) {
+			throw new Error(
+				`Flash vendor pre-download request failed: ECU returned [${Array.from(
+					prepareDownloadResponse,
+				)
+					.map((b) => `0x${b.toString(16)}`)
+					.join(", ")}]`,
+			);
+		}
 	}
 
 	// TODO: Implement writeRom() for EVO X (`mitsucan`) ROM flash write.
@@ -590,9 +666,10 @@ export class Mut3Protocol implements EcuProtocol {
 	//   6. Vendor service            — 0x3B 0x9A
 	//   7. RequestDownload / TransferData traffic follows
 	//
-	// ⚠️ BLOCKER: The traced flash-session SecurityAccess key algorithm (for
-	// subfunction 0x05/0x06) is still unknown, so writeRom() remains unimplemented.
-	// See `security.ts` and HANDSHAKE_ANALYSIS.md §7.5 for the current traced flow.
+	// ⚠️ BLOCKER: The traced flash-session SecurityAccess key is now implemented,
+	// but full write traffic after `0x3B 0x9A` still needs transcript-driven
+	// implementation and verification. See `security.ts` and
+	// HANDSHAKE_ANALYSIS.md §7.5 for the current traced flow.
 
 	private async startFlashPreparationSession(
 		connection: DeviceConnection,
@@ -660,6 +737,7 @@ export {
 	CMD_SET_ADDRESS,
 	CMD_READ_WORD_INC,
 	CMD_READ_BYTE,
+	SID_SECURITY_ACCESS,
 	SID_VENDOR_SERVICE,
 	FLASH_PREPARATION_SESSION,
 	FLASH_PROGRAMMING_SESSION,

@@ -2,10 +2,33 @@ import type { DeviceConnection, DeviceInfo } from "@ecu-explorer/device";
 import { describe, expect, it, vi } from "vitest";
 import {
 	FLASH_PREPARATION_SESSION,
+	FLASH_PREPARE_DOWNLOAD_SUBFUNCTION,
 	FLASH_PROGRAMMING_SESSION,
 	FLASH_SECURITY_REQUEST_SEED_SUBFUNCTION,
+	FLASH_SECURITY_SEND_KEY_SUBFUNCTION,
 	Mut3Protocol,
+	SID_SECURITY_ACCESS,
+	SID_VENDOR_SERVICE,
 } from "../src/index.js";
+import {
+	formatHexBytes,
+	OBSERVED_FLASH_SESSION_PAIRS,
+} from "./flash-session-trace-fixtures.js";
+
+const FLASH_PREPARE_DOWNLOAD_REQUEST = [
+	SID_VENDOR_SERVICE,
+	FLASH_PREPARE_DOWNLOAD_SUBFUNCTION,
+	0x01,
+	0x01,
+	0x00,
+	0x26,
+	0x03,
+	0x27,
+	0x00,
+	0x00,
+	0x00,
+	0x01,
+];
 
 class TranscriptDeviceFake implements DeviceConnection {
 	deviceInfo: DeviceInfo = {
@@ -48,8 +71,8 @@ class TranscriptDeviceFake implements DeviceConnection {
 	}
 }
 
-describe("Mut3Protocol dryRunWrite() — traced flash session", () => {
-	it("follows the observed 0x92 -> 0x85 -> 0x05 seed handshake and stops before sendKey", async () => {
+describe("Mut3Protocol dryRunWrite() â€” traced flash session", () => {
+	it("follows the observed 0x92 -> 0x85 -> 0x05 -> 0x06 -> 0x3B 0x9A handshake", async () => {
 		const protocol = new Mut3Protocol();
 		const fake = new TranscriptDeviceFake();
 		const rom = new Uint8Array(0x100000);
@@ -67,20 +90,34 @@ describe("Mut3Protocol dryRunWrite() — traced flash session", () => {
 				[0x50, FLASH_PROGRAMMING_SESSION],
 			)
 			.addStep(
-				[0x27, FLASH_SECURITY_REQUEST_SEED_SUBFUNCTION],
+				[SID_SECURITY_ACCESS, FLASH_SECURITY_REQUEST_SEED_SUBFUNCTION],
 				[0x67, FLASH_SECURITY_REQUEST_SEED_SUBFUNCTION, 0x8f, 0xb2, 0xce, 0xf1],
-			);
+			)
+			.addStep(
+				[
+					SID_SECURITY_ACCESS,
+					FLASH_SECURITY_SEND_KEY_SUBFUNCTION,
+					0x48,
+					0x14,
+					0x20,
+					0xcb,
+				],
+				[0x67, FLASH_SECURITY_SEND_KEY_SUBFUNCTION, 0x34],
+			)
+			.addStep(FLASH_PREPARE_DOWNLOAD_REQUEST, [0x7f, SID_VENDOR_SERVICE, 0x78])
+			.addStep(FLASH_PREPARE_DOWNLOAD_REQUEST, [
+				0x7b,
+				FLASH_PREPARE_DOWNLOAD_SUBFUNCTION,
+			]);
 
 		await expect(
 			protocol.dryRunWrite(fake, rom, onProgress, onEvent),
-		).rejects.toThrow(
-			"MUT-III flash-session key algorithm for subfunction 0x6 is not implemented yet; captured seed=8F B2 CE F1",
-		);
+		).resolves.toBeUndefined();
 
 		expect(onEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ type: "SECURITY_ACCESS_REQUESTED" }),
 		);
-		expect(onEvent).not.toHaveBeenCalledWith(
+		expect(onEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ type: "SECURITY_ACCESS_GRANTED" }),
 		);
 
@@ -102,6 +139,18 @@ describe("Mut3Protocol dryRunWrite() — traced flash session", () => {
 				message: "Requesting traced MUT-III flash seed",
 			}),
 		);
+		expect(onProgress).toHaveBeenCalledWith(
+			expect.objectContaining({
+				phase: "negotiating",
+				message: "Sending traced MUT-III flash key",
+			}),
+		);
+		expect(onProgress).toHaveBeenCalledWith(
+			expect.objectContaining({
+				phase: "negotiating",
+				message: "Issuing traced MUT-III pre-download vendor request",
+			}),
+		);
 
 		fake.verifyExhausted();
 	});
@@ -116,4 +165,53 @@ describe("Mut3Protocol dryRunWrite() — traced flash session", () => {
 
 		fake.verifyExhausted();
 	});
+
+	it("keeps all observed 0x05/0x06 seed-key pairs available as committed fixtures", () => {
+		expect(OBSERVED_FLASH_SESSION_PAIRS).toHaveLength(157);
+		for (const pair of OBSERVED_FLASH_SESSION_PAIRS) {
+			expect(pair.seed).toHaveLength(4);
+			expect(pair.key).toHaveLength(4);
+			expect(formatHexBytes(pair.seed)).not.toBe(formatHexBytes(pair.key));
+		}
+	});
+
+	for (const pair of OBSERVED_FLASH_SESSION_PAIRS) {
+		it(`sends the traced flash key from ${pair.capture}`, async () => {
+			const protocol = new Mut3Protocol();
+			const fake = new TranscriptDeviceFake();
+			const rom = new Uint8Array(0x100000);
+
+			fake
+				.addStep(
+					[0x10, FLASH_PREPARATION_SESSION],
+					[0x50, FLASH_PREPARATION_SESSION],
+				)
+				.addStep(
+					[0x10, FLASH_PROGRAMMING_SESSION],
+					[0x50, FLASH_PROGRAMMING_SESSION],
+				)
+				.addStep(
+					[SID_SECURITY_ACCESS, FLASH_SECURITY_REQUEST_SEED_SUBFUNCTION],
+					[0x67, FLASH_SECURITY_REQUEST_SEED_SUBFUNCTION, ...pair.seed],
+				)
+				.addStep(
+					[
+						SID_SECURITY_ACCESS,
+						FLASH_SECURITY_SEND_KEY_SUBFUNCTION,
+						...pair.key,
+					],
+					[0x67, FLASH_SECURITY_SEND_KEY_SUBFUNCTION, 0x34],
+				)
+				.addStep(FLASH_PREPARE_DOWNLOAD_REQUEST, [
+					0x7b,
+					FLASH_PREPARE_DOWNLOAD_SUBFUNCTION,
+				]);
+
+			await expect(
+				protocol.dryRunWrite(fake, rom, vi.fn()),
+			).resolves.toBeUndefined();
+
+			fake.verifyExhausted();
+		});
+	}
 });
