@@ -3,6 +3,7 @@ import type {
 	EcuProtocol,
 	LiveDataFrame,
 	LiveDataSession,
+	LiveDataStreamSelection,
 	PidDescriptor,
 } from "@ecu-explorer/device";
 
@@ -69,6 +70,14 @@ export const STANDARD_PIDS: PidDescriptor[] = [
 	},
 ];
 
+function getRequestedPids(
+	pidsOrSelection: number[] | LiveDataStreamSelection,
+): number[] {
+	return Array.isArray(pidsOrSelection)
+		? pidsOrSelection
+		: pidsOrSelection.pids;
+}
+
 export class Obd2Protocol implements EcuProtocol {
 	readonly name = "OBD-II (Generic)";
 
@@ -96,9 +105,10 @@ export class Obd2Protocol implements EcuProtocol {
 
 	streamLiveData(
 		connection: DeviceConnection,
-		pids: number[],
+		pidsOrSelection: number[] | LiveDataStreamSelection,
 		onFrame: (frame: LiveDataFrame) => void,
 	): LiveDataSession {
+		const pids = getRequestedPids(pidsOrSelection);
 		let running = true;
 		const startTime = Date.now();
 

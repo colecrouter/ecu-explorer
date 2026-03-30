@@ -1,7 +1,8 @@
-import type { PidDescriptor } from "@ecu-explorer/device";
+import type { LiveDataProfileDescriptor, PidDescriptor } from "@ecu-explorer/device";
 import type { Mut3LoggingProfile } from "./logging-profiles.js";
 
 const MUTIII_CAN_PID_BASE = 0x9000;
+const BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID = "mitsubishi-evox-can-mutiii";
 
 interface BuiltinMutiiiCanChannel {
 	channelKey: string;
@@ -530,10 +531,26 @@ const BUILTIN_EVOX_CAN_MUTIII_PROFILE: Mut3LoggingProfile = {
 	})),
 };
 
+const BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE: LiveDataProfileDescriptor = {
+	id: BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID,
+	name: "Evo X CAN MUTIII",
+	description:
+		"CANx-y banked EvoScan profile. Execution planning is scaffolded, but live polling still depends on the unresolved bank lookup table.",
+	transportFamily: "can-iso15765",
+	requestFamily: "mutiii-can",
+	decodeFamily: "direct-scalar",
+	status: "experimental",
+	statusDetail:
+		"Selectable for executor bring-up, but runtime still fails explicitly until the EvoScan bank lookup table is recovered.",
+	pids: MUTIII_CAN_PID_DESCRIPTORS,
+};
+
 export type { BuiltinMutiiiCanChannel };
 export {
 	BUILTIN_EVOX_CAN_MUTIII_CHANNELS,
+	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
 	BUILTIN_EVOX_CAN_MUTIII_PROFILE,
+	BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID,
 	MUTIII_CAN_PID_BASE,
 	MUTIII_CAN_PID_DESCRIPTORS,
 	decodeMutiiiCanPid,

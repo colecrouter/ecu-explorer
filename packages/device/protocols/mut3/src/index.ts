@@ -4,7 +4,9 @@ import type {
 	EcuProtocol,
 	LiveDataFrame,
 	LiveDataHealth,
+	LiveDataProfileDescriptor,
 	LiveDataSession,
+	LiveDataStreamSelection,
 	PidDescriptor,
 	RomProgress,
 } from "@ecu-explorer/device";
@@ -12,12 +14,16 @@ import {
 	decodeMode23Pid,
 	MODE23_PID_BASE,
 	MODE23_PID_DESCRIPTORS,
+	MODE23_RESEARCH_LIVE_DATA_PROFILE,
+	MODE23_RESEARCH_PROFILE_ID,
 } from "./mode23-parameters.js";
 import {
 	buildMutiiiCanExecutionPlan,
 	describeMutiiiCanExecutionGap,
 } from "./mutiii-can-executor.js";
 import {
+	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
+	BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID,
 	decodeMutiiiCanPid,
 	MUTIII_CAN_PID_DESCRIPTORS,
 } from "./mutiii-can-profile.js";
@@ -50,7 +56,9 @@ export {
 } from "./mutiii-can-executor.js";
 export {
 	BUILTIN_EVOX_CAN_MUTIII_CHANNELS,
+	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
 	BUILTIN_EVOX_CAN_MUTIII_PROFILE,
+	BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID,
 	MUTIII_CAN_PID_BASE,
 } from "./mutiii-can-profile.js";
 
@@ -153,6 +161,7 @@ const RAX_POLL_INTERVAL_MS = 20;
 // OBD-II Mode 01 uses PIDs 0x00–0xFF. We use 0x8000–0x8FFF as a proprietary
 // range: pid = RAX_PID_BASE + (blockIndex * 100) + paramIndex
 const RAX_PID_BASE = 0x8000;
+const RAX_KLINE_PROFILE_ID = "mitsubishi-evox-rax-kline";
 
 // ---------------------------------------------------------------------------
 // PID ↔ RAX parameter mapping helpers
@@ -194,6 +203,18 @@ function buildRaxPidDescriptors(): PidDescriptor[] {
 
 /** Cached PID descriptors (built once at module load, reused across calls). */
 const RAX_PID_DESCRIPTORS: PidDescriptor[] = buildRaxPidDescriptors();
+const RAX_KLINE_LIVE_DATA_PROFILE: LiveDataProfileDescriptor = {
+	id: RAX_KLINE_PROFILE_ID,
+	name: "RAX Memory Blocks",
+	description:
+		"K-line-style E0/E5/E1 memory polling with RAX block decoding for supported Mitsubishi MUT-III sessions.",
+	transportFamily: "kline",
+	requestFamily: "e0-e5-e1-memory",
+	decodeFamily: "rax-bitfield-calc",
+	status: "ready",
+	statusDetail: "Streaming runtime is implemented for this profile family.",
+	pids: RAX_PID_DESCRIPTORS,
+};
 
 /**
  * Decode a synthetic RAX PID back to its block index and parameter index.
@@ -213,6 +234,22 @@ function decodeRaxPid(
 	if (block === undefined) return null;
 	if (paramIdx >= block.parameters.length) return null;
 	return { blockIdx, paramIdx };
+}
+
+function getRequestedPids(
+	pidsOrSelection: number[] | LiveDataStreamSelection,
+): number[] {
+	return Array.isArray(pidsOrSelection)
+		? pidsOrSelection
+		: pidsOrSelection.pids;
+}
+
+function getRequestedProfileId(
+	pidsOrSelection: number[] | LiveDataStreamSelection,
+): string | undefined {
+	return Array.isArray(pidsOrSelection)
+		? undefined
+		: pidsOrSelection.profileId;
 }
 
 /**
@@ -396,6 +433,21 @@ export class Mut3Protocol implements EcuProtocol {
 		return [];
 	}
 
+	async getLiveDataProfiles(
+		connection: DeviceConnection,
+	): Promise<LiveDataProfileDescriptor[]> {
+		if (connection.deviceInfo.transportName === "openport2") {
+			return [
+				BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
+				MODE23_RESEARCH_LIVE_DATA_PROFILE,
+			];
+		}
+		if (connection.deviceInfo.transportName === "kline") {
+			return [RAX_KLINE_LIVE_DATA_PROFILE];
+		}
+		return [];
+	}
+
 	/**
 	 * Stream live data for the requested RAX parameter PIDs.
 	 *
@@ -419,11 +471,27 @@ export class Mut3Protocol implements EcuProtocol {
 	 */
 	streamLiveData(
 		connection: DeviceConnection,
-		pids: number[],
+		pidsOrSelection: number[] | LiveDataStreamSelection,
 		onFrame: (frame: LiveDataFrame) => void,
 		onHealth?: (health: LiveDataHealth) => void,
 	): LiveDataSession {
+		const pids = getRequestedPids(pidsOrSelection);
+		const profileId = getRequestedProfileId(pidsOrSelection);
+
 		if (connection.deviceInfo.transportName === "openport2") {
+			if (profileId === MODE23_RESEARCH_PROFILE_ID) {
+				throw new Error(
+					`${MODE23_RESEARCH_LIVE_DATA_PROFILE.name} is intentionally unavailable: ${MODE23_RESEARCH_LIVE_DATA_PROFILE.statusDetail}`,
+				);
+			}
+			if (
+				profileId !== undefined &&
+				profileId !== BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID
+			) {
+				throw new Error(
+					`Unsupported MUT-III CAN live data profile "${profileId}" for transport ${connection.deviceInfo.transportName}.`,
+				);
+			}
 			const requestedCanChannels = pids
 				.map((pid) => decodeMutiiiCanPid(pid))
 				.filter((channel) => channel != null);
@@ -434,6 +502,16 @@ export class Mut3Protocol implements EcuProtocol {
 					: "MUT-III CAN live logging requires a valid CAN MUTIII PID selection.",
 			);
 			// return this.streamMode23LiveData(connection, pids, onFrame, onHealth);
+		}
+
+		if (
+			profileId !== undefined &&
+			connection.deviceInfo.transportName === "kline" &&
+			profileId !== RAX_KLINE_PROFILE_ID
+		) {
+			throw new Error(
+				`Unsupported MUT-III K-line live data profile "${profileId}" for transport ${connection.deviceInfo.transportName}.`,
+			);
 		}
 
 		let running = true;
@@ -1402,8 +1480,12 @@ void ECU_CAN_ID;
 export {
 	MODE23_PID_BASE,
 	MODE23_PID_DESCRIPTORS,
+	MODE23_RESEARCH_LIVE_DATA_PROFILE,
+	MODE23_RESEARCH_PROFILE_ID,
 	RAX_PID_BASE,
 	RAX_PID_DESCRIPTORS,
+	RAX_KLINE_LIVE_DATA_PROFILE,
+	RAX_KLINE_PROFILE_ID,
 	MUTIII_CAN_PID_DESCRIPTORS,
 	buildRaxPidDescriptors,
 	decodeMode23Pid,

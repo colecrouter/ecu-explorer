@@ -13,6 +13,7 @@ import {
 	createLiveDataConnection,
 	createLiveDataFrame,
 	createLiveDataPids,
+	createLiveDataProfiles,
 	createLiveDataProtocol,
 	createLiveDataSession,
 } from "./mocks/live-data-fixtures.js";
@@ -191,7 +192,7 @@ describe("LiveDataPanelManager", () => {
 
 			expect(mockProtocol.streamLiveData).toHaveBeenCalledWith(
 				mockConnection,
-				[0x0c, 0x0d],
+				{ pids: [0x0c, 0x0d] },
 				expect.any(Function),
 				expect.any(Function),
 			);
@@ -201,6 +202,62 @@ describe("LiveDataPanelManager", () => {
 				(m: MockWebviewMessage) => m.type === "streamingStarted",
 			);
 			expect(streamingStartedMsg).toBeDefined();
+		});
+
+		it("should send supportedProfiles when protocol exposes profile metadata", async () => {
+			const profiles = createLiveDataProfiles();
+			await showReadyPanel({
+				protocol: createLiveDataProtocol({
+					profiles,
+				}),
+			});
+
+			const messages = mockPanel.webview._getSentMessages();
+			const supportedProfilesMsg = messages.find(
+				(m: MockWebviewMessage) => m.type === "supportedProfiles",
+			);
+			expect(supportedProfilesMsg).toBeDefined();
+			expect(
+				(
+					supportedProfilesMsg as MockWebviewMessage & {
+						profiles: typeof profiles;
+						selectedProfileId: string;
+					}
+				).profiles,
+			).toEqual(profiles);
+			expect(
+				(
+					supportedProfilesMsg as MockWebviewMessage & {
+						profiles: typeof profiles;
+						selectedProfileId: string;
+					}
+				).selectedProfileId,
+			).toBe("test-ready");
+		});
+
+		it("passes through selected profile id when streaming starts", async () => {
+			const profiles = createLiveDataProfiles();
+			const { connection: mockConnection, protocol: mockProtocol } =
+				await showReadyPanel({
+					connection: createLiveDataConnection(),
+					protocol: createLiveDataProtocol({
+						profiles,
+					}),
+				});
+
+			mockPanel.webview._simulateMessage({
+				type: "startStreaming",
+				pids: [0x0c],
+				profileId: "test-ready",
+			});
+			await waitForPanelWork();
+
+			expect(mockProtocol.streamLiveData).toHaveBeenCalledWith(
+				mockConnection,
+				{ pids: [0x0c], profileId: "test-ready" },
+				expect.any(Function),
+				expect.any(Function),
+			);
 		});
 
 		it("should stop streaming when stopStreaming message is received", async () => {

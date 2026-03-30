@@ -1,4 +1,4 @@
-import type { PidDescriptor } from "@ecu-explorer/device";
+import type { LiveDataProfileDescriptor, PidDescriptor } from "@ecu-explorer/device";
 
 export interface Mode23ParameterDescriptor extends PidDescriptor {
 	address: number;
@@ -7,6 +7,7 @@ export interface Mode23ParameterDescriptor extends PidDescriptor {
 }
 
 const MODE23_PID_BASE = 0x9000;
+const MODE23_RESEARCH_PROFILE_ID = "mitsubishi-evox-mode23-usa-research";
 
 const RAW_MODE23_PARAMETERS: Array<{
 	address: number;
@@ -248,4 +249,24 @@ function decodeMode23Pid(pid: number): Mode23ParameterDescriptor | null {
 	);
 }
 
-export { MODE23_PID_BASE, MODE23_PID_DESCRIPTORS, decodeMode23Pid };
+const MODE23_RESEARCH_LIVE_DATA_PROFILE: LiveDataProfileDescriptor = {
+	id: MODE23_RESEARCH_PROFILE_ID,
+	name: "Evo X Mode23 USA (Research)",
+	description:
+		"Exact-match 2011 USDM Evo X Mode 23 map retained for research and comparison against drifting XML variants.",
+	transportFamily: "can-iso15765",
+	requestFamily: "mode23",
+	decodeFamily: "direct-scalar",
+	status: "unavailable",
+	statusDetail:
+		"Intentionally not exposed as a production runtime because Mode 23 request maps drift across ROM, market, and model-year variants.",
+	pids: MODE23_PID_DESCRIPTORS,
+};
+
+export {
+	MODE23_PID_BASE,
+	MODE23_PID_DESCRIPTORS,
+	MODE23_RESEARCH_LIVE_DATA_PROFILE,
+	MODE23_RESEARCH_PROFILE_ID,
+	decodeMode23Pid,
+};

@@ -4,7 +4,9 @@ import type {
 	EcuEvent,
 	LiveDataFrame,
 	LiveDataHealth,
+	LiveDataProfileDescriptor,
 	LiveDataSession,
+	LiveDataStreamSelection,
 	PidDescriptor,
 	RomProgress,
 	WriteOptions,
@@ -152,13 +154,22 @@ export interface EcuProtocol {
 	getSupportedPids?(connection: DeviceConnection): Promise<PidDescriptor[]>;
 
 	/**
+	 * Return the list of live data profiles supported by this ECU/protocol.
+	 * Profiles let UIs choose among multiple logging request/decode families
+	 * without flattening them into one synthetic PID list.
+	 */
+	getLiveDataProfiles?(
+		connection: DeviceConnection,
+	): Promise<LiveDataProfileDescriptor[]>;
+
+	/**
 	 * Begin streaming live data for the specified PIDs.
 	 * Returns a LiveDataSession that can be used to stop streaming
 	 * and optionally record the session to a file.
 	 */
 	streamLiveData?(
 		connection: DeviceConnection,
-		pids: number[],
+		pidsOrSelection: number[] | LiveDataStreamSelection,
 		onFrame: (frame: LiveDataFrame) => void,
 		onHealth?: (health: LiveDataHealth) => void,
 	): LiveDataSession;

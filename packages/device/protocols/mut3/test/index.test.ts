@@ -5,6 +5,7 @@ import type {
 } from "@ecu-explorer/device";
 import { describe, expect, it, vi } from "vitest";
 import {
+	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
 	buildMutiiiCanExecutionPlan,
 	buildRaxPidDescriptors,
 	CMD_READ_BYTE,
@@ -12,8 +13,12 @@ import {
 	CMD_SET_ADDRESS,
 	decodeMutiiiCanPid,
 	decodeRaxPid,
+	MODE23_RESEARCH_LIVE_DATA_PROFILE,
+	MODE23_RESEARCH_PROFILE_ID,
 	MUTIII_CAN_PID_DESCRIPTORS,
 	Mut3Protocol,
+	RAX_KLINE_LIVE_DATA_PROFILE,
+	RAX_KLINE_PROFILE_ID,
 	RAX_PID_BASE,
 	RAX_PID_DESCRIPTORS,
 	readMode23Value,
@@ -792,6 +797,27 @@ describe("Mut3Protocol.getSupportedPids()", () => {
 	});
 });
 
+describe("Mut3Protocol.getLiveDataProfiles()", () => {
+	it("returns CAN and research Mode23 profiles for openport2", async () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMockConnection("openport2");
+		const profiles = await protocol.getLiveDataProfiles?.(connection);
+
+		expect(profiles).toEqual([
+			BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
+			MODE23_RESEARCH_LIVE_DATA_PROFILE,
+		]);
+	});
+
+	it("returns the ready K-line RAX profile for kline", async () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMockConnection("kline");
+		const profiles = await protocol.getLiveDataProfiles?.(connection);
+
+		expect(profiles).toEqual([RAX_KLINE_LIVE_DATA_PROFILE]);
+	});
+});
+
 // ── streamLiveData ────────────────────────────────────────────────────────────
 
 describe("Mut3Protocol.streamLiveData()", () => {
@@ -881,6 +907,33 @@ describe("Mut3Protocol.streamLiveData()", () => {
 		expect(() =>
 			protocol.streamLiveData?.(connection, [openportPid], vi.fn()),
 		).toThrow(/bank lookup table/i);
+	});
+
+	it("rejects the research Mode23 profile explicitly on openport2", () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMockConnection("openport2");
+
+		expect(() =>
+			protocol.streamLiveData?.(
+				connection,
+				{ pids: [0x9000], profileId: MODE23_RESEARCH_PROFILE_ID },
+				vi.fn(),
+			),
+		).toThrow(/intentionally unavailable/i);
+	});
+
+	it("accepts an explicit K-line profile selection", () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeRaxStreamMock(new Map());
+
+		const session = protocol.streamLiveData?.(
+			connection,
+			{ pids: [], profileId: RAX_KLINE_PROFILE_ID },
+			vi.fn(),
+		);
+
+		expect(typeof session.stop).toBe("function");
+		session.stop();
 	});
 
 	it("keeps low-level Mode 23 helpers in-tree even though CAN execution is disabled", async () => {

@@ -3,6 +3,7 @@ import type {
 	EcuProtocol,
 	LiveDataFrame,
 	LiveDataHealth,
+	LiveDataProfileDescriptor,
 	LiveDataSession,
 } from "@ecu-explorer/device";
 import * as vscode from "vscode";
@@ -52,7 +53,7 @@ export class LiveDataPanelManager {
 				case "startStreaming":
 					// The `record` field is deprecated and ignored.
 					// Logging is now controlled exclusively via status bar commands (LoggingManager).
-					await this.startStreaming(message.pids);
+					await this.startStreaming(message.pids, message.profileId);
 					break;
 				case "stopStreaming":
 					this.stopStreaming();
@@ -73,6 +74,19 @@ export class LiveDataPanelManager {
 			this.connection = connection;
 			this.protocol = protocol;
 
+			if (protocol.getLiveDataProfiles) {
+				const profiles = await protocol.getLiveDataProfiles(connection);
+				if (profiles.length > 0) {
+					const defaultProfile = this.pickDefaultProfile(profiles);
+					this.panel?.webview.postMessage({
+						type: "supportedProfiles",
+						profiles,
+						selectedProfileId: defaultProfile?.id,
+					});
+					return;
+				}
+			}
+
 			if (protocol.getSupportedPids) {
 				const pids = await protocol.getSupportedPids(connection);
 				this.panel?.webview.postMessage({
@@ -86,14 +100,27 @@ export class LiveDataPanelManager {
 		}
 	}
 
-	private async startStreaming(pids: number[]) {
+	private pickDefaultProfile(
+		profiles: readonly LiveDataProfileDescriptor[],
+	): LiveDataProfileDescriptor | undefined {
+		return (
+			profiles.find((profile) => profile.status === "ready") ??
+			profiles.find((profile) => profile.status === "experimental") ??
+			profiles[0]
+		);
+	}
+
+	private async startStreaming(pids: number[], profileId?: string) {
 		if (!this.connection || !this.protocol || !this.protocol.streamLiveData) {
 			return;
 		}
 
+		const selection =
+			profileId === undefined ? { pids } : { pids, profileId };
+
 		this.session = this.protocol.streamLiveData(
 			this.connection,
-			pids,
+			selection,
 			(frame: LiveDataFrame) => {
 				this.panel?.webview.postMessage({
 					type: "data",
