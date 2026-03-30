@@ -13,8 +13,46 @@ import {
 	MODE23_PID_BASE,
 	MODE23_PID_DESCRIPTORS,
 } from "./mode23-parameters.js";
+import {
+	buildMutiiiCanExecutionPlan,
+	describeMutiiiCanExecutionGap,
+} from "./mutiii-can-executor.js";
+import {
+	decodeMutiiiCanPid,
+	MUTIII_CAN_PID_DESCRIPTORS,
+} from "./mutiii-can-profile.js";
 import { extractAllRaxParameters, RAX_BLOCKS } from "./rax-decoder.js";
 import { computeFlashSecurityKey, computeSecurityKey } from "./security.js";
+
+export type {
+	Mut3LoggingChannelDefinition,
+	Mut3LoggingChannelProvenance,
+	Mut3LoggingDecodeModel,
+	Mut3LoggingProfile,
+	Mut3LoggingProfileSource,
+	Mut3LoggingRequest,
+	Mut3LoggingRequestKind,
+	MutiiiCanBankChannel,
+	MutiiiCanBankGroup,
+} from "./logging-profiles.js";
+export {
+	groupMutiiiCanChannels,
+	normalizeChannelKey,
+	parseEvoScanLoggingProfilesXml,
+	parseEvoScanLoggingProfileXml,
+	parseRequestToken,
+	summarizeLoggingProfile,
+} from "./logging-profiles.js";
+export {
+	buildMutiiiCanExecutionPlan,
+	describeMutiiiCanExecutionGap,
+	formatMutiiiCanExecutionPlan,
+} from "./mutiii-can-executor.js";
+export {
+	BUILTIN_EVOX_CAN_MUTIII_CHANNELS,
+	BUILTIN_EVOX_CAN_MUTIII_PROFILE,
+	MUTIII_CAN_PID_BASE,
+} from "./mutiii-can-profile.js";
 
 // Ref: https://github.com/harshadura/libmut/blob/master/libmut/mut.py
 // MUT-III ROM readback sequence — start_session(), security_access(), read_memory()
@@ -350,14 +388,7 @@ export class Mut3Protocol implements EcuProtocol {
 		connection: DeviceConnection,
 	): Promise<PidDescriptor[]> {
 		if (connection.deviceInfo.transportName === "openport2") {
-			// NOTE:
-			// The current hardcoded Mode 23 map was useful for transport bring-up,
-			// but it is not stable enough to ship as the production MUT-III CAN
-			// logging abstraction. Keep the low-level Mode 23 helpers in-tree for
-			// future research, but do not expose this as a live PID catalog until
-			// the CAN/RAX profile path is implemented.
-			// return MODE23_PID_DESCRIPTORS;
-			return [];
+			return MUTIII_CAN_PID_DESCRIPTORS;
 		}
 		if (connection.deviceInfo.transportName === "kline") {
 			return RAX_PID_DESCRIPTORS;
@@ -393,8 +424,14 @@ export class Mut3Protocol implements EcuProtocol {
 		onHealth?: (health: LiveDataHealth) => void,
 	): LiveDataSession {
 		if (connection.deviceInfo.transportName === "openport2") {
+			const requestedCanChannels = pids
+				.map((pid) => decodeMutiiiCanPid(pid))
+				.filter((channel) => channel != null);
+			const executionPlan = buildMutiiiCanExecutionPlan(pids);
 			throw new Error(
-				"MUT-III CAN live logging is temporarily disabled while the production CAN/RAX path is implemented. The current hardcoded Mode 23 map remains in code for research only.",
+				requestedCanChannels.length > 0
+					? describeMutiiiCanExecutionGap(executionPlan)
+					: "MUT-III CAN live logging requires a valid CAN MUTIII PID selection.",
 			);
 			// return this.streamMode23LiveData(connection, pids, onFrame, onHealth);
 		}
@@ -1367,8 +1404,10 @@ export {
 	MODE23_PID_DESCRIPTORS,
 	RAX_PID_BASE,
 	RAX_PID_DESCRIPTORS,
+	MUTIII_CAN_PID_DESCRIPTORS,
 	buildRaxPidDescriptors,
 	decodeMode23Pid,
+	decodeMutiiiCanPid,
 	decodeRaxPid,
 	readMode23Value,
 	readRaxBlock,

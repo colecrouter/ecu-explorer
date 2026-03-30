@@ -5,12 +5,14 @@ import type {
 } from "@ecu-explorer/device";
 import { describe, expect, it, vi } from "vitest";
 import {
+	buildMutiiiCanExecutionPlan,
 	buildRaxPidDescriptors,
 	CMD_READ_BYTE,
 	CMD_READ_WORD_INC,
 	CMD_SET_ADDRESS,
+	decodeMutiiiCanPid,
 	decodeRaxPid,
-	MODE23_PID_DESCRIPTORS,
+	MUTIII_CAN_PID_DESCRIPTORS,
 	Mut3Protocol,
 	RAX_PID_BASE,
 	RAX_PID_DESCRIPTORS,
@@ -66,18 +68,6 @@ function makeMode23Mock(
 		const payload = values.get(address) ?? new Array(size).fill(0);
 		return new Uint8Array([0x63, ...payload.slice(0, size)]);
 	});
-}
-
-function findMode23PidByAddress(address: number): number {
-	const descriptor = MODE23_PID_DESCRIPTORS.find(
-		(pid) => pid.address === address,
-	);
-	if (descriptor === undefined) {
-		throw new Error(
-			`Expected Mode 23 descriptor for address 0x${address.toString(16)}`,
-		);
-	}
-	return descriptor.pid;
 }
 
 /**
@@ -275,6 +265,42 @@ describe("Mut3Protocol", () => {
 			expect(rom[0]).toBe(0x00); // block 0, byte 0
 			expect(rom[0x80]).toBe(0x01); // block 1, byte 0
 			expect(rom[0x100]).toBe(0x02); // block 2, byte 0
+		});
+	});
+
+	describe("mutiii-can scaffold", () => {
+		it("builds a grouped execution plan by CAN bank", () => {
+			const rpm = MUTIII_CAN_PID_DESCRIPTORS.find((pid) => pid.name === "RPM");
+			const knock = MUTIII_CAN_PID_DESCRIPTORS.find(
+				(pid) => pid.name === "KnockSum",
+			);
+			const battery = MUTIII_CAN_PID_DESCRIPTORS.find(
+				(pid) => pid.name === "Battery",
+			);
+
+			expect(rpm).toBeDefined();
+			expect(knock).toBeDefined();
+			expect(battery).toBeDefined();
+			if (rpm == null || knock == null || battery == null) {
+				throw new Error("Expected built-in MUTIII CAN descriptors to exist");
+			}
+
+			const plan = buildMutiiiCanExecutionPlan([
+				rpm.pid,
+				knock.pid,
+				battery.pid,
+			]);
+
+			expect(plan.missingPids).toEqual([]);
+			expect(plan.groups).toHaveLength(3);
+			expect(plan.groups.map((group) => group.bank)).toEqual([0, 2, 11]);
+			expect(plan.groups[2]?.slots).toEqual([1]);
+		});
+
+		it("records missing CAN PIDs in the scaffold plan", () => {
+			const plan = buildMutiiiCanExecutionPlan([0x9fff]);
+			expect(plan.groups).toEqual([]);
+			expect(plan.missingPids).toEqual([0x9fff]);
 		});
 	});
 
@@ -728,11 +754,11 @@ describe("Mut3Protocol.getSupportedPids()", () => {
 		expect(sendFrame).not.toHaveBeenCalled();
 	});
 
-	it("returns no active CAN PIDs for openport2 while Mode 23 is disabled", async () => {
+	it("returns the built-in CAN MUTIII descriptors for openport2", async () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
 		const pids = await protocol.getSupportedPids?.(connection);
-		expect(pids).toEqual([]);
+		expect(pids).toEqual(MUTIII_CAN_PID_DESCRIPTORS);
 	});
 
 	it("returns RAX descriptors for kline", async () => {
@@ -740,20 +766,20 @@ describe("Mut3Protocol.getSupportedPids()", () => {
 		const connection = makeMockConnection("kline");
 		const pids = await protocol.getSupportedPids?.(connection);
 		expect(pids).toEqual(RAX_PID_DESCRIPTORS);
-		expect(pids.find((pid) => pid.name === "Vehicle Speed")?.unit).toBe(
-			"km/h",
-		);
+		expect(pids.find((pid) => pid.name === "Vehicle Speed")?.unit).toBe("km/h");
 		expect(pids.find((pid) => pid.name === "Battery Voltage")?.unit).toBe("V");
 		expect(pids.find((pid) => pid.name === "Coolant Temp (ECT)")?.unit).toBe(
 			"°C",
 		);
 	});
 
-	it("returns no openport2 MUT-III PIDs while CAN logging is disabled", async () => {
+	it("returns normalized units for openport2 CAN descriptors", async () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
 		const pids = await protocol.getSupportedPids?.(connection);
-		expect(pids).toHaveLength(0);
+		expect(pids).toHaveLength(MUTIII_CAN_PID_DESCRIPTORS.length);
+		expect(pids.find((pid) => pid.name === "Battery")?.unit).toBe("V");
+		expect(pids.find((pid) => pid.name === "CoolantTemp")?.unit).toBe("°C");
 	});
 
 	it("all kline PID numbers are in the RAX synthetic range (≥ 0x8000)", async () => {
@@ -848,19 +874,16 @@ describe("Mut3Protocol.streamLiveData()", () => {
 		expect(onFrame).not.toHaveBeenCalled();
 	});
 
-	it("throws for openport2 while the hardcoded Mode 23 path is disabled", () => {
+	it("throws for openport2 while CAN runtime mapping remains unresolved", () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
+		const openportPid = MUTIII_CAN_PID_DESCRIPTORS[0]?.pid ?? 0x9000;
 		expect(() =>
-			protocol.streamLiveData?.(
-				connection,
-				[findMode23PidByAddress(0x878c)],
-				vi.fn(),
-			),
-		).toThrow(/temporarily disabled/i);
+			protocol.streamLiveData?.(connection, [openportPid], vi.fn()),
+		).toThrow(/bank lookup table/i);
 	});
 
-	it("keeps low-level Mode 23 helpers in-tree even though live CAN logging is disabled", async () => {
+	it("keeps low-level Mode 23 helpers in-tree even though CAN execution is disabled", async () => {
 		const connection = makeMode23Mock(
 			new Map<number, number[]>([
 				[0x4575, [0x80]],
@@ -1052,12 +1075,25 @@ describe("Mut3Protocol.streamLiveData()", () => {
 		expect(frames.length).toBe(countAfterStop);
 	});
 
-	it("throws for openport2 regardless of requested PID list while CAN logging is disabled", () => {
+	it("rejects invalid openport2 PID selections that do not map to CAN MUTIII channels", () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
 		expect(() =>
 			protocol.streamLiveData?.(connection, [0x0c, 0x0d], vi.fn()),
-		).toThrow(/temporarily disabled/i);
+		).toThrow(/valid CAN MUTIII PID selection/i);
+	});
+
+	it("decodes synthetic CAN MUTIII PIDs back to channel definitions", () => {
+		const firstPid = MUTIII_CAN_PID_DESCRIPTORS[0]?.pid;
+		expect(firstPid).toBeDefined();
+		expect(decodeMutiiiCanPid(firstPid ?? 0)).toMatchObject({
+			channelKey: "BATTERY",
+			request: {
+				bank: 0,
+				slot: 0,
+				raw: "CAN0-0",
+			},
+		});
 	});
 
 	it("emits decoded RPM value proportional to raw bytes (RAX_C block)", async () => {

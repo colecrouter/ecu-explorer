@@ -49,6 +49,7 @@
 		"tools:read-log": "npm run read-log -w @ecu-explorer/tools --",
 		"tools:normalize-log": "npm run normalize-log -w @ecu-explorer/tools --",
 		"tools:inspect-device": "npm run inspect-device -w @ecu-explorer/tools --",
+		"tools:inspect-mut3-profile": "npm run inspect-mut3-profile -w @ecu-explorer/tools --",
 		"lint": "biome check --formatter-enabled false",
 		"format": "biome format --write && biome check --write --linter-enabled false && prettier --write . -l",
 		"format:check": "biome format && biome check --linter-enabled false && prettier . -l",

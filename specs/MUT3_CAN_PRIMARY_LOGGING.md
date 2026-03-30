@@ -8,6 +8,20 @@ The current raw Mode 23 implementation is valuable because it proved the OpenPor
 
 The reason is profile drift. EvoScan XML request IDs vary across year, market, and application variants, even within closely related Evo X files. A single hardcoded Mode 23 address map is therefore not a stable production contract.
 
+The XML set also shows that some files are mixed-backend profiles, not clean one-backend bundles. A mostly-Mode23 profile may still embed `CANx-y` channels for transmission data and `WDB` channels for external wideband input. The importer therefore has to model backend kind per channel, not just per file.
+
+Implementation update:
+
+- the repo now contains a normalized EvoScan parser and a built-in `Mitsubishi EvoX CAN MUTIII` channel catalog
+- the repo now also includes a CLI inspection tool for real EvoScan XML files:
+  - `npm run tools:inspect-mut3-profile -- --xml "<path-to-xml>"`
+- `Mut3Protocol.getSupportedPids()` now exposes that built-in CAN profile for `openport2`
+- decompilation of `EvoScanV3.1.exe` now shows that `CANx-y` is parsed as a real runtime concept:
+  - `x` is a bank index
+  - `y` is a slot within that bank
+  - the logger caches one 12-byte response per bank and reads channel values from byte positions derived from that slot
+- live execution is still blocked only by the unresolved bank lookup table values, not by the higher-level executor shape
+
 ## Problem
 
 Today, `Mut3Protocol` chooses the CAN live-data path by transport:
@@ -73,17 +87,43 @@ Each mapping entry should include:
 - backend kind
 - request identifier or address
 - response size / extraction metadata
+- decode formulas (`Eval`, `MetricEval`)
+- unit metadata (`Unit`, `MetricUnit`)
+- optional secondary request token (`RequestID2`)
 - source provenance (`trace-confirmed`, `xml-derived`, `ambiguous`, `manual`)
 
 ### 3. Logging backend abstraction
 
 Profiles should select a backend explicitly. At minimum:
 
-- `mode23`
 - `mutiii-can`
+- `mode23`
 - `rax-kline`
+- `calc`
 
 This avoids forcing all CAN logging through the current Mode 23 implementation when EvoScan may actually be using a different request family.
+
+### 3a. EvoScan importer model
+
+The importer should preserve the request family exactly as encoded in the XML:
+
+- `CANx-y` -> `mutiii-can`
+- `2380....` style request tokens -> `mode23`
+- `CALC` -> `calc`
+- `WDB` -> external wideband source
+- other request token formats -> opaque/manual review
+
+The current repo-side model lives in:
+
+- [`packages/device/protocols/mut3/src/logging-profiles.ts`](../packages/device/protocols/mut3/src/logging-profiles.ts)
+
+That model intentionally separates:
+
+- profile metadata
+- normalized channel keys
+- backend-aware request definitions
+- decode/unit metadata
+- provenance
 
 ### 4. Profile selection
 
@@ -113,11 +153,50 @@ Fallback behavior:
 - Parse EvoScan MUT-III XML files into profile-bound request maps.
 - Normalize channels into the canonical catalog.
 - Preserve per-profile request drift instead of flattening it away.
+- This is now partially implemented in:
+  - [`packages/device/protocols/mut3/src/logging-profiles.ts`](../packages/device/protocols/mut3/src/logging-profiles.ts)
+  - [`packages/device/protocols/mut3/src/mutiii-can-profile.ts`](../packages/device/protocols/mut3/src/mutiii-can-profile.ts)
 
 ### Phase 3: Add backend-aware execution
 
 - Refactor `Mut3Protocol.streamLiveData()` so CAN logging dispatches by selected logging backend, not by transport alone.
-- Support `mode23` and later `mutiii-can` as separate executors.
+- Support `mutiii-can` and later other executors as separate backends.
+
+Recovered executor model from EvoScan decompilation:
+
+- `CANx-y` is not passive symbolic naming and not one-request-per-channel.
+- EvoScan parses `CANx-y` into:
+  - a resolved bank key string
+  - a slot index
+- EvoScan sends one CAN/J2534 request per bank, waits for a matching response header, and caches the returned 12-byte payload by bank.
+- Channels in the same bank then read their data from the cached response using `slot`-based indexing, most commonly `reply[7 + slot]` for single-byte values and nearby multi-byte extraction patterns for larger fields.
+- This means the production backend should be built around grouped bank polling, not around a flat PID table.
+
+Remaining blocker:
+
+- the built-in `CAN MUTIII` profile is modeled correctly enough to expose channels and synthetic PIDs
+- but the bank lookup arrays inside EvoScan are still obfuscated, so we do not yet know the concrete bank request strings for every `CANx-y` family
+- until that bank table is recovered from decompilation, interception, or runtime evidence, the runtime should fail explicitly rather than pretending the XML is executable by itself
+
+Proposed executor shape:
+
+1. Group selected channels by `mutiii-can` bank.
+2. Resolve each bank to its concrete request string from imported profile data.
+3. Send one 12-byte CAN request per bank.
+4. Wait for the expected response header for that bank.
+5. Cache the 12-byte bank response for this polling cycle.
+6. Decode each channel in the bank from its cached response using the imported slot and response-width metadata.
+
+Data model requirement:
+
+- `mutiii-can` request definitions should store at least:
+  - `bankFamily`
+  - `bankIndex`
+  - `slot`
+  - `responseBytes`
+  - `endianness` or extraction mode when needed
+  - optional concrete `requestHex` once recovered
+  - optional `expectedResponseHeader` once recovered
 
 ### Phase 4: Expose selection in CLI and UI
 
@@ -127,7 +206,6 @@ Fallback behavior:
 ## Acceptance Criteria
 
 - CAN logging is the default production MUT-III live-data path.
-- Raw Mode 23 remains available as an explicit fallback/debug path.
 - At least one EvoScan-derived CAN profile is imported without flattening profile-specific request IDs into a fake universal map.
 - The logging runtime can distinguish between `mode23` and `mutiii-can` backends.
 - UI/CLI can identify which profile/backend is active.

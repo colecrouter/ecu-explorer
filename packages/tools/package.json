@@ -16,6 +16,7 @@
 		"read-log": "node ./read-log.js",
 		"normalize-log": "node ./normalize-log.js",
 		"inspect-device": "node ./inspect-device.js",
+		"inspect-mut3-profile": "node ./inspect-mut3-profile.js",
 		"check": "tsc --noEmit"
 	},
 	"dependencies": {

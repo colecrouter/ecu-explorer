@@ -303,6 +303,19 @@ Over 100 SST-specific parameters provide deep transmission and drivetrain teleme
 - The current built-in working set intentionally stays minimal and exact-match only; it includes stable channels like `RPM`, `Load`, `TPS`, `STFT`, `LTFT Idle`, `LTFT Cruise`, `LTFT In Use`, `ECT`, `IAT`, `Battery`, `Front O2`, `Rear O2`, `MAF Volts`, `MAF Airflow`, `WGDC Correction`, and the VVT target/actual channels
 - Ambiguous addresses that collide across EvoScan profiles, or channels like `Battery` that visibly move between close Evo X profiles, should be treated as profile-bound rather than globally stable until a profile selector or richer formula/dependency system exists
 
+**Implementation Update (2026-03-29)**:
+- The repo now has a backend-aware EvoScan parser:
+  - [`packages/device/protocols/mut3/src/logging-profiles.ts`](../packages/device/protocols/mut3/src/logging-profiles.ts)
+- It can model mixed-backend XML files containing:
+  - `mode23`
+  - `mutiii-can`
+  - `calc`
+  - `external-wideband`
+- The repo also now includes a built-in `Mitsubishi EvoX CAN MUTIII` channel catalog:
+  - [`packages/device/protocols/mut3/src/mutiii-can-profile.ts`](../packages/device/protocols/mut3/src/mutiii-can-profile.ts)
+- `Mut3Protocol.getSupportedPids()` now exposes those CAN MUTIII channels for `openport2`
+- `Mut3Protocol.streamLiveData()` still fails explicitly for those PIDs because the unresolved gap has moved: the missing piece is no longer XML modeling, but recovering how `CANx-y` maps to live monitored/requested CAN traffic
+
 ### 3.4 Production Direction: CAN-First MUT-III Logging
 
 **Primary shipping goal**:
