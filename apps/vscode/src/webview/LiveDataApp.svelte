@@ -49,9 +49,7 @@
 	});
 
 	function getCurrentProfile(): LiveDataProfileDescriptor | null {
-		return (
-			profiles.find((profile) => profile.id === selectedProfileId) ?? null
-		);
+		return profiles.find((profile) => profile.id === selectedProfileId) ?? null;
 	}
 
 	function getVisiblePids(): PidDescriptor[] {
@@ -117,10 +115,9 @@
 				</label>
 				<button
 					on:click={startStreaming}
-					disabled={
-						selectedPids.size === 0 ||
-						(currentProfile !== null && currentProfile.status === "unavailable")
-					}
+					disabled={selectedPids.size === 0 ||
+						(currentProfile !== null &&
+							currentProfile.status === "unavailable")}
 				>
 					Start Streaming
 				</button>
@@ -145,7 +142,9 @@
 				>
 					{#each profiles as profile}
 						<option value={profile.id}>
-							{profile.name} [{profile.requestFamily ?? profile.transportFamily ?? "profile"}]
+							{profile.name} [{profile.requestFamily ??
+								profile.transportFamily ??
+								"profile"}]
 						</option>
 					{/each}
 				</select>
@@ -232,7 +231,10 @@
 		padding: 0.5rem 0.75rem;
 		border-radius: 6px;
 		border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
-		background: var(--vscode-dropdown-background, var(--vscode-input-background));
+		background: var(
+			--vscode-dropdown-background,
+			var(--vscode-input-background)
+		);
 		color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
 	}
 

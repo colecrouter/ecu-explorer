@@ -115,8 +115,7 @@ export class LiveDataPanelManager {
 			return;
 		}
 
-		const selection =
-			profileId === undefined ? { pids } : { pids, profileId };
+		const selection = profileId === undefined ? { pids } : { pids, profileId };
 
 		this.session = this.protocol.streamLiveData(
 			this.connection,

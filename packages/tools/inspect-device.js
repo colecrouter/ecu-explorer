@@ -506,8 +506,7 @@ function formatOperationSummary(summary) {
 									frame
 								)
 							: {};
-					const pid =
-						typeof record.pid === "number" ? record.pid : Number.NaN;
+					const pid = typeof record.pid === "number" ? record.pid : Number.NaN;
 					const pidLabel = Number.isNaN(pid)
 						? String(record.pid)
 						: `0x${pid.toString(16)}${mut3PidNameById.has(pid) ? ` (${mut3PidNameById.get(pid)})` : ""}`;
@@ -579,7 +578,9 @@ function createLiveLogRenderer() {
 			.map(([, frame]) => frame);
 		const latestTimestamp = entries.reduce(
 			(max, frame) =>
-				frame.timestamp != null && frame.timestamp > max ? frame.timestamp : max,
+				frame.timestamp != null && frame.timestamp > max
+					? frame.timestamp
+					: max,
 			0,
 		);
 		/** @type {Record<string, string>} */
@@ -590,7 +591,8 @@ function createLiveLogRenderer() {
 					: "",
 		};
 		for (const frame of entries) {
-			row[frame.label] = `${frame.value}${frame.unit.length > 0 ? ` ${frame.unit}` : ""}`;
+			row[frame.label] =
+				`${frame.value}${frame.unit.length > 0 ? ` ${frame.unit}` : ""}`;
 		}
 		return row;
 	}
@@ -620,25 +622,24 @@ function createLiveLogRenderer() {
 			if (typeof frame.pid !== "number") {
 				return;
 			}
-				latestFrames.set(frame.pid, {
-					label: formatPidLabel(frame.pid),
-					value: formatLiveValue(frame.value),
-					unit: frame.unit == null ? "" : String(frame.unit),
-					timestamp:
-						typeof frame.timestamp === "number" ? frame.timestamp : null,
-				});
-				if (Date.now() - lastSnapshotAt >= 500) {
-					snapshot();
-				}
-			},
-			onHealth(health) {
-				latestHealth = health;
-			},
-			flush() {
+			latestFrames.set(frame.pid, {
+				label: formatPidLabel(frame.pid),
+				value: formatLiveValue(frame.value),
+				unit: frame.unit == null ? "" : String(frame.unit),
+				timestamp: typeof frame.timestamp === "number" ? frame.timestamp : null,
+			});
+			if (Date.now() - lastSnapshotAt >= 500) {
 				snapshot();
-				render();
-			},
-		};
+			}
+		},
+		onHealth(health) {
+			latestHealth = health;
+		},
+		flush() {
+			snapshot();
+			render();
+		},
+	};
 }
 
 /**
@@ -1521,9 +1522,7 @@ async function monitorDevice(opts) {
 			const lowLevelConnection = /** @type {LowLevelOpenPortConnection} */ (
 				connection
 			);
-			if (
-				typeof lowLevelConnection.writeMessage === "function"
-			) {
+			if (typeof lowLevelConnection.writeMessage === "function") {
 				const channelId = lowLevelConnection.channelId ?? 6;
 				await lowLevelConnection.writeMessage(
 					channelId,
@@ -1555,8 +1554,7 @@ async function monitorDevice(opts) {
 					);
 				}
 			} catch (error) {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				if (/timed out/i.test(message)) {
 					timeoutCount += 1;
 					continue;
@@ -1577,7 +1575,9 @@ async function monitorDevice(opts) {
 		console.log(`- duration_ms: ${durationMs}`);
 		console.log(`- timeout_ms: ${timeoutMs}`);
 		console.log(`- max_length: ${maxLength}`);
-		console.log(`- request: ${request != null ? formatHexBytes(request) : "none"}`);
+		console.log(
+			`- request: ${request != null ? formatHexBytes(request) : "none"}`,
+		);
 		console.log(`- frames: ${frames.length}`);
 		console.log(`- timeouts: ${timeoutCount}`);
 		console.log("");
@@ -1627,7 +1627,9 @@ prog
 	.example("inspect-device read-rom --protocol bootloader --out ./dump.bin")
 	.example("inspect-device read-rom --protocol mut3 --dry-run")
 	.example('inspect-device raw --data "01 0c" --ascii')
-	.example('inspect-device monitor --transport serial --duration 3000 --data "10 92"');
+	.example(
+		'inspect-device monitor --transport serial --duration 3000 --data "10 92"',
+	);
 
 // Global options
 prog
@@ -1768,7 +1770,9 @@ prog
 // Monitor subcommand
 prog
 	.command("monitor")
-	.describe("Initialize the transport and print raw RX bytes for a fixed duration")
+	.describe(
+		"Initialize the transport and print raw RX bytes for a fixed duration",
+	)
 	.option("--duration", "How long to monitor in milliseconds", 3000)
 	.option("--timeout", "Per-poll timeout in milliseconds", 250)
 	.option("--max-length", "Maximum bytes to read per poll", 512)
@@ -1776,7 +1780,11 @@ prog
 		"--data",
 		'Optional raw request to send once before monitoring, for example "10 92" or "23 80 87 8c 02"',
 	)
-	.option("--ascii", "Also render received bytes as ASCII when printable", false)
+	.option(
+		"--ascii",
+		"Also render received bytes as ASCII when printable",
+		false,
+	)
 	.action((opts) => {
 		monitorDevice({
 			device: opts.device,

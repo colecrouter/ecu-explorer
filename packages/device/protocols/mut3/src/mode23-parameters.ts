@@ -1,4 +1,7 @@
-import type { LiveDataProfileDescriptor, PidDescriptor } from "@ecu-explorer/device";
+import type {
+	LiveDataProfileDescriptor,
+	PidDescriptor,
+} from "@ecu-explorer/device";
 
 export interface Mode23ParameterDescriptor extends PidDescriptor {
 	address: number;

@@ -1,4 +1,7 @@
-import type { LiveDataProfileDescriptor, PidDescriptor } from "@ecu-explorer/device";
+import type {
+	LiveDataProfileDescriptor,
+	PidDescriptor,
+} from "@ecu-explorer/device";
 import type { Mut3LoggingProfile } from "./logging-profiles.js";
 
 const MUTIII_CAN_PID_BASE = 0x9000;

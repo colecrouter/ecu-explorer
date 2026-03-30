@@ -247,9 +247,7 @@ function getRequestedPids(
 function getRequestedProfileId(
 	pidsOrSelection: number[] | LiveDataStreamSelection,
 ): string | undefined {
-	return Array.isArray(pidsOrSelection)
-		? undefined
-		: pidsOrSelection.profileId;
+	return Array.isArray(pidsOrSelection) ? undefined : pidsOrSelection.profileId;
 }
 
 /**
