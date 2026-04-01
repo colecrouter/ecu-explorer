@@ -29,7 +29,7 @@ interface BuiltinMutiiiCanChannel {
 const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	{
 		channelKey: "BATTERY",
-		displayName: "Battery Level",
+		displayName: "Battery Voltage",
 		logReference: "Battery",
 		request: { bank: 0, slot: 0, raw: "CAN0-0" },
 		decode: {
@@ -57,7 +57,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "RPM",
-		displayName: "RPM",
+		displayName: "Engine RPM",
 		logReference: "RPM",
 		request: { bank: 2, slot: 2, raw: "CAN2-2" },
 		decode: {
@@ -71,7 +71,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "SPEED",
-		displayName: "Speed",
+		displayName: "Vehicle Speed",
 		logReference: "Speed",
 		request: { bank: 3, slot: 1, raw: "CAN3-1" },
 		decode: {
@@ -85,7 +85,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "AIRTEMP",
-		displayName: "Air Temperature",
+		displayName: "Intake Air Temperature (IAT)",
 		logReference: "AirTemp",
 		request: { bank: 4, slot: 0, raw: "CAN4-0" },
 		decode: {
@@ -99,7 +99,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "LOAD",
-		displayName: "Load",
+		displayName: "Engine Load",
 		logReference: "Load",
 		request: { bank: 27, slot: 0, raw: "CAN27-0" },
 		decode: {
@@ -113,7 +113,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "COOLANTTEMP",
-		displayName: "Coolant Temp",
+		displayName: "Engine Coolant Temperature (ECT)",
 		logReference: "CoolantTemp",
 		request: { bank: 5, slot: 0, raw: "CAN5-0" },
 		decode: {
@@ -127,7 +127,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "BOOST",
-		displayName: "Boost (MAP)",
+		displayName: "Boost Pressure",
 		logReference: "Boost",
 		request: { bank: 6, slot: 0, raw: "CAN6-0" },
 		decode: {
@@ -183,7 +183,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "LTFT_BANK1",
-		displayName: "Fuel Trim (LTFT)",
+		displayName: "Long-Term Fuel Trim Bank 1 (LTFT)",
 		logReference: "LTFT_Bank1",
 		request: { bank: 9, slot: 2, raw: "CAN9-2" },
 		decode: {
@@ -211,7 +211,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "STFT_BANK1",
-		displayName: "Oxygen Feedback Trim (STFT)",
+		displayName: "Short-Term Fuel Trim Bank 1 (STFT)",
 		logReference: "STFT_Bank1",
 		request: { bank: 10, slot: 1, raw: "CAN10-1" },
 		decode: {
@@ -225,7 +225,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "TRANS_TEMP",
-		displayName: "Transmission Temp",
+		displayName: "Transmission Temperature",
 		logReference: "Trans_Temp",
 		request: { bank: 28, slot: 0, raw: "CAN28-0" },
 		decode: {
@@ -253,7 +253,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "VVTINTAKE",
-		displayName: "VVT Intake",
+		displayName: "Intake VVT Angle",
 		logReference: "VVTIntake",
 		request: { bank: 13, slot: 0, raw: "CAN13-0" },
 		decode: {
@@ -267,7 +267,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "VVTEXHAUST",
-		displayName: "VVT Exhaust",
+		displayName: "Exhaust VVT Angle",
 		logReference: "VVTExhaust",
 		request: { bank: 14, slot: 0, raw: "CAN14-0" },
 		decode: {
@@ -351,7 +351,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "ABSLOAD",
-		displayName: "Absolute Load",
+		displayName: "Absolute Engine Load",
 		logReference: "AbsLoad",
 		request: { bank: 20, slot: 0, raw: "CAN20-0" },
 		decode: {
@@ -365,7 +365,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "ACCLOAD",
-		displayName: "Accelerate Load",
+		displayName: "Acceleration Load",
 		logReference: "AccLoad",
 		request: { bank: 21, slot: 2, raw: "CAN21-2" },
 		decode: {
@@ -379,7 +379,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "ACTIVEWGDC",
-		displayName: "Active WGDC",
+		displayName: "Active Wastegate Duty Cycle (WGDC)",
 		logReference: "ActiveWGDC",
 		request: { bank: 26, slot: 0, raw: "CAN26-0" },
 		decode: {
@@ -393,7 +393,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "PASSIVEWGDC",
-		displayName: "Passive WGDC",
+		displayName: "Passive Wastegate Duty Cycle (WGDC)",
 		logReference: "PassiveWGDC",
 		request: { bank: 26, slot: 1, raw: "CAN26-1" },
 		decode: {
@@ -421,7 +421,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "AIRFLOW",
-		displayName: "Airflow",
+		displayName: "Mass Airflow (MAF)",
 		logReference: "AirFlow",
 		request: { bank: 22, slot: 3, raw: "CAN22-3" },
 		decode: {
@@ -435,7 +435,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "O2SENSOR",
-		displayName: "Oxygen Sensor Front",
+		displayName: "Front O2 Sensor",
 		logReference: "O2Sensor",
 		request: { bank: 23, slot: 0, raw: "CAN23-0" },
 		decode: {
@@ -449,7 +449,7 @@ const BUILTIN_EVOX_CAN_MUTIII_CHANNELS: BuiltinMutiiiCanChannel[] = [
 	},
 	{
 		channelKey: "O2SENSOR2",
-		displayName: "Oxygen Sensor Rear",
+		displayName: "Rear O2 Sensor",
 		logReference: "O2Sensor2",
 		request: { bank: 24, slot: 0, raw: "CAN24-0" },
 		decode: {
@@ -479,7 +479,7 @@ function normalizeDisplayUnit(unit: string | null): string {
 function buildMutiiiCanPidDescriptors(): PidDescriptor[] {
 	return BUILTIN_EVOX_CAN_MUTIII_CHANNELS.map((channel, index) => ({
 		pid: MUTIII_CAN_PID_BASE + index,
-		name: channel.logReference ?? channel.displayName,
+		name: channel.displayName,
 		unit: normalizeDisplayUnit(
 			channel.decode.metricUnit ?? channel.decode.unit ?? "",
 		),

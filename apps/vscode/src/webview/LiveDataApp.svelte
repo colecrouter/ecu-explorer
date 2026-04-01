@@ -1,9 +1,17 @@
 <script lang="ts">
-	import type {
-		LiveDataFrame,
-		LiveDataProfileDescriptor,
-		PidDescriptor,
-	} from "@ecu-explorer/device";
+	import type { LiveDataFrame, PidDescriptor } from "@ecu-explorer/device";
+
+	type LiveDataProfileDescriptor = {
+		id: string;
+		name: string;
+		description?: string;
+		transportFamily?: string;
+		requestFamily?: string;
+		decodeFamily?: string;
+		status: "ready" | "experimental" | "unavailable";
+		statusDetail?: string;
+		pids: PidDescriptor[];
+	};
 
 	const vscode = acquireVsCodeApi();
 
@@ -13,7 +21,6 @@
 	let selectedPids: Set<number> = new Set();
 	let liveData: Map<number, LiveDataFrame> = new Map();
 	let isStreaming = false;
-	let isRecording = false;
 	let startTime: number | null = null;
 	let duration = "00:00";
 	let currentProfile: LiveDataProfileDescriptor | null = null;
@@ -42,7 +49,6 @@
 				break;
 			case "streamingStopped":
 				isStreaming = false;
-				isRecording = false;
 				startTime = null;
 				break;
 		}
@@ -80,7 +86,6 @@
 			type: "startStreaming",
 			pids: Array.from(selectedPids),
 			profileId: profile?.id,
-			record: isRecording,
 		});
 	}
 
@@ -109,10 +114,6 @@
 		<h1>Live Data</h1>
 		<div class="controls">
 			{#if !isStreaming}
-				<label>
-					<input type="checkbox" bind:checked={isRecording} />
-					Record to CSV
-				</label>
 				<button
 					on:click={startStreaming}
 					disabled={selectedPids.size === 0 ||
@@ -122,9 +123,7 @@
 					Start Streaming
 				</button>
 			{:else}
-				<span class="status">
-					{isRecording ? "🔴 Recording" : "🟢 Streaming"} - {duration}
-				</span>
+				<span class="status">Streaming - {duration}</span>
 				<button on:click={stopStreaming}>Stop</button>
 			{/if}
 		</div>
@@ -192,7 +191,7 @@
 		<h2>Real-time Data</h2>
 		<div class="data-grid">
 			{#each Array.from(selectedPids) as pidId}
-				{@const descriptor = supportedPids.find((p) => p.pid === pidId)}
+				{@const descriptor = visiblePids.find((p) => p.pid === pidId)}
 				{@const data = liveData.get(pidId)}
 				<div class="data-card">
 					<span class="label"

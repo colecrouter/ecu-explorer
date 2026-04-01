@@ -10,6 +10,7 @@ import type {
 	PidDescriptor,
 	RomProgress,
 } from "@ecu-explorer/device";
+import type { Mode23ParameterDescriptor } from "./mode23-parameters.js";
 import {
 	decodeMode23Pid,
 	MODE23_PID_BASE,
@@ -18,14 +19,8 @@ import {
 	MODE23_RESEARCH_PROFILE_ID,
 } from "./mode23-parameters.js";
 import {
-	buildMutiiiCanExecutionPlan,
-	describeMutiiiCanExecutionGap,
-} from "./mutiii-can-executor.js";
-import {
 	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
 	BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID,
-	decodeMutiiiCanPid,
-	MUTIII_CAN_PID_DESCRIPTORS,
 } from "./mutiii-can-profile.js";
 import { extractAllRaxParameters, RAX_BLOCKS } from "./rax-decoder.js";
 import { computeFlashSecurityKey, computeSecurityKey } from "./security.js";
@@ -59,7 +54,9 @@ export {
 	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
 	BUILTIN_EVOX_CAN_MUTIII_PROFILE,
 	BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID,
+	decodeMutiiiCanPid,
 	MUTIII_CAN_PID_BASE,
+	MUTIII_CAN_PID_DESCRIPTORS,
 } from "./mutiii-can-profile.js";
 
 // Ref: https://github.com/harshadura/libmut/blob/master/libmut/mut.py
@@ -204,6 +201,31 @@ function buildRaxPidDescriptors(): PidDescriptor[] {
 
 /** Cached PID descriptors (built once at module load, reused across calls). */
 const RAX_PID_DESCRIPTORS: PidDescriptor[] = buildRaxPidDescriptors();
+const OPENPORT2_SAFE_MODE23_EXTENSION_ADDRESSES = new Set<number>([
+	0x4573, // LTFT Idle
+	0x4575, // LTFT Cruise
+	0x45c5, // Cruise Light
+	0x8135, // Knock Flag
+	0x87ba, // MIVEC Load
+	0x88f1, // LTFT In Use
+	0x8b9b, // WGDC Correction
+	0x8fb0, // MAF Volts
+	0x9552, // Intake VVT Target
+	0x955e, // Exhaust VVT Target
+	0x958a, // Intake VVT Actual
+	0x9596, // Exhaust VVT Actual
+]);
+
+const OPENPORT2_MODE23_EXTENSION_DESCRIPTORS = MODE23_PID_DESCRIPTORS.filter(
+	(descriptor) =>
+		OPENPORT2_SAFE_MODE23_EXTENSION_ADDRESSES.has(descriptor.address),
+);
+
+const OPENPORT2_MODE23_PID_DESCRIPTORS: PidDescriptor[] = [
+	...RAX_PID_DESCRIPTORS,
+	...OPENPORT2_MODE23_EXTENSION_DESCRIPTORS,
+];
+
 const RAX_KLINE_LIVE_DATA_PROFILE: LiveDataProfileDescriptor = {
 	id: RAX_KLINE_PROFILE_ID,
 	name: "RAX Memory Blocks",
@@ -220,14 +242,14 @@ const RAX_MODE23_PATCH_LIVE_DATA_PROFILE: LiveDataProfileDescriptor = {
 	id: RAX_MODE23_PATCH_PROFILE_ID,
 	name: "Evo X Mode23 RAX Patch",
 	description:
-		"Extends the CAN logging catalog with Mode23-backed RAX engine blocks and CALC-derived channels from the EvoScan RAX Fast Logging profile.",
+		"Streams the validated RAX engine blocks plus a curated set of direct Mode23 add-on channels from the EvoScan RAX Fast Logging profile.",
 	transportFamily: "can-iso15765",
 	requestFamily: "mode23",
 	decodeFamily: "rax-bitfield-calc",
-	status: "unavailable",
+	status: "experimental",
 	statusDetail:
-		"Profile catalog is reused from the existing RAX channel definitions, but the openport2 runtime does not yet execute the Mode23 RAX patch path.",
-	pids: RAX_PID_DESCRIPTORS,
+		"Streams the RAX engine-block subset over Mode23 on openport2, plus validated direct Mode23 add-ons. Mixed CANx-y and external wideband channels from the EvoScan profile remain unsupported.",
+	pids: OPENPORT2_MODE23_PID_DESCRIPTORS,
 };
 
 /**
@@ -262,6 +284,325 @@ function getRequestedProfileId(
 	pidsOrSelection: number[] | LiveDataStreamSelection,
 ): string | undefined {
 	return Array.isArray(pidsOrSelection) ? undefined : pidsOrSelection.profileId;
+}
+
+function streamRaxLiveData(
+	connection: DeviceConnection,
+	pids: number[],
+	onFrame: (frame: LiveDataFrame) => void,
+	onHealth: ((health: LiveDataHealth) => void) | undefined,
+	readBlock: (
+		connection: DeviceConnection,
+		requestId: number,
+		blockSize: number,
+	) => Promise<Uint8Array>,
+): LiveDataSession {
+	let running = true;
+	const startTime = Date.now();
+
+	const pidMap = new Map<
+		number,
+		{ blockIdx: number; paramIdx: number; unit: string }
+	>();
+	for (const pid of pids) {
+		const decoded = decodeRaxPid(pid);
+		if (!decoded) continue;
+
+		const param = RAX_BLOCKS[decoded.blockIdx]?.parameters[decoded.paramIdx];
+		if (!param) continue;
+
+		pidMap.set(pid, { ...decoded, unit: param.unit });
+	}
+
+	const requiredBlockIndices = new Set<number>(
+		[...pidMap.values()].map((value) => value.blockIdx),
+	);
+
+	let frameCount = 0;
+	let droppedFrames = 0;
+	let lastHealthReportTime = startTime;
+	let totalLatencyMs = 0;
+	let latencySamples = 0;
+
+	const poll = async () => {
+		while (running) {
+			const cycleStart = Date.now();
+
+			for (const blockIdx of requiredBlockIndices) {
+				if (!running) break;
+
+				const block = RAX_BLOCKS[blockIdx];
+				if (!block) continue;
+
+				try {
+					const blockStart = Date.now();
+					const rawData = await readBlock(
+						connection,
+						block.requestId,
+						block.blockSize,
+					);
+					const latency = Date.now() - blockStart;
+					totalLatencyMs += latency;
+					latencySamples++;
+
+					const values = extractAllRaxParameters(rawData, block);
+					const timestamp = Date.now() - startTime;
+
+					for (const [
+						pid,
+						{ blockIdx: requestedBlockIdx, paramIdx, unit },
+					] of pidMap) {
+						if (requestedBlockIdx !== blockIdx) {
+							continue;
+						}
+						const paramName = block.parameters[paramIdx]?.name;
+						if (paramName === undefined) {
+							continue;
+						}
+						const value = values[paramName];
+						if (value === undefined) {
+							continue;
+						}
+						onFrame({ timestamp, pid, value, unit });
+						frameCount++;
+					}
+				} catch (error) {
+					droppedFrames++;
+					console.error(
+						`[MUT-III] Failed to read RAX block ${block.blockId} (0x${block.requestId.toString(16)}):`,
+						error,
+					);
+				}
+			}
+
+			const now = Date.now();
+			const elapsed = now - lastHealthReportTime;
+			if (onHealth && elapsed >= 1000) {
+				const samplesPerSecond = frameCount / (elapsed / 1000);
+				const avgLatencyMs =
+					latencySamples > 0 ? Math.round(totalLatencyMs / latencySamples) : 0;
+				const status =
+					samplesPerSecond === 0
+						? "stalled"
+						: samplesPerSecond < 5
+							? "degraded"
+							: "healthy";
+
+				onHealth({
+					samplesPerSecond: Math.round(samplesPerSecond),
+					droppedFrames,
+					latencyMs: avgLatencyMs,
+					status,
+				});
+
+				frameCount = 0;
+				droppedFrames = 0;
+				totalLatencyMs = 0;
+				latencySamples = 0;
+				lastHealthReportTime = now;
+			}
+
+			const cycleElapsed = Date.now() - cycleStart;
+			const waitMs = Math.max(0, RAX_POLL_INTERVAL_MS - cycleElapsed);
+			if (waitMs > 0) {
+				await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+			}
+		}
+	};
+
+	poll().catch((error) => {
+		console.error("[MUT-III] Streaming poll loop exited with error:", error);
+	});
+
+	return {
+		stop: () => {
+			running = false;
+		},
+	};
+}
+
+function decodeOpenport2Mode23ExtensionPid(
+	pid: number,
+): Mode23ParameterDescriptor | null {
+	const descriptor = decodeMode23Pid(pid);
+	if (descriptor == null) {
+		return null;
+	}
+	return OPENPORT2_SAFE_MODE23_EXTENSION_ADDRESSES.has(descriptor.address)
+		? descriptor
+		: null;
+}
+
+function streamOpenport2Mode23LiveData(
+	connection: DeviceConnection,
+	pids: number[],
+	onFrame: (frame: LiveDataFrame) => void,
+	onHealth: ((health: LiveDataHealth) => void) | undefined,
+): LiveDataSession {
+	let running = true;
+	const startTime = Date.now();
+
+	const raxPidMap = new Map<
+		number,
+		{ blockIdx: number; paramIdx: number; unit: string }
+	>();
+	const mode23PidMap = new Map<number, Mode23ParameterDescriptor>();
+
+	for (const pid of pids) {
+		const raxPid = decodeRaxPid(pid);
+		if (raxPid != null) {
+			const param = RAX_BLOCKS[raxPid.blockIdx]?.parameters[raxPid.paramIdx];
+			if (param != null) {
+				raxPidMap.set(pid, { ...raxPid, unit: param.unit });
+			}
+			continue;
+		}
+
+		const mode23Pid = decodeOpenport2Mode23ExtensionPid(pid);
+		if (mode23Pid != null) {
+			mode23PidMap.set(pid, mode23Pid);
+		}
+	}
+
+	const requiredBlockIndices = new Set<number>(
+		[...raxPidMap.values()].map((value) => value.blockIdx),
+	);
+
+	let frameCount = 0;
+	let droppedFrames = 0;
+	let lastHealthReportTime = startTime;
+	let totalLatencyMs = 0;
+	let latencySamples = 0;
+
+	const poll = async () => {
+		while (running) {
+			const cycleStart = Date.now();
+
+			for (const blockIdx of requiredBlockIndices) {
+				if (!running) break;
+
+				const block = RAX_BLOCKS[blockIdx];
+				if (block == null) continue;
+
+				try {
+					const blockStart = Date.now();
+					const rawData = await readMode23Block(
+						connection,
+						block.requestId,
+						block.blockSize,
+					);
+					const latency = Date.now() - blockStart;
+					totalLatencyMs += latency;
+					latencySamples++;
+
+					const values = extractAllRaxParameters(rawData, block);
+					const timestamp = Date.now() - startTime;
+
+					for (const [
+						pid,
+						{ blockIdx: requestedBlockIdx, paramIdx, unit },
+					] of raxPidMap) {
+						if (requestedBlockIdx !== blockIdx) {
+							continue;
+						}
+						const paramName = block.parameters[paramIdx]?.name;
+						if (paramName == null) {
+							continue;
+						}
+						const value = values[paramName];
+						if (value == null) {
+							continue;
+						}
+						onFrame({ timestamp, pid, value, unit });
+						frameCount++;
+					}
+				} catch (error) {
+					droppedFrames++;
+					console.error(
+						`[MUT-III] Failed to read RAX block ${block.blockId} (0x${block.requestId.toString(16)}):`,
+						error,
+					);
+				}
+			}
+
+			for (const [pid, descriptor] of mode23PidMap) {
+				if (!running) break;
+
+				try {
+					const readStart = Date.now();
+					const rawValue = await readMode23Value(
+						connection,
+						descriptor.address,
+						descriptor.size,
+					);
+					const latency = Date.now() - readStart;
+					totalLatencyMs += latency;
+					latencySamples++;
+
+					const value = descriptor.decodeRaw
+						? descriptor.decodeRaw(rawValue)
+						: rawValue;
+					const timestamp = Date.now() - startTime;
+					onFrame({
+						timestamp,
+						pid,
+						value,
+						unit: descriptor.unit,
+					});
+					frameCount++;
+				} catch (error) {
+					droppedFrames++;
+					console.error(
+						`[MUT-III] Failed to read Mode23 parameter ${descriptor.name} (0x${descriptor.address.toString(16)}):`,
+						error,
+					);
+				}
+			}
+
+			const now = Date.now();
+			const elapsed = now - lastHealthReportTime;
+			if (onHealth && elapsed >= 1000) {
+				const samplesPerSecond = frameCount / (elapsed / 1000);
+				const avgLatencyMs =
+					latencySamples > 0 ? Math.round(totalLatencyMs / latencySamples) : 0;
+				const status =
+					samplesPerSecond === 0
+						? "stalled"
+						: samplesPerSecond < 5
+							? "degraded"
+							: "healthy";
+
+				onHealth({
+					samplesPerSecond: Math.round(samplesPerSecond),
+					droppedFrames,
+					latencyMs: avgLatencyMs,
+					status,
+				});
+
+				frameCount = 0;
+				droppedFrames = 0;
+				totalLatencyMs = 0;
+				latencySamples = 0;
+				lastHealthReportTime = now;
+			}
+
+			const cycleElapsed = Date.now() - cycleStart;
+			const waitMs = Math.max(0, RAX_POLL_INTERVAL_MS - cycleElapsed);
+			if (waitMs > 0) {
+				await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+			}
+		}
+	};
+
+	poll().catch((error) => {
+		console.error("[MUT-III] Streaming poll loop exited with error:", error);
+	});
+
+	return {
+		stop: () => {
+			running = false;
+		},
+	};
 }
 
 /**
@@ -359,6 +700,48 @@ async function readMode23Value(
 	return decodeMode23Value(payload.slice(0, size));
 }
 
+async function readMode23Block(
+	connection: DeviceConnection,
+	requestId: number,
+	blockSize: number,
+): Promise<Uint8Array> {
+	if ((requestId & 0xffff0000) !== 0x23800000) {
+		throw new Error(
+			`Unsupported RAX Mode23 request id 0x${requestId.toString(16)}: expected 0x2380xxxx token`,
+		);
+	}
+
+	const address = requestId & 0xffff;
+	const response = await connection.sendFrame(
+		new Uint8Array([
+			SID_READ_MEMORY_BY_ADDRESS,
+			0x80,
+			(address >>> 8) & 0xff,
+			address & 0xff,
+			blockSize,
+		]),
+	);
+
+	if (response[0] !== 0x63) {
+		throw new Error(
+			`Mode 23 RAX read failed for 0x${requestId.toString(16)}: ECU returned [${Array.from(
+				response,
+			)
+				.map((b) => `0x${b.toString(16)}`)
+				.join(", ")}]`,
+		);
+	}
+
+	const payload = response.slice(1);
+	if (payload.length < blockSize) {
+		throw new Error(
+			`Mode 23 RAX read for 0x${requestId.toString(16)} returned ${payload.length} bytes, expected ${blockSize}`,
+		);
+	}
+
+	return payload.slice(0, blockSize);
+}
+
 /*
 async function enterMode23LoggingSession(
 	connection: DeviceConnection,
@@ -437,7 +820,7 @@ export class Mut3Protocol implements EcuProtocol {
 		connection: DeviceConnection,
 	): Promise<PidDescriptor[]> {
 		if (connection.deviceInfo.transportName === "openport2") {
-			return MUTIII_CAN_PID_DESCRIPTORS;
+			return OPENPORT2_MODE23_PID_DESCRIPTORS;
 		}
 		if (connection.deviceInfo.transportName === "kline") {
 			return RAX_PID_DESCRIPTORS;
@@ -449,10 +832,7 @@ export class Mut3Protocol implements EcuProtocol {
 		connection: DeviceConnection,
 	): Promise<LiveDataProfileDescriptor[]> {
 		if (connection.deviceInfo.transportName === "openport2") {
-			return [
-				BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
-				RAX_MODE23_PATCH_LIVE_DATA_PROFILE,
-			];
+			return [RAX_MODE23_PATCH_LIVE_DATA_PROFILE];
 		}
 		if (connection.deviceInfo.transportName === "kline") {
 			return [RAX_KLINE_LIVE_DATA_PROFILE];
@@ -491,9 +871,25 @@ export class Mut3Protocol implements EcuProtocol {
 		const profileId = getRequestedProfileId(pidsOrSelection);
 
 		if (connection.deviceInfo.transportName === "openport2") {
-			if (profileId === RAX_MODE23_PATCH_PROFILE_ID) {
-				throw new Error(
-					`${RAX_MODE23_PATCH_LIVE_DATA_PROFILE.name} is intentionally unavailable: ${RAX_MODE23_PATCH_LIVE_DATA_PROFILE.statusDetail}`,
+			if (
+				profileId === undefined ||
+				profileId === RAX_MODE23_PATCH_PROFILE_ID
+			) {
+				const validOpenport2PidCount = pids.filter(
+					(pid) =>
+						decodeRaxPid(pid) != null ||
+						decodeOpenport2Mode23ExtensionPid(pid) != null,
+				).length;
+				if (pids.length > 0 && validOpenport2PidCount === 0) {
+					throw new Error(
+						"MUT-III openport2 live logging requires a valid RAX or supported direct Mode23 PID selection.",
+					);
+				}
+				return streamOpenport2Mode23LiveData(
+					connection,
+					pids,
+					onFrame,
+					onHealth,
 				);
 			}
 			if (profileId === MODE23_RESEARCH_PROFILE_ID) {
@@ -501,24 +897,16 @@ export class Mut3Protocol implements EcuProtocol {
 					`${MODE23_RESEARCH_LIVE_DATA_PROFILE.name} is intentionally unavailable: ${MODE23_RESEARCH_LIVE_DATA_PROFILE.statusDetail}`,
 				);
 			}
-			if (
-				profileId !== undefined &&
-				profileId !== BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID
-			) {
+			if (profileId === BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID) {
+				throw new Error(
+					`${BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE.name} is disabled: CAN bank switching remains unresolved and throughput is too slow for viable logging.`,
+				);
+			}
+			if (profileId !== undefined) {
 				throw new Error(
 					`Unsupported MUT-III CAN live data profile "${profileId}" for transport ${connection.deviceInfo.transportName}.`,
 				);
 			}
-			const requestedCanChannels = pids
-				.map((pid) => decodeMutiiiCanPid(pid))
-				.filter((channel) => channel != null);
-			const executionPlan = buildMutiiiCanExecutionPlan(pids);
-			throw new Error(
-				requestedCanChannels.length > 0
-					? describeMutiiiCanExecutionGap(executionPlan)
-					: "MUT-III CAN live logging requires a valid CAN MUTIII PID selection.",
-			);
-			// return this.streamMode23LiveData(connection, pids, onFrame, onHealth);
 		}
 
 		if (
@@ -531,133 +919,7 @@ export class Mut3Protocol implements EcuProtocol {
 			);
 		}
 
-		let running = true;
-		const startTime = Date.now();
-
-		// Map each requested pid to its block index and param index
-		const pidMap = new Map<
-			number,
-			{ blockIdx: number; paramIdx: number; unit: string }
-		>();
-		for (const pid of pids) {
-			const decoded = decodeRaxPid(pid);
-			if (!decoded) continue;
-
-			const param = RAX_BLOCKS[decoded.blockIdx]?.parameters[decoded.paramIdx];
-			if (!param) continue;
-
-			pidMap.set(pid, { ...decoded, unit: param.unit });
-		}
-
-		// Derive the unique set of block indices needed for requested pids
-		const requiredBlockIndices = new Set<number>(
-			[...pidMap.values()].map((v) => v.blockIdx),
-		);
-
-		// Health tracking
-		let frameCount = 0;
-		let droppedFrames = 0;
-		let lastHealthReportTime = startTime;
-		let totalLatencyMs = 0;
-		let latencySamples = 0;
-
-		const poll = async () => {
-			while (running) {
-				const cycleStart = Date.now();
-
-				for (const blockIdx of requiredBlockIndices) {
-					if (!running) break;
-
-					const block = RAX_BLOCKS[blockIdx];
-					if (!block) continue;
-
-					try {
-						const blockStart = Date.now();
-						const rawData = await readRaxBlock(
-							connection,
-							block.requestId,
-							block.blockSize,
-						);
-						const latency = Date.now() - blockStart;
-						totalLatencyMs += latency;
-						latencySamples++;
-
-						// Decode all parameters in this block
-						const values = extractAllRaxParameters(rawData, block);
-						const timestamp = Date.now() - startTime;
-
-						// Emit only the parameters that were requested
-						for (const [pid, { blockIdx: bIdx, paramIdx, unit }] of pidMap) {
-							if (bIdx === blockIdx) {
-								const paramName =
-									RAX_BLOCKS[blockIdx]?.parameters[paramIdx]?.name;
-								if (paramName === undefined) continue;
-								const value = values[paramName];
-								if (value !== undefined) {
-									onFrame({ timestamp, pid, value, unit });
-									frameCount++;
-								}
-							}
-						}
-					} catch (error) {
-						droppedFrames++;
-						console.error(
-							`[MUT-III] Failed to read RAX block ${block.blockId} (0x${block.requestId.toString(16)}):`,
-							error,
-						);
-					}
-				}
-
-				// Report health metrics periodically (every second)
-				const now = Date.now();
-				const elapsed = now - lastHealthReportTime;
-				if (onHealth && elapsed >= 1000) {
-					const samplesPerSecond = frameCount / (elapsed / 1000);
-					const avgLatencyMs =
-						latencySamples > 0
-							? Math.round(totalLatencyMs / latencySamples)
-							: 0;
-					const status =
-						samplesPerSecond === 0
-							? "stalled"
-							: samplesPerSecond < 5
-								? "degraded"
-								: "healthy";
-
-					onHealth({
-						samplesPerSecond: Math.round(samplesPerSecond),
-						droppedFrames,
-						latencyMs: avgLatencyMs,
-						status,
-					});
-
-					// Reset counters for next window
-					frameCount = 0;
-					droppedFrames = 0;
-					totalLatencyMs = 0;
-					latencySamples = 0;
-					lastHealthReportTime = now;
-				}
-
-				// Wait before next polling cycle
-				const cycleElapsed = Date.now() - cycleStart;
-				const waitMs = Math.max(0, RAX_POLL_INTERVAL_MS - cycleElapsed);
-				if (waitMs > 0) {
-					await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
-				}
-			}
-		};
-
-		// Start the polling loop (fire and forget; errors are caught within poll)
-		poll().catch((error) => {
-			console.error("[MUT-III] Streaming poll loop exited with error:", error);
-		});
-
-		return {
-			stop: () => {
-				running = false;
-			},
-		};
+		return streamRaxLiveData(connection, pids, onFrame, onHealth, readRaxBlock);
 	}
 
 	/*
@@ -1505,10 +1767,8 @@ export {
 	RAX_KLINE_PROFILE_ID,
 	RAX_MODE23_PATCH_LIVE_DATA_PROFILE,
 	RAX_MODE23_PATCH_PROFILE_ID,
-	MUTIII_CAN_PID_DESCRIPTORS,
 	buildRaxPidDescriptors,
 	decodeMode23Pid,
-	decodeMutiiiCanPid,
 	decodeRaxPid,
 	readMode23Value,
 	readRaxBlock,

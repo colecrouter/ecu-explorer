@@ -260,6 +260,34 @@ describe("LiveDataPanelManager", () => {
 			);
 		});
 
+		it("should expose active logging PIDs for the selected profile stream", async () => {
+			const [, vehicleSpeedPid] = createLiveDataPids();
+			const profilePid = {
+				pid: 0x8000,
+				name: "Profile RPM",
+				unit: "rpm",
+				minValue: 0,
+				maxValue: 9000,
+			};
+			await showReadyPanel({
+				protocol: createLiveDataProtocol({
+					profiles: createLiveDataProfiles([
+						{ pids: [profilePid, vehicleSpeedPid] },
+					]),
+				}),
+			});
+
+			mockPanel.webview._simulateMessage({
+				type: "startStreaming",
+				pids: [profilePid.pid],
+				profileId: "test-ready",
+				record: false,
+			});
+			await waitForPanelWork();
+
+			expect(manager.getActiveLoggingPids()).toEqual([profilePid]);
+		});
+
 		it("should stop streaming when stopStreaming message is received", async () => {
 			const mockSession = createLiveDataSession();
 			await showReadyPanel({
@@ -287,6 +315,30 @@ describe("LiveDataPanelManager", () => {
 				(m: MockWebviewMessage) => m.type === "streamingStopped",
 			);
 			expect(streamingStoppedMsg).toBeDefined();
+		});
+
+		it("should clear active logging PIDs when streaming stops", async () => {
+			const [engineRpmPid] = createLiveDataPids();
+			await showReadyPanel({
+				protocol: createLiveDataProtocol({
+					supportedPids: createLiveDataPids(),
+				}),
+			});
+
+			mockPanel.webview._simulateMessage({
+				type: "startStreaming",
+				pids: [engineRpmPid.pid],
+				record: false,
+			});
+			await waitForPanelWork();
+			expect(manager.getActiveLoggingPids()).toEqual([engineRpmPid]);
+
+			mockPanel.webview._simulateMessage({
+				type: "stopStreaming",
+			});
+			await waitForPanelWork();
+
+			expect(manager.getActiveLoggingPids()).toBeUndefined();
 		});
 	});
 

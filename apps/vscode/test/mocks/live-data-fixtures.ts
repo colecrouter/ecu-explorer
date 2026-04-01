@@ -2,22 +2,49 @@ import type {
 	DeviceConnection,
 	EcuProtocol,
 	LiveDataFrame,
-	LiveDataProfileDescriptor,
 	LiveDataSession,
-	LiveDataStreamSelection,
 	PidDescriptor,
 } from "@ecu-explorer/device";
 import { vi } from "vitest";
+
+type LiveDataProfileDescriptor = {
+	id: string;
+	name: string;
+	description?: string;
+	transportFamily?: string;
+	requestFamily?: string;
+	decodeFamily?: string;
+	status: "ready" | "experimental" | "unavailable";
+	statusDetail?: string;
+	pids: PidDescriptor[];
+};
+
+type LiveDataStreamSelection = {
+	pids: number[];
+	profileId?: string;
+};
+
+type ProfileAwareProtocol = EcuProtocol & {
+	getLiveDataProfiles?: (
+		connection: DeviceConnection,
+	) => Promise<LiveDataProfileDescriptor[]>;
+	streamLiveData?: (
+		connection: DeviceConnection,
+		pidsOrSelection: number[] | LiveDataStreamSelection,
+		onFrame: (frame: LiveDataFrame) => void,
+		onHealth?: (health: unknown) => void,
+	) => LiveDataSession;
+};
 
 type TestDeviceConnection = Pick<
 	DeviceConnection,
 	"deviceInfo" | "sendFrame" | "startStream" | "stopStream" | "close"
 >;
 
-type TestProtocol = Pick<EcuProtocol, "name" | "canHandle"> &
+type TestProtocol = Pick<ProfileAwareProtocol, "name" | "canHandle"> &
 	Partial<
 		Pick<
-			EcuProtocol,
+			ProfileAwareProtocol,
 			"getSupportedPids" | "getLiveDataProfiles" | "streamLiveData"
 		>
 	>;

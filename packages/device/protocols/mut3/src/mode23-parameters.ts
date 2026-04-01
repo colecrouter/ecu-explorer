@@ -28,7 +28,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x4573,
 		size: 1,
-		name: "LTFT Idle",
+		name: "Long-Term Fuel Trim Idle (LTFT)",
 		unit: "%",
 		decodeRaw: (raw) => raw * 0.1953125 - 25,
 		minValue: -25,
@@ -37,7 +37,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x4575,
 		size: 1,
-		name: "LTFT Cruise",
+		name: "Long-Term Fuel Trim Cruise (LTFT)",
 		unit: "%",
 		decodeRaw: (raw) => raw * 0.1953125 - 25,
 		minValue: -25,
@@ -60,7 +60,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x867f,
 		size: 1,
-		name: "ECT",
+		name: "Engine Coolant Temperature (ECT)",
 		unit: "°C",
 		decodeRaw: (raw) => raw - 40,
 		minValue: -40,
@@ -69,7 +69,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x869b,
 		size: 1,
-		name: "IAT",
+		name: "Intake Air Temperature (IAT)",
 		unit: "°C",
 		decodeRaw: (raw) => raw - 40,
 		minValue: -40,
@@ -78,7 +78,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x86ad,
 		size: 1,
-		name: "Front O2",
+		name: "Front O2 Sensor",
 		unit: "V",
 		decodeRaw: (raw) => raw * 0.01952,
 		maxValue: 4.9776,
@@ -86,7 +86,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x86b1,
 		size: 1,
-		name: "Rear O2",
+		name: "Rear O2 Sensor",
 		unit: "V",
 		decodeRaw: (raw) => raw * 0.01952,
 		maxValue: 4.9776,
@@ -102,7 +102,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x873d,
 		size: 1,
-		name: "TPS",
+		name: "Throttle Position (TPS)",
 		unit: "%",
 		decodeRaw: (raw) => (raw * 100) / 255,
 		maxValue: 100,
@@ -110,14 +110,14 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x875e,
 		size: 2,
-		name: "Boost",
+		name: "Boost Pressure",
 		unit: "raw",
 		maxValue: 0xffff,
 	},
 	{
 		address: 0x878c,
 		size: 2,
-		name: "RPM",
+		name: "Engine RPM",
 		unit: "rpm",
 		decodeRaw: (raw) => raw * 3.90625,
 		maxValue: 8000,
@@ -125,7 +125,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x87b4,
 		size: 2,
-		name: "Load",
+		name: "Engine Load",
 		unit: "load",
 		decodeRaw: (raw) => (raw * 10) / 32,
 		maxValue: 340,
@@ -133,7 +133,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x87ba,
 		size: 2,
-		name: "Load MIVEC",
+		name: "MIVEC Load",
 		unit: "load",
 		decodeRaw: (raw) => (raw * 10) / 32,
 		maxValue: 340,
@@ -141,7 +141,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x8823,
 		size: 2,
-		name: "MAF Airflow",
+		name: "Mass Airflow (MAF)",
 		unit: "g/s",
 		decodeRaw: (raw) => (raw * 2) / 100,
 		maxValue: 1310.7,
@@ -149,7 +149,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x882f,
 		size: 1,
-		name: "Speed",
+		name: "Vehicle Speed",
 		unit: "km/h",
 		decodeRaw: (raw) => raw * 2,
 		maxValue: 510,
@@ -157,7 +157,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x88e0,
 		size: 1,
-		name: "STFT",
+		name: "Short-Term Fuel Trim (STFT)",
 		unit: "%",
 		decodeRaw: (raw) => raw * 0.1953125 - 25,
 		minValue: -25,
@@ -166,7 +166,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x88f1,
 		size: 1,
-		name: "LTFT In Use",
+		name: "Long-Term Fuel Trim In Use (LTFT)",
 		unit: "%",
 		decodeRaw: (raw) => raw * 0.1953125 - 25,
 		minValue: -25,
@@ -199,7 +199,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x9552,
 		size: 2,
-		name: "InVVT Target",
+		name: "Intake VVT Target",
 		unit: "Deg",
 		decodeRaw: (raw) => (raw - 4096) * -0.01953125,
 		minValue: -1201.15234375,
@@ -208,7 +208,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x955e,
 		size: 2,
-		name: "ExVVT Target",
+		name: "Exhaust VVT Target",
 		unit: "Deg",
 		decodeRaw: (raw) => (raw - 4096) * -0.01953125,
 		minValue: -1201.15234375,
@@ -217,7 +217,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x958a,
 		size: 2,
-		name: "InVVT Actual",
+		name: "Intake VVT Actual",
 		unit: "Deg",
 		decodeRaw: (raw) => (raw - 4096) * -0.01953125,
 		minValue: -1201.15234375,
@@ -226,7 +226,7 @@ const RAW_MODE23_PARAMETERS: Array<{
 	{
 		address: 0x9596,
 		size: 2,
-		name: "ExVVT Actual",
+		name: "Exhaust VVT Actual",
 		unit: "Deg",
 		decodeRaw: (raw) => (raw - 4096) * -0.01953125,
 		minValue: -1201.15234375,

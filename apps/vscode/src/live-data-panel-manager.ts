@@ -3,17 +3,54 @@ import type {
 	EcuProtocol,
 	LiveDataFrame,
 	LiveDataHealth,
-	LiveDataProfileDescriptor,
 	LiveDataSession,
+	PidDescriptor,
 } from "@ecu-explorer/device";
 import * as vscode from "vscode";
 import type { DeviceManagerImpl } from "./device-manager.js";
+
+type LiveDataProfileDescriptor = {
+	id: string;
+	name: string;
+	description?: string;
+	transportFamily?: string;
+	requestFamily?: string;
+	decodeFamily?: string;
+	status: "ready" | "experimental" | "unavailable";
+	statusDetail?: string;
+	pids: PidDescriptor[];
+};
+
+type LiveDataStreamSelection = {
+	pids: number[];
+	profileId?: string;
+};
+
+type ProfileAwareProtocol = EcuProtocol & {
+	getLiveDataProfiles?: (
+		connection: DeviceConnection,
+	) => Promise<LiveDataProfileDescriptor[]>;
+	streamLiveData?: (
+		connection: DeviceConnection,
+		pidsOrSelection: number[] | LiveDataStreamSelection,
+		onFrame: (frame: LiveDataFrame) => void,
+		onHealth?: (health: LiveDataHealth) => void,
+	) => LiveDataSession;
+};
 
 export class LiveDataPanelManager {
 	private panel: vscode.WebviewPanel | undefined;
 	private session: LiveDataSession | undefined;
 	private connection: DeviceConnection | undefined;
-	private protocol: EcuProtocol | undefined;
+	private protocol: ProfileAwareProtocol | undefined;
+	private supportedProfiles: readonly LiveDataProfileDescriptor[] = [];
+	private supportedPids: readonly PidDescriptor[] = [];
+	private activeSelection:
+		| {
+				pids: number[];
+				profileId?: string;
+		  }
+		| undefined;
 
 	private _onFrame = new vscode.EventEmitter<LiveDataFrame>();
 	/** Fires for each live data frame received from the device. */
@@ -71,13 +108,17 @@ export class LiveDataPanelManager {
 		try {
 			const { connection, protocol } =
 				await this.deviceManager.selectDeviceAndProtocol();
+			const profileAwareProtocol = protocol as ProfileAwareProtocol;
 			this.connection = connection;
-			this.protocol = protocol;
+			this.protocol = profileAwareProtocol;
 
-			if (protocol.getLiveDataProfiles) {
-				const profiles = await protocol.getLiveDataProfiles(connection);
+			if (profileAwareProtocol.getLiveDataProfiles) {
+				const profiles =
+					await profileAwareProtocol.getLiveDataProfiles(connection);
 				if (profiles.length > 0) {
 					const defaultProfile = this.pickDefaultProfile(profiles);
+					this.supportedProfiles = profiles;
+					this.supportedPids = [];
 					this.panel?.webview.postMessage({
 						type: "supportedProfiles",
 						profiles,
@@ -87,8 +128,10 @@ export class LiveDataPanelManager {
 				}
 			}
 
-			if (protocol.getSupportedPids) {
-				const pids = await protocol.getSupportedPids(connection);
+			if (profileAwareProtocol.getSupportedPids) {
+				const pids = await profileAwareProtocol.getSupportedPids(connection);
+				this.supportedProfiles = [];
+				this.supportedPids = pids;
 				this.panel?.webview.postMessage({
 					type: "supportedPids",
 					pids,
@@ -115,7 +158,12 @@ export class LiveDataPanelManager {
 			return;
 		}
 
-		const selection = profileId === undefined ? { pids } : { pids, profileId };
+		const selection: LiveDataStreamSelection =
+			profileId === undefined ? { pids } : { pids, profileId };
+		this.activeSelection = {
+			pids: [...pids],
+			...(profileId === undefined ? {} : { profileId }),
+		};
 
 		this.session = this.protocol.streamLiveData(
 			this.connection,
@@ -149,8 +197,27 @@ export class LiveDataPanelManager {
 			this.session.stop();
 			this.session = undefined;
 		}
+		this.activeSelection = undefined;
 
 		this.panel?.webview.postMessage({ type: "streamingStopped" });
+	}
+
+	getActiveLoggingPids(): PidDescriptor[] | undefined {
+		if (this.activeSelection == null) {
+			return undefined;
+		}
+
+		const selectedPidSet = new Set(this.activeSelection.pids);
+		const profile =
+			this.activeSelection.profileId == null
+				? undefined
+				: this.supportedProfiles.find(
+						(candidate) => candidate.id === this.activeSelection?.profileId,
+					);
+		const availablePids = profile?.pids ?? this.supportedPids;
+		return availablePids.filter((pid: PidDescriptor) =>
+			selectedPidSet.has(pid.pid),
+		);
 	}
 
 	private getWebviewContent(webview: vscode.Webview): string {

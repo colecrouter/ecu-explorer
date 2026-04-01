@@ -87,7 +87,7 @@ export const RAX_C_BLOCK: RaxBlockDef = {
 	blockSize: 5, // Load(Timing) at BITS(32,8) requires bit 39 = 5th byte
 	parameters: [
 		{
-			name: "RPM",
+			name: "Engine RPM",
 			unit: "RPM",
 			bitOffset: 11,
 			bitLength: 11,
@@ -117,7 +117,7 @@ export const RAX_C_BLOCK: RaxBlockDef = {
 			maxValue: 50,
 		},
 		{
-			name: "Load (Timing)",
+			name: "Timing Load",
 			unit: "%",
 			bitOffset: 32,
 			bitLength: 8,
@@ -142,7 +142,7 @@ export const RAX_D_BLOCK: RaxBlockDef = {
 	blockSize: 5, // MAF at BITS(24,10) requires bit 33 = 5th byte
 	parameters: [
 		{
-			name: "Barometer",
+			name: "Barometric Pressure",
 			unit: "kPa",
 			bitOffset: 0,
 			bitLength: 8,
@@ -152,7 +152,7 @@ export const RAX_D_BLOCK: RaxBlockDef = {
 			maxValue: 103,
 		},
 		{
-			name: "MAP",
+			name: "Manifold Absolute Pressure (MAP)",
 			unit: "kPa",
 			bitOffset: 8,
 			bitLength: 10,
@@ -174,7 +174,7 @@ export const RAX_D_BLOCK: RaxBlockDef = {
 			maxValue: 300,
 		},
 		{
-			name: "MAF",
+			name: "Mass Airflow (MAF)",
 			unit: "g/s",
 			bitOffset: 24, // overlap with boost; actual offset per EvoScan
 			bitLength: 10,
@@ -199,7 +199,7 @@ export const RAX_B_BLOCK: RaxBlockDef = {
 	blockSize: 6, // extended block for injector pulse
 	parameters: [
 		{
-			name: "AFR",
+			name: "Air-Fuel Ratio (AFR)",
 			unit: "λ",
 			bitOffset: 0,
 			bitLength: 9,
@@ -209,7 +209,7 @@ export const RAX_B_BLOCK: RaxBlockDef = {
 			maxValue: 20,
 		},
 		{
-			name: "Load (AFR)",
+			name: "AFR Load",
 			unit: "%",
 			bitOffset: 9,
 			bitLength: 8,
@@ -219,7 +219,7 @@ export const RAX_B_BLOCK: RaxBlockDef = {
 			maxValue: 100,
 		},
 		{
-			name: "O2 Sensor (Left)",
+			name: "Front O2 Sensor",
 			unit: "V",
 			bitOffset: 17,
 			bitLength: 8,
@@ -229,7 +229,7 @@ export const RAX_B_BLOCK: RaxBlockDef = {
 			maxValue: 1,
 		},
 		{
-			name: "O2 Sensor (Right)",
+			name: "Rear O2 Sensor",
 			unit: "V",
 			bitOffset: 25,
 			bitLength: 8,
@@ -319,7 +319,7 @@ export const RAX_F_BLOCK: RaxBlockDef = {
 	blockSize: 5, // WGDC at BITS(28,8) requires bit 35 = 5th byte
 	parameters: [
 		{
-			name: "TPS",
+			name: "Throttle Position (TPS)",
 			unit: "%",
 			bitOffset: 0,
 			bitLength: 10,
@@ -329,7 +329,7 @@ export const RAX_F_BLOCK: RaxBlockDef = {
 			maxValue: 100,
 		},
 		{
-			name: "APP",
+			name: "Accelerator Pedal Position (APP)",
 			unit: "%",
 			bitOffset: 10,
 			bitLength: 10,
@@ -339,7 +339,7 @@ export const RAX_F_BLOCK: RaxBlockDef = {
 			maxValue: 100,
 		},
 		{
-			name: "IAT",
+			name: "Intake Air Temperature (IAT)",
 			unit: "°C",
 			bitOffset: 20,
 			bitLength: 8,
@@ -349,7 +349,7 @@ export const RAX_F_BLOCK: RaxBlockDef = {
 			maxValue: 215,
 		},
 		{
-			name: "WGDC",
+			name: "Wastegate Duty Cycle (WGDC)",
 			unit: "%",
 			bitOffset: 28,
 			bitLength: 8,
@@ -394,7 +394,7 @@ export const RAX_G_BLOCK: RaxBlockDef = {
 			maxValue: 16.7,
 		},
 		{
-			name: "Coolant Temp (ECT)",
+			name: "Engine Coolant Temperature (ECT)",
 			unit: "°C",
 			bitOffset: 18,
 			bitLength: 8,
@@ -404,7 +404,7 @@ export const RAX_G_BLOCK: RaxBlockDef = {
 			maxValue: 215,
 		},
 		{
-			name: "Ambient Temp (MAT)",
+			name: "Manifold Air Temperature (MAT)",
 			unit: "°C",
 			bitOffset: 26,
 			bitLength: 8,
@@ -429,7 +429,7 @@ export const RAX_A_BLOCK: RaxBlockDef = {
 	blockSize: 4,
 	parameters: [
 		{
-			name: "STFT Bank 1",
+			name: "Short-Term Fuel Trim Bank 1 (STFT)",
 			unit: "%",
 			bitOffset: 0,
 			bitLength: 8,
@@ -439,7 +439,7 @@ export const RAX_A_BLOCK: RaxBlockDef = {
 			maxValue: 12.7,
 		},
 		{
-			name: "LTFT Bank 1",
+			name: "Long-Term Fuel Trim Bank 1 (LTFT)",
 			unit: "%",
 			bitOffset: 8,
 			bitLength: 8,
@@ -449,7 +449,7 @@ export const RAX_A_BLOCK: RaxBlockDef = {
 			maxValue: 12.7,
 		},
 		{
-			name: "STFT Bank 2",
+			name: "Short-Term Fuel Trim Bank 2 (STFT)",
 			unit: "%",
 			bitOffset: 16,
 			bitLength: 8,
@@ -459,7 +459,7 @@ export const RAX_A_BLOCK: RaxBlockDef = {
 			maxValue: 12.7,
 		},
 		{
-			name: "LTFT Bank 2",
+			name: "Long-Term Fuel Trim Bank 2 (LTFT)",
 			unit: "%",
 			bitOffset: 24,
 			bitLength: 8,
@@ -484,7 +484,7 @@ export const RAX_H_BLOCK: RaxBlockDef = {
 	blockSize: 5, // 36-bit parameters require extra byte
 	parameters: [
 		{
-			name: "Calculated MAF",
+			name: "Calculated Mass Airflow",
 			unit: "g/s",
 			bitOffset: 0,
 			bitLength: 10,
@@ -504,7 +504,7 @@ export const RAX_H_BLOCK: RaxBlockDef = {
 			maxValue: 100,
 		},
 		{
-			name: "Target AFR",
+			name: "Target Air-Fuel Ratio (AFR)",
 			unit: "λ",
 			bitOffset: 18,
 			bitLength: 9,
@@ -514,7 +514,7 @@ export const RAX_H_BLOCK: RaxBlockDef = {
 			maxValue: 20,
 		},
 		{
-			name: "Actual AFR Delta",
+			name: "Actual Air-Fuel Ratio Delta",
 			unit: "λ",
 			bitOffset: 27,
 			bitLength: 9,
@@ -532,7 +532,7 @@ export const RAX_H_BLOCK: RaxBlockDef = {
 // ---------------------------------------------------------------------------
 
 /**
- * Complete registry of all 8 RAX data blocks and their 48 parameters.
+ * Complete registry of all 8 RAX data blocks and their defined parameters.
  *
  * Use this to look up block definitions by block ID or RequestID.
  *
@@ -610,7 +610,7 @@ export function extractRaxParameter(
  * @example
  * const buffer = new Uint8Array([0x80, 0x90, 0x70, 0x88]);
  * const values = extractAllRaxParameters(buffer, RAX_A_BLOCK);
- * // { "STFT Bank 1": 0, "LTFT Bank 1": 1.6, ... }
+ * // { "Short-Term Fuel Trim Bank 1 (STFT)": 0, "Long-Term Fuel Trim Bank 1 (LTFT)": 1.6, ... }
  */
 export function extractAllRaxParameters(
 	buffer: Uint8Array,

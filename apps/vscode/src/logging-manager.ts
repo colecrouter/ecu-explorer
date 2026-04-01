@@ -35,7 +35,6 @@ export class LoggingManager implements vscode.Disposable {
 	private state: LoggingState = "idle";
 	private csvBuffer = "";
 	private recordingUri: vscode.Uri | undefined;
-	private sessionStartMs = 0;
 	private columns: string[] | "all" = "all";
 	/** pid -> log column key */
 	private pidColumnKeys: Map<number, string> = new Map();
@@ -157,7 +156,6 @@ export class LoggingManager implements vscode.Disposable {
 		const unitsRow = `Unit,${unitCols}`;
 
 		this.csvBuffer = `${headerRow}\n${unitsRow}\n`;
-		this.sessionStartMs = Date.now();
 
 		this.state = "recording";
 		this._onDidChangeState.fire(this.state);
@@ -340,11 +338,10 @@ export class LoggingManager implements vscode.Disposable {
 		columnKey: string,
 		value: number,
 	): void {
-		const relativeTs = timestamp - this.sessionStartMs;
 		const values = this.columnOrder.map((currentKey) =>
 			currentKey === columnKey ? String(value) : "",
 		);
-		this.csvBuffer += `${relativeTs},${values.join(",")}\n`;
+		this.csvBuffer += `${timestamp},${values.join(",")}\n`;
 	}
 }
 

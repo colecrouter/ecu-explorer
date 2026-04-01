@@ -1281,9 +1281,10 @@ export async function activate(
 				return;
 			}
 			const pids =
-				active?.protocol.getSupportedPids != null
+				liveDataPanelManager?.getActiveLoggingPids() ??
+				(active?.protocol.getSupportedPids != null
 					? await active.protocol.getSupportedPids(active.connection)
-					: [];
+					: []);
 			const channels =
 				activeWidebandMode == null
 					? []

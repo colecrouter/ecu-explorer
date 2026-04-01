@@ -444,12 +444,8 @@ describe("LoggingManager", () => {
 			const pids = createSamplePids();
 			await manager.startLog([...pids]);
 
-			// The session start time is captured at startLog; frame.timestamp is ms since session start
-			// In our implementation, relativeTs = frame.timestamp - sessionStartMs
-			// Since sessionStartMs = Date.now() at startLog time, and frame.timestamp is also ms,
-			// we need to use a timestamp that makes sense
 			manager.onFrame({
-				timestamp: Date.now(),
+				timestamp: 250,
 				pid: 0x0c,
 				value: 850,
 				unit: "rpm",
@@ -462,6 +458,7 @@ describe("LoggingManager", () => {
 			const lines = content.trim().split("\n");
 			// Should have header, units, and at least one data row
 			expect(lines.length).toBeGreaterThanOrEqual(3);
+			expect(lines[2]?.startsWith("250,")).toBe(true);
 		});
 
 		it("should produce sparse rows with empty cells for missing PIDs", async () => {
@@ -471,7 +468,7 @@ describe("LoggingManager", () => {
 
 			// Only send Engine RPM frame
 			manager.onFrame({
-				timestamp: Date.now(),
+				timestamp: 100,
 				pid: activePid.pid,
 				value: 850,
 				unit: activePid.unit,
