@@ -224,20 +224,19 @@ describe("handlePatchTable transform handling", () => {
 		);
 
 		expect(lastWrittenBytes).toEqual(Uint8Array.from([15, 20, 30, 45]));
-		expect(result).toContain("status: changed");
+		expect(result).toContain("table: Selector Table");
+		expect(result).toContain("op: add");
+		expect(result).toContain(
+			"where: (RPM (rpm) == 3000 && Load (g/rev) == 1.6) || (RPM (rpm) == 4000 && Load (g/rev) == 2)",
+		);
 		expect(result).toContain("cells_changed: 2");
-		expect(result).toContain("portability: safe");
-		expect(result).toContain("cells_written: 2");
-		expect(result).toContain("Changed cells for Selector Table.");
-		expect(result).toContain(
-			"| row_axis | col_axis | base_value | target_value | delta |",
-		);
-		expect(result).toContain(
-			"| 1.6      | 3000     | 10         | 15           | 5",
-		);
-		expect(result).toContain(
-			"| 2        | 4000     | 40         | 45           | 5",
-		);
+		expect(result).not.toContain("selector_axes:");
+		expect(result).not.toContain("status:");
+		expect(result).not.toContain("cells_written:");
+		expect(result).not.toContain("Changed cells for Selector Table.");
+		expect(result).toContain("| Load (g/rev)\\RPM (rpm) | 3000 | 4000 |");
+		expect(result).toContain("| 1.6                    | 15   | 20   |");
+		expect(result).toContain("| 2                      | 30   | 45   |");
 	});
 
 	it("reports zero changed cells when a patch is a no-op", async () => {
@@ -279,9 +278,12 @@ describe("handlePatchTable transform handling", () => {
 			config,
 		);
 
-		expect(result).toContain("cells_written: 0");
-		expect(result).toContain("status: unchanged");
+		expect(result).toContain("table: Noop Table");
+		expect(result).toContain("op: add");
 		expect(result).toContain("cells_changed: 0");
-		expect(result).toContain("No cells changed.");
+		expect(result).not.toContain("No cells changed.");
+		expect(result).toContain("| RPM (rpm) () | Noop Table () |");
+		expect(result).toContain("| 1000         | 10            |");
+		expect(result).toContain("| 2000         | 20            |");
 	});
 });

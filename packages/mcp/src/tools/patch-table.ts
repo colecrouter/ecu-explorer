@@ -22,19 +22,13 @@ import {
 import type { McpConfig } from "../config.js";
 import {
 	formatTable,
+	formatTableSlice,
 	writeTable1DValues,
 	writeTable2DValues,
 } from "../formatters/table-formatter.js";
 import { toYamlFrontmatter } from "../formatters/yaml-formatter.js";
 import { invalidateRomCache, loadRom } from "../rom-loader.js";
-import {
-	analyzeTablePair,
-	buildDiffFrontmatterData,
-	findTableByName,
-	renderChangedCellsMarkdown,
-	tableCols,
-	tableRows,
-} from "../table-diff.js";
+import { analyzeTablePair, findTableByName } from "../table-diff.js";
 import { selectTableCells } from "../table-selectors.js";
 
 function toLoadRomOptions(definitionPath?: string) {
@@ -346,31 +340,36 @@ export async function handlePatchTable(
 		reloaded.romBytes,
 	);
 	const changedCells = diff.metrics?.cellsChanged ?? 0;
+	const renderedResult =
+		selector === undefined
+			? formatTable(romPath, tableDef, reloaded.romBytes)
+			: formatTableSlice(romPath, tableDef, reloaded.romBytes, {
+					rowIndices: selector.rowIndices,
+					colIndices: selector.colIndices,
+				});
 	const frontmatterData: Record<string, unknown> = {
-		...buildDiffFrontmatterData(diff),
-		rom: romPath,
-		rows: diff.baseSnapshot?.rows ?? tableRows(tableDef),
-		cols: diff.baseSnapshot?.cols ?? tableCols(tableDef),
-		unit: tableDef.z.unit?.symbol ?? "",
-		write_status: "patched",
-		cells_written: changedCells,
+		table: tableDef.name,
+		op,
+		cells_changed: changedCells,
 	};
 	if (where !== undefined) {
 		frontmatterData.where = where;
 	}
-	if (
-		selector?.selectorAxes !== undefined &&
-		selector.selectorAxes.length > 0
-	) {
-		frontmatterData.selector_axes = selector.selectorAxes;
-	}
 	const frontmatter = toYamlFrontmatter(frontmatterData);
+	return `${frontmatter}\n${stripFrontmatter(renderedResult.content)}`;
+}
 
-	if (changedCells === 0) {
-		return `${frontmatter}\nNo cells changed.`;
+function stripFrontmatter(content: string): string {
+	if (!content.startsWith("---\n")) {
+		return content;
 	}
 
-	return `${frontmatter}\nChanged cells for ${tableDef.name}.\n\n${renderChangedCellsMarkdown(diff)}`;
+	const endIndex = content.indexOf("\n---\n", 4);
+	if (endIndex === -1) {
+		return content;
+	}
+
+	return content.slice(endIndex + 5);
 }
 
 /**
