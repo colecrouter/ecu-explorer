@@ -21,6 +21,7 @@ const OPEN_FOLDER_ACTION = "Open Folder";
 
 describe("LoggingManager", () => {
 	let manager: LoggingManager;
+	let persistedLogBytes: Uint8Array | undefined;
 
 	beforeEach(() => {
 		// Mock workspace folders
@@ -30,7 +31,18 @@ describe("LoggingManager", () => {
 
 		// Mock workspace.fs
 		vi.mocked(vscode.workspace.fs.createDirectory).mockResolvedValue(undefined);
-		vi.mocked(vscode.workspace.fs.writeFile).mockResolvedValue(undefined);
+		persistedLogBytes = undefined;
+		vi.mocked(vscode.workspace.fs.readFile).mockImplementation(async () => {
+			if (persistedLogBytes == null) {
+				throw new Error("File not found");
+			}
+			return persistedLogBytes;
+		});
+		vi.mocked(vscode.workspace.fs.writeFile).mockImplementation(
+			async (_uri, data) => {
+				persistedLogBytes = data;
+			},
+		);
 
 		// Mock workspace.getConfiguration
 		vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
@@ -387,6 +399,33 @@ describe("LoggingManager", () => {
 			expect(vscode.workspace.fs.writeFile).toHaveBeenCalledTimes(
 				writeFileCallCount,
 			);
+		});
+
+		it("should flush pending rows to disk before stopping", async () => {
+			await manager.startLog([...createSamplePids()]);
+			manager.onFrame({ timestamp: 1000, pid: 0x0c, value: 850, unit: "rpm" });
+
+			await manager.flushLog();
+			const flushedContent = new TextDecoder().decode(persistedLogBytes);
+			expect(flushedContent).toContain("850");
+
+			await manager.stopLog();
+			const finalContent = new TextDecoder().decode(persistedLogBytes);
+			expect(finalContent).toContain("850");
+		});
+
+		it("should append rows across multiple flushes without retaining prior rows in memory", async () => {
+			await manager.startLog([...createSamplePids()]);
+
+			manager.onFrame({ timestamp: 100, pid: 0x0c, value: 850, unit: "rpm" });
+			await manager.flushLog();
+
+			manager.onFrame({ timestamp: 200, pid: 0x05, value: 82, unit: "°C" });
+			await manager.flushLog();
+
+			const content = new TextDecoder().decode(persistedLogBytes);
+			expect(content).toContain("100,850,,");
+			expect(content).toContain("200,,82,");
 		});
 	});
 

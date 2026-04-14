@@ -757,6 +757,7 @@ export async function activate(
 				if (!deviceManager?.activeConnection) {
 					return;
 				}
+				await loggingManager?.flushLog();
 				const deviceName = deviceManager.activeConnection.deviceName;
 				await deviceManager.disconnect();
 				vscode.window.showInformationMessage(
@@ -832,6 +833,7 @@ export async function activate(
 				if (widebandManager == null) {
 					return;
 				}
+				await loggingManager?.flushLog();
 				const deviceName =
 					widebandManager.activeSession?.candidate.device.name ??
 					widebandManager.lastCandidate?.device.name;
