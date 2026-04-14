@@ -36,13 +36,14 @@ function toLoadRomOptions(definitionPath?: string) {
 }
 
 export type PatchOp = "set" | "add" | "multiply" | "clamp" | "smooth";
+export type PatchValue = number | number[] | number[][];
 
 export interface PatchTableOptions {
 	rom: string;
 	table: string;
 	op: PatchOp;
 	definitionPath?: string;
-	value?: number;
+	value?: PatchValue;
 	min?: number;
 	max?: number;
 	where?: string;
@@ -73,6 +74,7 @@ export async function handlePatchTable(
 		row,
 		col,
 	} = options;
+	const patchValue = value;
 
 	if (where !== undefined && (row !== undefined || col !== undefined)) {
 		throw new Error(
@@ -82,7 +84,7 @@ export async function handlePatchTable(
 
 	// Validate operation parameters
 	if (op === "set" || op === "add" || op === "multiply") {
-		if (value === undefined) {
+		if (patchValue === undefined) {
 			throw new Error(`Operation "${op}" requires a "value" parameter.`);
 		}
 	}
@@ -178,7 +180,7 @@ export async function handlePatchTable(
 		const targetValues = targetIndices.map((i) => currentValues[i] as number);
 
 		// Apply operation
-		const newTargetValues = applyOp1D(op, targetValues, value, min, max);
+		const newTargetValues = applyOp1D(op, targetValues, patchValue, min, max);
 
 		// Write back
 		const newValues = [...currentValues];
@@ -230,11 +232,57 @@ export async function handlePatchTable(
 			newValues = currentValues.map((r) => [...r]);
 
 			if (selector !== undefined) {
-				for (const cell of selector.matchedCells) {
-					const current = currentValues[cell.row]?.[cell.col];
-					if (current === undefined) continue;
-					const [newVal] = applyOp1D(op, [current], value, min, max);
-					(newValues[cell.row] as number[])[cell.col] = newVal as number;
+				if (!isScalarValue(patchValue) && !isElementwiseOp(op)) {
+					throw new Error(
+						`Shaped payloads are only supported for set, add, and multiply.`,
+					);
+				}
+				if (!isScalarValue(patchValue)) {
+					if (patchValue === undefined) {
+						throw new Error(`Operation "${op}" requires a "value" parameter.`);
+					}
+					const shaped = normalizeShapedSelectionPayload(
+						tableDef.name,
+						selector,
+						patchValue,
+					);
+					if (!isElementwiseOp(op)) {
+						throw new Error(
+							`Shaped payloads are only supported for set, add, and multiply.`,
+						);
+					}
+					let valueIndex = 0;
+					for (const rowIndex of selector.rowIndices) {
+						for (const colIndex of selector.colIndices) {
+							if (
+								!selector.matchedCells.some(
+									(cell) => cell.row === rowIndex && cell.col === colIndex,
+								)
+							) {
+								throw new Error(
+									`Shaped payloads require a contiguous rectangular selection.`,
+								);
+							}
+							const current = currentValues[rowIndex]?.[colIndex];
+							if (current === undefined) continue;
+							const operand = shaped[valueIndex];
+							if (operand === undefined) {
+								throw new Error(
+									`Missing shaped payload value at index ${valueIndex}.`,
+								);
+							}
+							const [newVal] = applyElementwiseOp(op, current, operand);
+							(newValues[rowIndex] as number[])[colIndex] = newVal;
+							valueIndex++;
+						}
+					}
+				} else {
+					for (const cell of selector.matchedCells) {
+						const current = currentValues[cell.row]?.[cell.col];
+						if (current === undefined) continue;
+						const [newVal] = applyOp1D(op, [current], patchValue, min, max);
+						(newValues[cell.row] as number[])[cell.col] = newVal as number;
+					}
 				}
 			} else if (row !== undefined && col !== undefined) {
 				// Single cell
@@ -244,24 +292,61 @@ export async function handlePatchTable(
 						`Cell [${row}, ${col}] is out of bounds for table "${tableName}".`,
 					);
 				}
-				const [newVal] = applyOp1D(op, [cell], value, min, max);
+				const [newVal] = applyOp1D(op, [cell], patchValue, min, max);
 				(newValues[row] as number[])[col] = newVal as number;
 			} else if (row !== undefined) {
 				// Entire row
 				const rowVals = currentValues[row] as number[];
-				const newRowVals = applyOp1D(op, rowVals, value, min, max);
+				if (patchValue === undefined && isElementwiseOp(op)) {
+					throw new Error(`Operation "${op}" requires a "value" parameter.`);
+				}
+				const definedPatchValue = patchValue;
+				let rowValue = definedPatchValue;
+				if (isNumberMatrix(definedPatchValue)) {
+					rowValue = normalizeRowMatrixPayload(
+						tableDef.name,
+						rowVals.length,
+						definedPatchValue,
+					);
+				}
+				const newRowVals = applyOp1D(op, rowVals, rowValue, min, max);
 				newValues[row] = newRowVals;
 			} else if (col !== undefined) {
 				// Entire column
 				const colVals = currentValues.map((r) => r[col] as number);
-				const newColVals = applyOp1D(op, colVals, value, min, max);
+				if (patchValue === undefined && isElementwiseOp(op)) {
+					throw new Error(`Operation "${op}" requires a "value" parameter.`);
+				}
+				const definedPatchValue = patchValue;
+				let colValue = definedPatchValue;
+				if (isNumberMatrix(definedPatchValue)) {
+					colValue = normalizeColumnMatrixPayload(
+						tableDef.name,
+						colVals.length,
+						definedPatchValue,
+					);
+				}
+				const newColVals = applyOp1D(op, colVals, colValue, min, max);
 				for (let r = 0; r < numRows; r++) {
 					(newValues[r] as number[])[col] = newColVals[r] as number;
 				}
 			} else {
 				// Entire table
 				const flat = currentValues.flat();
-				const newFlat = applyOp1D(op, flat, value, min, max);
+				if (patchValue === undefined && isElementwiseOp(op)) {
+					throw new Error(`Operation "${op}" requires a "value" parameter.`);
+				}
+				const definedPatchValue = patchValue;
+				let fullTableValue = definedPatchValue;
+				if (isNumberMatrix(definedPatchValue)) {
+					fullTableValue = normalizeFullTableMatrixPayload(
+						tableDef.name,
+						numRows,
+						numCols,
+						definedPatchValue,
+					);
+				}
+				const newFlat = applyOp1D(op, flat, fullTableValue, min, max);
 				newValues = [];
 				for (let r = 0; r < numRows; r++) {
 					const rowVals: number[] = [];
@@ -378,20 +463,61 @@ function stripFrontmatter(content: string): string {
 function applyOp1D(
 	op: PatchOp,
 	values: number[],
-	value?: number,
+	value?: PatchValue,
 	min?: number,
 	max?: number,
 ): number[] {
+	if (
+		!isScalarValue(value) &&
+		op !== "set" &&
+		op !== "add" &&
+		op !== "multiply"
+	) {
+		throw new Error(
+			`Shaped payloads are only supported for set, add, and multiply.`,
+		);
+	}
 	switch (op) {
-		case "set":
-			return values.map(() => value as number);
+		case "set": {
+			if (value === undefined) {
+				throw new Error(`set requires a value`);
+			}
+			if (isScalarValue(value)) {
+				return values.map(() => value);
+			}
+			const shaped = normalizeShapedLinearPayload(values.length, value);
+			return values.map(
+				(current, index) =>
+					applyElementwiseOp("set", current, shaped[index] as number)[0],
+			);
+		}
 		case "add": {
-			const result = addConstant(values, value as number);
-			return result.values;
+			if (value === undefined) {
+				throw new Error(`add requires a value`);
+			}
+			if (isScalarValue(value)) {
+				const result = addConstant(values, value);
+				return result.values;
+			}
+			const shaped = normalizeShapedLinearPayload(values.length, value);
+			return values.map(
+				(current, index) =>
+					applyElementwiseOp("add", current, shaped[index] as number)[0],
+			);
 		}
 		case "multiply": {
-			const result = multiplyConstant(values, value as number);
-			return result.values;
+			if (value === undefined) {
+				throw new Error(`multiply requires a value`);
+			}
+			if (isScalarValue(value)) {
+				const result = multiplyConstant(values, value);
+				return result.values;
+			}
+			const shaped = normalizeShapedLinearPayload(values.length, value);
+			return values.map(
+				(current, index) =>
+					applyElementwiseOp("multiply", current, shaped[index] as number)[0],
+			);
 		}
 		case "clamp": {
 			const result = clampValues(values, min as number, max as number);
@@ -400,6 +526,193 @@ function applyOp1D(
 		case "smooth":
 			// smooth is handled separately for 2D tables
 			throw new Error(`smooth operation is not valid for 1D arrays`);
+	}
+}
+
+function isElementwiseOp(
+	op: PatchOp,
+): op is Extract<PatchOp, "set" | "add" | "multiply"> {
+	return op === "set" || op === "add" || op === "multiply";
+}
+
+function isScalarValue(value: PatchValue | undefined): value is number {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNumberArray(value: PatchValue | undefined): value is number[] {
+	return (
+		Array.isArray(value) &&
+		value.every((item) => typeof item === "number" && Number.isFinite(item))
+	);
+}
+
+function isNumberMatrix(value: PatchValue | undefined): value is number[][] {
+	return (
+		Array.isArray(value) &&
+		value.every(
+			(row) =>
+				Array.isArray(row) &&
+				row.every((item) => typeof item === "number" && Number.isFinite(item)),
+		)
+	);
+}
+
+function payloadShape(value: PatchValue): string {
+	if (isScalarValue(value)) return "scalar";
+	if (isNumberArray(value)) return `[${value.length}]`;
+	if (isNumberMatrix(value)) {
+		const rows = value.length;
+		const cols = value[0]?.length ?? 0;
+		return `[${rows}x${cols}]`;
+	}
+	return "invalid";
+}
+
+function normalizeShapedLinearPayload(
+	expectedLength: number,
+	value: PatchValue,
+): number[] {
+	if (isNumberArray(value)) {
+		if (value.length !== expectedLength) {
+			throw new Error(
+				`Payload shape mismatch: selected slice is [${expectedLength}], payload is ${payloadShape(value)}.`,
+			);
+		}
+		return value;
+	}
+	throw new Error(
+		`Payload shape mismatch: selected slice is [${expectedLength}], payload is ${payloadShape(value)}.`,
+	);
+}
+
+function normalizeShapedSelectionPayload(
+	tableName: string,
+	selector: NonNullable<ReturnType<typeof selectTableCells>>,
+	value: PatchValue,
+): number[] {
+	const rowCount = selector.rowIndices.length;
+	const colCount = selector.colIndices.length;
+	const selectedShape = `[${rowCount}x${colCount}]`;
+	const isRectangular = selector.matchedCells.length === rowCount * colCount;
+	if (!isRectangular) {
+		throw new Error(
+			`Shaped payloads require a contiguous rectangular selection for table "${tableName}". Selected slice is ${selectedShape}.`,
+		);
+	}
+
+	if (isNumberArray(value)) {
+		if (rowCount === 1 || colCount === 1) {
+			const expectedLength = Math.max(rowCount, colCount);
+			if (value.length !== expectedLength) {
+				throw new Error(
+					`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+				);
+			}
+			return value;
+		}
+		throw new Error(
+			`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+		);
+	}
+
+	if (isNumberMatrix(value)) {
+		if (rowCount === 1 && colCount === 1) {
+			throw new Error(
+				`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+			);
+		}
+		if (value.length !== rowCount) {
+			throw new Error(
+				`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+			);
+		}
+		for (const row of value) {
+			if (row.length !== colCount) {
+				throw new Error(
+					`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+				);
+			}
+		}
+		return value.flat();
+	}
+
+	throw new Error(
+		`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+	);
+}
+
+function normalizeFullTableMatrixPayload(
+	tableName: string,
+	rows: number,
+	cols: number,
+	value: number[][],
+): number[] {
+	const selectedShape = `[${rows}x${cols}]`;
+	if (value.length !== rows) {
+		throw new Error(
+			`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+		);
+	}
+	for (const row of value) {
+		if (row.length !== cols) {
+			throw new Error(
+				`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+			);
+		}
+	}
+	void tableName;
+	return value.flat();
+}
+
+function normalizeRowMatrixPayload(
+	tableName: string,
+	expectedLength: number,
+	value: number[][],
+): number[] {
+	const selectedShape = `[1x${expectedLength}]`;
+	if (value.length !== 1 || (value[0]?.length ?? 0) !== expectedLength) {
+		throw new Error(
+			`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+		);
+	}
+	void tableName;
+	return value[0] as number[];
+}
+
+function normalizeColumnMatrixPayload(
+	tableName: string,
+	expectedLength: number,
+	value: number[][],
+): number[] {
+	const selectedShape = `[${expectedLength}x1]`;
+	if (value.length !== expectedLength) {
+		throw new Error(
+			`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+		);
+	}
+	for (const row of value) {
+		if (row.length !== 1) {
+			throw new Error(
+				`Payload shape mismatch: selected slice is ${selectedShape}, payload is ${payloadShape(value)}.`,
+			);
+		}
+	}
+	void tableName;
+	return value.map((row) => row[0] as number);
+}
+
+function applyElementwiseOp(
+	op: Extract<PatchOp, "set" | "add" | "multiply">,
+	current: number,
+	operand: number,
+): [number] {
+	switch (op) {
+		case "set":
+			return [operand];
+		case "add":
+			return [current + operand];
+		case "multiply":
+			return [current * operand];
 	}
 }
 

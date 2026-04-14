@@ -337,14 +337,12 @@ The markdown output SHALL be:
 | `definition` | `string` | No | Optional explicit definition path |
 | `table` | `string` | Yes | Table name from `list_tables` |
 | `op` | `"set" \| "add" \| "multiply" \| "clamp" \| "smooth"` | Yes | Operation to apply |
-| `value` | `number` | Conditional | Required for `set`, `add`, `multiply` |
+| `value` | `number \| number[] \| number[][]` | Conditional | Required for `set`, `add`, `multiply` |
 | `min` | `number` | Conditional | Required for `clamp` |
 | `max` | `number` | Conditional | Required for `clamp` |
 | `where` | `string` | No | Selector expression using the table's real axis names |
 
 ### Targeting Model
-
-`patch_table` SHALL no longer expose row/column indices in the MCP surface.
 
 Selection rules:
 
@@ -353,6 +351,70 @@ Selection rules:
 - range selectors match all cells whose breakpoints fall within the range
 
 If equality selectors do not match an axis breakpoint exactly, the tool SHALL return nearby breakpoint suggestions.
+
+### Scalar vs Shaped Payload Rules
+
+Some operations support both scalar and shaped payloads:
+
+- `number`
+- `number[]`
+- `number[][]`
+
+The scalar form preserves the current broadcast behavior:
+
+- `set(value: number)` applies the same value to every targeted cell
+- `add(value: number)` applies the same delta to every targeted cell
+- `multiply(value: number)` applies the same factor to every targeted cell
+
+The shaped forms SHALL be interpreted in physical units, mapped in row-major order, and applied elementwise to the targeted slice.
+
+#### Whole-Table Mapping
+
+When `where` is omitted:
+
+- for 1D tables, `value: number[]` SHALL match the full logical table length exactly
+- for 2D tables, `value: number[][]` SHALL match the full logical table dimensions exactly
+- `value: number[]` SHALL NOT be used to replace a full 2D table
+
+#### Slice Mapping
+
+When `where` is provided:
+
+- shaped payloads SHALL only be valid for contiguous rectangular selections
+- the selected slice dimensions SHALL be determined from the matched row and column indices
+- `value: number[]` SHALL only be valid when the selected slice is exactly one row, one column, or a 1D table selection
+- `value: number[][]` SHALL only be valid when the selected slice spans multiple rows and columns
+- payload dimensions SHALL match the selected slice dimensions exactly
+
+#### Validation
+
+The tool SHALL reject shaped payload requests when:
+
+- the selection is non-rectangular
+- payload dimensions do not exactly match the selected slice
+- a 1D payload is supplied for a multi-row and multi-column 2D slice
+- a 2D payload is supplied for a 1D table
+
+The tool SHOULD fail fast with a concise dimension-mismatch error that includes:
+
+- the selected slice shape
+- the provided payload shape
+
+#### Operation Scope
+
+Shaped payloads SHALL NOT be valid for:
+
+- `clamp`
+- `smooth`
+
+#### Non-Goals For V1
+
+To keep the contract simple, shaped payloads SHALL NOT support:
+
+- sparse per-cell payload objects
+- partial-fit writes that skip out-of-bounds cells
+- implicit reshaping between 1D and 2D payloads
+- non-rectangular selector mapping via hole-filled matrices
 
 ### Output
 

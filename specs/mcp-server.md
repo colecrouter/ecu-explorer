@@ -157,7 +157,7 @@ This tool is **read-only** — use `patch_table` to modify values.
 | `rom` | `string` | Yes | Absolute or workspace-relative path to the ROM binary |
 | `table` | `string` | Yes | Exact table name (from `list_tables` output) |
 | `op` | `"set" \| "add" \| "multiply" \| "clamp" \| "smooth"` | Yes | Math operation to apply |
-| `value` | `number` | Conditional | Required for `set`, `add`, `multiply` |
+| `value` | `number \| number[] \| number[][]` | Conditional | Required for `set`, `add`, `multiply`. Array forms are valid for elementwise `set`, `add`, and `multiply` |
 | `min` | `number` | Conditional | Required for `clamp` — lower bound |
 | `max` | `number` | Conditional | Required for `clamp` — upper bound |
 | `where` | `string` | No | Selector expression using the table axis names; omit to target the whole table |
@@ -172,6 +172,14 @@ This tool is **read-only** — use `patch_table` to modify values.
 | `clamp` | — | Required | Clamp cell(s) to `[min, max]` |
 | `smooth` | — | — | Box-filter average with neighbors. 2D tables only. No `value` needed. |
 
+For `set`, `add`, and `multiply`, `value` may be:
+
+- a scalar number, which broadcasts to every targeted cell
+- a `number[]`, for full 1D payloads or 1-row / 1-column slices
+- a `number[][]`, for full 2D payloads or rectangular 2D slices
+
+Shaped payloads use physical units, row-major mapping, and elementwise application across the targeted slice.
+
 #### Targeting
 
 Omit `where` to target the entire table. Provide a selector expression to target a cell, row, column, or rectangular region using axis values.
@@ -182,6 +190,14 @@ Examples:
 - Row: `Load (g/rev) == 2.0`
 - Column: `RPM (rpm) == 4500`
 - Region: `RPM (rpm) >= 3000 && RPM (rpm) <= 5000 && Load (g/rev) >= 1.6 && Load (g/rev) <= 2.2`
+
+For shaped payloads:
+
+- whole-table writes require an exact shape match to the logical table dimensions
+- `where`-targeted shaped writes require the matched cells to form a contiguous rectangular slice
+- payload dimensions must exactly match the targeted slice
+- shaped payloads are valid only for `set`, `add`, and `multiply`
+- sparse/non-rectangular mapping and partial-fit writes are not supported
 
 #### Output Format
 

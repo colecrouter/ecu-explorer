@@ -286,4 +286,202 @@ describe("handlePatchTable transform handling", () => {
 		expect(result).toContain("| 1000         | 10            |");
 		expect(result).toContain("| 2000         | 20            |");
 	});
+
+	it("applies elementwise set payloads to full 1D tables", async () => {
+		romBytes = Uint8Array.from([10, 20]);
+		const table1d = {
+			id: "set-array-table",
+			name: "Set Array Table",
+			kind: "table1d",
+			rows: 2,
+			x: {
+				id: "x-set-array",
+				kind: "static",
+				name: "RPM (rpm)",
+				values: [1000, 2000],
+			},
+			z: {
+				id: "z-set-array",
+				name: "values",
+				address: 0,
+				dtype: "u8",
+			},
+		} satisfies Table1DDefinition;
+
+		definition = {
+			uri: "file:///tmp/set-array.xml",
+			name: "Set Array Definition",
+			fingerprints: [],
+			platform: {},
+			tables: [table1d],
+		};
+
+		await handlePatchTable(
+			{
+				rom: "/tmp/transformed.rom",
+				table: "Set Array Table",
+				op: "set",
+				value: [11, 22],
+			},
+			config,
+		);
+
+		expect(lastWrittenBytes).toEqual(Uint8Array.from([11, 22]));
+	});
+
+	it("applies elementwise add payloads to full 2D tables", async () => {
+		romBytes = Uint8Array.from([10, 20, 30, 40]);
+		const table2d = {
+			id: "add-matrix-table",
+			name: "Add Matrix Table",
+			kind: "table2d",
+			rows: 2,
+			cols: 2,
+			x: {
+				id: "x-add-matrix",
+				kind: "static",
+				name: "RPM (rpm)",
+				values: [3000, 4000],
+			},
+			y: {
+				id: "y-add-matrix",
+				kind: "static",
+				name: "Load (g/rev)",
+				values: [1.6, 2.0],
+			},
+			z: {
+				id: "z-add-matrix",
+				name: "values",
+				address: 0,
+				dtype: "u8",
+			},
+		} satisfies Table2DDefinition;
+
+		definition = {
+			uri: "file:///tmp/add-matrix.xml",
+			name: "Add Matrix Definition",
+			fingerprints: [],
+			platform: {},
+			tables: [table2d],
+		};
+
+		await handlePatchTable(
+			{
+				rom: "/tmp/transformed.rom",
+				table: "Add Matrix Table",
+				op: "add",
+				value: [
+					[1, 2],
+					[3, 4],
+				],
+			},
+			config,
+		);
+
+		expect(lastWrittenBytes).toEqual(Uint8Array.from([11, 22, 33, 44]));
+	});
+
+	it("applies elementwise set payloads to rectangular 2D slices", async () => {
+		romBytes = Uint8Array.from([10, 20, 30, 40]);
+		const table2d = {
+			id: "slice-matrix-table",
+			name: "Slice Matrix Table",
+			kind: "table2d",
+			rows: 2,
+			cols: 2,
+			x: {
+				id: "x-slice-matrix",
+				kind: "static",
+				name: "RPM (rpm)",
+				values: [3000, 4000],
+			},
+			y: {
+				id: "y-slice-matrix",
+				kind: "static",
+				name: "Load (g/rev)",
+				values: [1.6, 2.0],
+			},
+			z: {
+				id: "z-slice-matrix",
+				name: "values",
+				address: 0,
+				dtype: "u8",
+			},
+		} satisfies Table2DDefinition;
+
+		definition = {
+			uri: "file:///tmp/slice-matrix.xml",
+			name: "Slice Matrix Definition",
+			fingerprints: [],
+			platform: {},
+			tables: [table2d],
+		};
+
+		await handlePatchTable(
+			{
+				rom: "/tmp/transformed.rom",
+				table: "Slice Matrix Table",
+				op: "set",
+				value: [[55, 66]],
+				where: "Load (g/rev) == 1.6",
+			},
+			config,
+		);
+
+		expect(lastWrittenBytes).toEqual(Uint8Array.from([55, 66, 30, 40]));
+	});
+
+	it("rejects shaped payloads for non-rectangular selections", async () => {
+		romBytes = Uint8Array.from([10, 20, 30, 40]);
+		const selectorTable = {
+			id: "selector-table",
+			name: "Selector Table",
+			kind: "table2d",
+			rows: 2,
+			cols: 2,
+			x: {
+				id: "x-selector",
+				kind: "static",
+				name: "RPM (rpm)",
+				values: [3000, 4000],
+			},
+			y: {
+				id: "y-selector",
+				kind: "static",
+				name: "Load (g/rev)",
+				values: [1.6, 2.0],
+			},
+			z: {
+				id: "selector-z",
+				name: "values",
+				address: 0,
+				dtype: "u8",
+			},
+		} satisfies Table2DDefinition;
+
+		definition = {
+			uri: "file:///tmp/selector.xml",
+			name: "Selector Definition",
+			fingerprints: [],
+			platform: {},
+			tables: [selectorTable],
+		};
+
+		await expect(
+			handlePatchTable(
+				{
+					rom: "/tmp/transformed.rom",
+					table: "Selector Table",
+					op: "set",
+					value: [
+						[1, 2],
+						[3, 4],
+					],
+					where:
+						"(RPM (rpm) == 3000 && Load (g/rev) == 1.6) || (RPM (rpm) == 4000 && Load (g/rev) == 2)",
+				},
+				config,
+			),
+		).rejects.toThrow(/contiguous rectangular selection/);
+	});
 });

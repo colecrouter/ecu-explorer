@@ -97,6 +97,13 @@ const server = new McpServer({
 	],
 });
 
+const numericMatrixSchema = z.array(z.array(z.number()));
+const patchValueSchema = z.union([
+	z.number(),
+	z.array(z.number()),
+	numericMatrixSchema,
+]);
+
 // Set up context IPC to listen for updates from VS Code extension
 setupContextIpc((data: Record<string, unknown>) => {
 	// Update the current open context with new data from the extension
@@ -372,7 +379,11 @@ server.tool(
 		op: z
 			.enum(["set", "add", "multiply", "clamp", "smooth"])
 			.describe("Operation to apply"),
-		value: z.number().optional().describe("Operand for set/add/multiply"),
+		value: patchValueSchema
+			.optional()
+			.describe(
+				"Operand for set/add/multiply. Scalars broadcast; arrays and matrices apply elementwise for set/add/multiply.",
+			),
 		min: z.number().optional().describe("Lower bound for clamp"),
 		max: z.number().optional().describe("Upper bound for clamp"),
 		where: z
