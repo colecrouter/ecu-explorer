@@ -64,6 +64,12 @@ export interface DeviceConnection {
 	 */
 	sendFrame(data: Uint8Array, timeoutMs?: number): Promise<Uint8Array>;
 
+	/** Send an application PDU without waiting for an ECU response (ISO-TP handled by transport). */
+	sendOnly?(data: Uint8Array, timeoutMs?: number): Promise<void>;
+
+	/** Receive one complete application PDU without sending another request. */
+	receiveMessage?(timeoutMs?: number): Promise<Uint8Array>;
+
 	/**
 	 * Start receiving frames asynchronously (for live data streaming).
 	 * Calls onFrame for each received frame until stopStream() is called.

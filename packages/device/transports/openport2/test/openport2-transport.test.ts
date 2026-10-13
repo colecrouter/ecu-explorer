@@ -24,7 +24,10 @@ type FakeSerialPortInfo = {
 	productId?: number | string | null;
 };
 
-function createIso15765ResponseFrame(payload: Uint8Array): DataView {
+function createIso15765ResponseFrame(
+	payload: Uint8Array,
+	includeTxDone = true,
+): DataView {
 	const frame = new Uint8Array(9 + payload.length);
 	frame[0] = 0x61; // 'a'
 	frame[1] = 0x72; // 'r'
@@ -32,7 +35,12 @@ function createIso15765ResponseFrame(payload: Uint8Array): DataView {
 	frame[3] = payload.length + 5;
 	frame[4] = 0x40; // RX end indication
 	frame.set(payload, 9);
-	return new DataView(frame.buffer.slice(0));
+	if (!includeTxDone) return new DataView(frame.buffer.slice(0));
+	const done = createAdapterPacket(0x36, 0x10, new Uint8Array());
+	const combined = new Uint8Array(done.length + frame.length);
+	combined.set(done);
+	combined.set(frame, done.length);
+	return new DataView(combined.buffer);
 }
 
 function createAdapterPacket(
@@ -214,6 +222,10 @@ class FakeSerialPort {
 
 	getWrites(): Uint8Array[] {
 		return this.writes.map((entry) => new Uint8Array(entry));
+	}
+
+	getPendingReadCount(): number {
+		return this.reads.length;
 	}
 }
 
@@ -619,6 +631,70 @@ describe("OpenPort2Transport", () => {
 			await expect(connection.sendFrame(payload)).resolves.toEqual(payload);
 		});
 
+		it("sends an upload PDU, waits for TX_DONE, and preserves an early ECU message", async () => {
+			const payload = new Uint8Array(251).fill(0x5a);
+			const response = new Uint8Array(
+				createIso15765ResponseFrame(new Uint8Array([0x81]), false).buffer,
+			);
+			const txDone = createAdapterPacket(0x36, 0x10, new Uint8Array());
+			const chunks = [response, txDone];
+			fakeDevice.transferIn = vi.fn(async () => ({
+				data: new DataView((chunks.shift() ?? new Uint8Array()).buffer),
+			}));
+			await connection.sendOnly?.(payload);
+			expect(chunks).toHaveLength(0);
+			await expect(connection.receiveMessage?.()).resolves.toEqual(
+				new Uint8Array([0x81]),
+			);
+			const writes = fakeDevice.getWrites() as Uint8Array[];
+			const written = writes[writes.length - 1];
+			expect(decodeAsciiPrefix(written ?? new Uint8Array(), 12)).toBe(
+				"att6 255 0\r\n",
+			);
+			expect(written?.slice(12, 16)).toEqual(new Uint8Array([0, 0, 7, 0xe0]));
+			expect(written?.slice(16)).toEqual(payload);
+		});
+
+		it("consumes an early pending reply's own TX_DONE before starting an upload chunk", async () => {
+			const pending = new Uint8Array(
+				createIso15765ResponseFrame(new Uint8Array([0x7f, 0x31, 0x78]), false)
+					.buffer,
+			);
+			const done = createAdapterPacket(0x36, 0x10, new Uint8Array());
+			const chunks = [pending, done, done];
+			fakeDevice.transferIn = vi.fn(async () => ({
+				data: new DataView((chunks.shift() ?? new Uint8Array()).buffer),
+			}));
+			await expect(
+				connection.sendFrame(new Uint8Array([0x31, 0xe0])),
+			).resolves.toEqual(new Uint8Array([0x7f, 0x31, 0x78]));
+			expect(chunks).toHaveLength(1);
+			await connection.sendOnly?.(new Uint8Array(251));
+			expect(chunks).toHaveLength(0);
+		});
+
+		it("receives a queued final response without retransmitting a pending request", async () => {
+			const pending = new Uint8Array(
+				createIso15765ResponseFrame(new Uint8Array([0x7f, 0x10, 0x78])).buffer,
+			);
+			const final = new Uint8Array(
+				createIso15765ResponseFrame(new Uint8Array([0x50, 0x85]), false).buffer,
+			);
+			const combined = new Uint8Array(pending.length + final.length);
+			combined.set(pending);
+			combined.set(final, pending.length);
+			fakeDevice.transferIn = vi.fn(async () => ({
+				data: new DataView(combined.buffer),
+			}));
+			await expect(
+				connection.sendFrame(new Uint8Array([0x10, 0x85])),
+			).resolves.toEqual(new Uint8Array([0x7f, 0x10, 0x78]));
+			await expect(connection.receiveMessage?.()).resolves.toEqual(
+				new Uint8Array([0x50, 0x85]),
+			);
+			expect(fakeDevice.getWrites()).toHaveLength(1);
+		});
+
 		it("initialization should use EvoScan's ISO15765 PASS_FILTER setup", async () => {
 			const reads = [
 				new TextEncoder().encode("ari main code version : 1.17.4877\r\n"),
@@ -691,6 +767,67 @@ describe("OpenPort2Transport", () => {
 	});
 
 	describe("transport name", () => {
+		it("serial upload waits for TX_DONE and retains split response data", async () => {
+			const path = "/dev/cu.usbmodem-upload";
+			const first = createAdapterPacket(
+				0x36,
+				0x80,
+				new Uint8Array([0, 0, 7, 0xe8, 0x81]),
+			);
+			const done = createAdapterPacket(0x36, 0x10, new Uint8Array());
+			const last = createAdapterPacket(0x36, 0x40, new Uint8Array([0x42]));
+			const port = new FakeSerialPort(path, [first, done, last]);
+			const serial = new FakeSerialRuntime(
+				[
+					{
+						path,
+						vendorId: "0403",
+						productId: "cc4d",
+						manufacturer: "Tactrix",
+					},
+				],
+				new Map([[path, () => port]]),
+			);
+			const connection = await new OpenPort2Transport({ serial }).connect(
+				`openport2-serial:${path}`,
+			);
+			await connection.sendOnly?.(new Uint8Array(251).fill(0x5a));
+			await expect(connection.receiveMessage?.()).resolves.toEqual(
+				new Uint8Array([0x81, 0x42]),
+			);
+			expect(port.getWrites()).toHaveLength(1);
+		});
+
+		it("serial early pending reply cannot leave its TX_DONE for the next upload chunk", async () => {
+			const path = "/dev/cu.usbmodem-completions";
+			const pending = new Uint8Array(
+				createIso15765ResponseFrame(new Uint8Array([0x7f, 0x31, 0x78]), false)
+					.buffer,
+			);
+			const done = createAdapterPacket(0x36, 0x10, new Uint8Array());
+			const port = new FakeSerialPort(path, [pending, done, done]);
+			const serial = new FakeSerialRuntime(
+				[
+					{
+						path,
+						vendorId: "0403",
+						productId: "cc4d",
+						manufacturer: "Tactrix",
+					},
+				],
+				new Map([[path, () => port]]),
+			);
+			const connection = await new OpenPort2Transport({ serial }).connect(
+				`openport2-serial:${path}`,
+			);
+			await expect(
+				connection.sendFrame(new Uint8Array([0x31, 0xe0])),
+			).resolves.toEqual(new Uint8Array([0x7f, 0x31, 0x78]));
+			await connection.sendOnly?.(new Uint8Array(251));
+			// Both completion packets must have been consumed, so another receive times out.
+			await expect(connection.receiveMessage?.(1)).rejects.toThrow(/timed out/);
+		});
+
 		it("has correct name", async () => {
 			const fakeUsb = new FakeUSB([]);
 			const transport = new OpenPort2Transport({

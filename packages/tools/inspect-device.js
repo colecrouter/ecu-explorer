@@ -6,7 +6,7 @@
  * @module
  */
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import {
 	createNodeSerialRuntime,
 	createNodeUsbRuntime,
@@ -93,6 +93,8 @@ console.warn = () => {};
  * @property {string | undefined} [transport]
  * @property {string | undefined} [out]
  * @property {boolean | undefined} [dryRun]
+ * @property {string | undefined} [bootstrap]
+ * @property {string | undefined} [kernel]
  */
 
 /**
@@ -1050,7 +1052,31 @@ async function readRomDevice(opts) {
 			);
 		}
 
-		const protocols = resolveProtocols(opts.protocol);
+		let protocols = resolveProtocols(opts.protocol);
+		if (opts.bootstrap || opts.kernel) {
+			if (!opts.bootstrap || !opts.kernel)
+				throw new Error(
+					"Provide both --bootstrap and --kernel encoded wire files",
+				);
+			if (opts.dryRun)
+				throw new Error(
+					"The Evo X kernel read path does not support --dry-run",
+				);
+			if (
+				!opts.protocol ||
+				!protocols.every((protocol) => protocol instanceof Mut3Protocol)
+			)
+				throw new Error("Kernel files require --protocol mut3");
+			const [bootstrap, kernel] = await Promise.all([
+				readFile(opts.bootstrap),
+				readFile(opts.kernel),
+			]);
+			protocols = [
+				new Mut3Protocol({
+					loadKernelArtifacts: async () => ({ bootstrap, kernel }),
+				}),
+			];
+		}
 		/** @type {Partial<DiagnosticOptions>} */
 		const operationOptions = {
 			readRomDryRun: opts.dryRun ?? false,
@@ -1355,11 +1381,15 @@ prog
 	.describe("Test ROM-read path (with optional dry-run)")
 	.option("--dry-run", "Perform dry run without full ROM read", false)
 	.option("--out", "Write ROM bytes to file path after successful read")
+	.option("--bootstrap", "Encoded 208-byte Evo X V1.09 bootstrap wire file")
+	.option("--kernel", "Encoded 5117-byte Evo X V1.09 kernel upload wire file")
 	.action((opts) => {
 		readRomDevice({
 			device: opts.device,
 			protocol: opts.protocol,
 			out: opts.out,
+			bootstrap: opts.bootstrap,
+			kernel: opts.kernel,
 			verbose: opts.verbose,
 			traceFile: opts.traceFile,
 			dryRun: opts.dryRun,

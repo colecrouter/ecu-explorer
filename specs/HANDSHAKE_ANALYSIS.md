@@ -1,5 +1,12 @@
 # 📖 REFERENCE DOCUMENT: EcuFlash Binary Handshake & Protocol Analysis
 
+> **2026-10-13 evidence update:** Supplied Evo X CAN recordings contradict the
+> categorical "no kernel upload" conclusions below: they contain a complete
+> upload and an M32186 CAN Kernel V1.09 reply. They also show four-byte
+> `27 05` / `27 06` security values, not the assumed `27 03` / `27 04` flow.
+> See [Evo X kernel research](EVO_X_KERNEL_RESEARCH.md) for artifact hashes,
+> recovered resources, search coverage, and the evidence still needed.
+
 **Status:** Technical analysis from binary decompilation
 **Source binary**: `ecuflash_138_osx.dmg` → `ecuflash.app/Contents/MacOS/ecuflash`; also `ecuflash.exe` (Windows 1.44)
 **Analysis tools**: `strings`, `nm`, `otool -tV` (macOS), Python zlib decompression
