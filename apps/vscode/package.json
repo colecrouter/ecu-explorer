@@ -363,6 +363,18 @@
 					"scope": "resource",
 					"description": "List of active definition provider IDs. Providers not listed are not loaded."
 				},
+				"ecuExplorer.evoX.bootstrapPath": {
+					"type": "string",
+					"default": "",
+					"scope": "machine",
+					"description": "Absolute path to the 208-byte encoded Evo X V1.09 bootstrap wire file. Set with kernelPath to use kernel upload for ROM reads."
+				},
+				"ecuExplorer.evoX.kernelPath": {
+					"type": "string",
+					"default": "",
+					"scope": "machine",
+					"description": "Absolute path to the 5117-byte encoded Evo X V1.09 kernel upload wire file. The decoded RAM image is not accepted."
+				},
 				"ecuExplorer.logsFolder": {
 					"type": "string",
 					"default": "logs",

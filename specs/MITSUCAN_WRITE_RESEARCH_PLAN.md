@@ -1,5 +1,12 @@
 # EVO X `mitsucan` Write-Session Security Key — Research Plan
 
+> **2026-10-13 evidence update:** The "no kernel upload" statements below are
+> contradicted by supplied Evo X CAN recordings. The traffic uses four-byte
+> `27 05` / `27 06` security values; the ranked 16-bit multipliers below do not
+> describe that observed exchange.
+> See [Evo X kernel research](EVO_X_KERNEL_RESEARCH.md) for the current artifact
+> inventory and the next evidence needed to establish the upload path.
+
 **Status**: 10 candidate algorithms identified via binary analysis; awaiting hardware verification (CAN capture)
 **Target ECU**: Mitsubishi 4B11T (Lancer Evolution X) — Renesas M32186F8
 **EcuFlash method**: `mitsucan` (EcuFlash 1.44)

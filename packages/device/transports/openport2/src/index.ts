@@ -34,6 +34,7 @@ const CAN_ID_MASK_11BIT = 0x7ff;
 const DEFAULT_TESTER_CAN_ID = 0x7e0;
 const DEFAULT_ECU_CAN_ID = 0x7e8;
 const PACKET_NORMAL = 0x00;
+const PACKET_TX_DONE = 0x10;
 const PACKET_RX_END = 0x40;
 const PACKET_NORMAL_START = 0x80;
 
@@ -349,6 +350,7 @@ function copyBytes(data: Uint8Array): Uint8Array<ArrayBuffer> {
 function consumeProtocolBytes(
 	buffer: Uint8Array,
 	payload: Uint8Array,
+	waitForTransmit = false,
 ): {
 	buffer: Uint8Array;
 	payload: Uint8Array;
@@ -403,11 +405,20 @@ function consumeProtocolBytes(
 
 		offset += packetTotalLength;
 
-		if (packetType === PACKET_RX_END) {
+		if (
+			packetType === PACKET_RX_END ||
+			(waitForTransmit && packetType === PACKET_TX_DONE)
+		) {
 			return {
 				buffer: copyBytes(buffer.slice(offset)),
-				payload: new Uint8Array(0),
-				message: accumulatedPayload,
+				payload:
+					packetType === PACKET_TX_DONE
+						? accumulatedPayload
+						: new Uint8Array(0),
+				message:
+					packetType === PACKET_TX_DONE
+						? new Uint8Array(0)
+						: accumulatedPayload,
 			};
 		}
 	}
@@ -432,6 +443,8 @@ export class OpenPort2Connection implements DeviceConnection {
 	private readonly device: USBDevice;
 	private channelId: number | null = null;
 	private pendingProtocolBytes: Uint8Array = new Uint8Array(0);
+	private readonly pendingMessages: Uint8Array[] = [];
+	private pendingProtocolPayload: Uint8Array = new Uint8Array(0);
 	private streamActive = false;
 	private streamAbortController: AbortController | null = null;
 
@@ -455,10 +468,31 @@ export class OpenPort2Connection implements DeviceConnection {
 	 */
 	async sendFrame(data: Uint8Array, timeoutMs?: number): Promise<Uint8Array> {
 		const effectiveTimeout = timeoutMs ?? DEFAULT_FRAME_TIMEOUT_MS;
+		const startedAt = Date.now();
+		await this.sendOnly(data, effectiveTimeout);
+		return this.receiveMessage(
+			Math.max(1, effectiveTimeout - (Date.now() - startedAt)),
+		);
+	}
+
+	/** Send a complete ISO15765 PDU without an application-level reply. */
+	async sendOnly(
+		data: Uint8Array,
+		timeoutMs = DEFAULT_FRAME_TIMEOUT_MS,
+	): Promise<void> {
 		const channelId = this.channelId ?? ISO15765_PROTOCOL_ID;
 		await this.writeMessage(channelId, wrapIso15765Payload(data), 0);
-		const response = await this.readProtocolMessage(effectiveTimeout);
-		return unwrapIso15765Payload(response);
+		await this.readProtocolMessage(timeoutMs, true);
+	}
+
+	/** Receive the next reassembled ISO15765 PDU, retaining queued responses. */
+	async receiveMessage(
+		timeoutMs = DEFAULT_FRAME_TIMEOUT_MS,
+	): Promise<Uint8Array> {
+		const queued = this.pendingMessages.shift();
+		return unwrapIso15765Payload(
+			queued ?? (await this.readProtocolMessage(timeoutMs)),
+		);
 	}
 
 	/**
@@ -730,19 +764,28 @@ export class OpenPort2Connection implements DeviceConnection {
 	 * Read and decode protocol messages wrapped in the adapter's `AR...` format.
 	 * This is a minimal ISO15765 parser based on the reference J2534 source.
 	 */
-	private async readProtocolMessage(timeoutMs: number): Promise<Uint8Array> {
+	private async readProtocolMessage(
+		timeoutMs: number,
+		waitForTransmit = false,
+	): Promise<Uint8Array> {
 		const startedAt = Date.now();
-		let payload: Uint8Array = new Uint8Array(0);
+		let payload: Uint8Array = this.pendingProtocolPayload;
+		this.pendingProtocolPayload = new Uint8Array(0);
 		let buffered: Uint8Array = this.pendingProtocolBytes;
 		this.pendingProtocolBytes = new Uint8Array(0);
 
 		while (Date.now() - startedAt < timeoutMs) {
 			if (buffered.length > 0) {
-				const parsed = consumeProtocolBytes(buffered, payload);
+				const parsed = consumeProtocolBytes(buffered, payload, waitForTransmit);
 				buffered = parsed.buffer;
 				payload = parsed.payload;
 				if (parsed.message != null) {
+					if (waitForTransmit && parsed.message.length > 0) {
+						this.pendingMessages.push(parsed.message);
+						continue;
+					}
 					this.pendingProtocolBytes = buffered;
+					this.pendingProtocolPayload = payload;
 					return parsed.message;
 				}
 			}
@@ -756,6 +799,7 @@ export class OpenPort2Connection implements DeviceConnection {
 		}
 
 		this.pendingProtocolBytes = buffered;
+		this.pendingProtocolPayload = payload;
 		throw new Error(`OpenPort 2.0 read timed out after ${timeoutMs}ms`);
 	}
 
@@ -935,6 +979,8 @@ class OpenPort2SerialConnection implements DeviceConnection {
 	private readonly port: SerialPortLike;
 	private channelId: number | null = null;
 	private pendingProtocolBytes: Uint8Array = new Uint8Array(0);
+	private readonly pendingMessages: Uint8Array[] = [];
+	private pendingProtocolPayload: Uint8Array = new Uint8Array(0);
 	private streamActive = false;
 	private streamAbortController: AbortController | null = null;
 
@@ -945,10 +991,31 @@ class OpenPort2SerialConnection implements DeviceConnection {
 
 	async sendFrame(data: Uint8Array, timeoutMs?: number): Promise<Uint8Array> {
 		const effectiveTimeout = timeoutMs ?? DEFAULT_FRAME_TIMEOUT_MS;
+		const startedAt = Date.now();
+		await this.sendOnly(data, effectiveTimeout);
+		return this.receiveMessage(
+			Math.max(1, effectiveTimeout - (Date.now() - startedAt)),
+		);
+	}
+
+	/** Send a complete ISO15765 PDU without an application-level reply. */
+	async sendOnly(
+		data: Uint8Array,
+		timeoutMs = DEFAULT_FRAME_TIMEOUT_MS,
+	): Promise<void> {
 		const channelId = this.channelId ?? ISO15765_PROTOCOL_ID;
 		await this.writeMessage(channelId, wrapIso15765Payload(data), 0);
-		const response = await this.readProtocolMessage(effectiveTimeout);
-		return unwrapIso15765Payload(response);
+		await this.readProtocolMessage(timeoutMs, true);
+	}
+
+	/** Receive the next reassembled ISO15765 PDU, retaining queued responses. */
+	async receiveMessage(
+		timeoutMs = DEFAULT_FRAME_TIMEOUT_MS,
+	): Promise<Uint8Array> {
+		const queued = this.pendingMessages.shift();
+		return unwrapIso15765Payload(
+			queued ?? (await this.readProtocolMessage(timeoutMs)),
+		);
 	}
 
 	async receiveFrame(maxLength: number): Promise<Uint8Array> {
@@ -1142,19 +1209,28 @@ class OpenPort2SerialConnection implements DeviceConnection {
 		await this.port.write(combined);
 	}
 
-	private async readProtocolMessage(timeoutMs: number): Promise<Uint8Array> {
+	private async readProtocolMessage(
+		timeoutMs: number,
+		waitForTransmit = false,
+	): Promise<Uint8Array> {
 		const startedAt = Date.now();
-		let payload: Uint8Array = new Uint8Array(0);
+		let payload: Uint8Array = this.pendingProtocolPayload;
+		this.pendingProtocolPayload = new Uint8Array(0);
 		let buffered: Uint8Array = this.pendingProtocolBytes;
 		this.pendingProtocolBytes = new Uint8Array(0);
 
 		while (Date.now() - startedAt < timeoutMs) {
 			if (buffered.length > 0) {
-				const parsed = consumeProtocolBytes(buffered, payload);
+				const parsed = consumeProtocolBytes(buffered, payload, waitForTransmit);
 				buffered = parsed.buffer;
 				payload = parsed.payload;
 				if (parsed.message != null) {
+					if (waitForTransmit && parsed.message.length > 0) {
+						this.pendingMessages.push(parsed.message);
+						continue;
+					}
 					this.pendingProtocolBytes = buffered;
+					this.pendingProtocolPayload = payload;
 					return parsed.message;
 				}
 			}
@@ -1168,6 +1244,7 @@ class OpenPort2SerialConnection implements DeviceConnection {
 		}
 
 		this.pendingProtocolBytes = buffered;
+		this.pendingProtocolPayload = payload;
 		throw new Error(`OpenPort 2.0 read timed out after ${timeoutMs}ms`);
 	}
 

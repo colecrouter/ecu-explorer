@@ -8,6 +8,7 @@ import type {
 	PidDescriptor,
 	RomProgress,
 } from "@ecu-explorer/device";
+import { type EvoXKernelArtifacts, EvoXKernelSession } from "./evox-kernel.js";
 import { extractAllRaxParameters, RAX_BLOCKS } from "./rax-decoder.js";
 import { computeSecurityKey } from "./security.js";
 
@@ -166,6 +167,12 @@ async function readRaxBlock(
 	return result;
 }
 
+/** Optional caller-owned images for the captured Evo X RAM-kernel read path. */
+export interface Mut3ProtocolOptions {
+	/** Load images on demand; returning undefined retains the legacy diagnostic read path. */
+	loadKernelArtifacts?: () => Promise<EvoXKernelArtifacts | undefined>;
+}
+
 /**
  * MUT-III ECU protocol implementation for Mitsubishi 4B11T ECUs (EVO X).
  *
@@ -191,6 +198,10 @@ async function readRaxBlock(
  * - EcuFlash 1.44 binary analysis (see HANDSHAKE_ANALYSIS.md §7.2, §7.4)
  */
 export class Mut3Protocol implements EcuProtocol {
+	private readonly romReads = new WeakSet<DeviceConnection>();
+	private readonly livePolls = new WeakMap<DeviceConnection, number>();
+	/** Configure opt-in kernel upload without bundling ECU executable images. */
+	constructor(private readonly options: Mut3ProtocolOptions = {}) {}
 	readonly name = "MUT-III (Mitsubishi)";
 
 	/**
@@ -252,6 +263,9 @@ export class Mut3Protocol implements EcuProtocol {
 		onFrame: (frame: LiveDataFrame) => void,
 		onHealth?: (health: LiveDataHealth) => void,
 	): LiveDataSession {
+		if (this.romReads.has(connection))
+			throw new Error("Cannot start live logging during a ROM read");
+		this.livePolls.set(connection, (this.livePolls.get(connection) ?? 0) + 1);
 		let running = true;
 		const startTime = Date.now();
 
@@ -370,9 +384,18 @@ export class Mut3Protocol implements EcuProtocol {
 		};
 
 		// Start the polling loop (fire and forget; errors are caught within poll)
-		poll().catch((error) => {
-			console.error("[MUT-III] Streaming poll loop exited with error:", error);
-		});
+		poll()
+			.catch((error) => {
+				console.error(
+					"[MUT-III] Streaming poll loop exited with error:",
+					error,
+				);
+			})
+			.finally(() => {
+				const remaining = (this.livePolls.get(connection) ?? 1) - 1;
+				if (remaining > 0) this.livePolls.set(connection, remaining);
+				else this.livePolls.delete(connection);
+			});
 
 		return {
 			stop: () => {
@@ -403,6 +426,35 @@ export class Mut3Protocol implements EcuProtocol {
 		onProgress: (progress: RomProgress) => void,
 		onEvent?: (event: EcuEvent) => void,
 	): Promise<Uint8Array> {
+		if ((this.livePolls.get(connection) ?? 0) > 0)
+			throw new Error(
+				"Stop live logging and wait for its current request to finish before reading ROM",
+			);
+		if (this.romReads.has(connection))
+			throw new Error("A ROM read is already using this connection");
+		this.romReads.add(connection);
+		try {
+			return await this.readRomExclusive(connection, onProgress, onEvent);
+		} finally {
+			this.romReads.delete(connection);
+		}
+	}
+
+	private async readRomExclusive(
+		connection: DeviceConnection,
+		onProgress: (progress: RomProgress) => void,
+		onEvent?: (event: EcuEvent) => void,
+	): Promise<Uint8Array> {
+		const artifacts = await this.options.loadKernelArtifacts?.();
+		if (artifacts) {
+			const session = await EvoXKernelSession.upload(
+				connection,
+				artifacts,
+				onProgress,
+				onEvent,
+			);
+			return session.readRom(onProgress);
+		}
 		// Step 1: Extended Diagnostic Session
 		await connection.sendFrame(
 			new Uint8Array([SID_DIAGNOSTIC_SESSION_CONTROL, 0x03]),
@@ -484,22 +536,8 @@ export class Mut3Protocol implements EcuProtocol {
 		return rom;
 	}
 
-	// TODO: Implement writeRom() for EVO X (`mitsucan`) ROM flash write.
-	//
-	// Write sequence (from EcuFlash 1.44 `mitsucan` analysis):
-	//   1. Extended/Programming diagnostic session — 0x10 0x03 or 0x10 0x02
-	//      (exact session type unconfirmed)
-	//   2. SecurityAccess requestSeed — 0x27 0x03 (write-level subfunction)
-	//   3. SecurityAccess sendKey    — 0x27 0x04 with computed key
-	//   4. RequestDownload           — 0x34, address 0x000000, size 0x100000 (1 MB)
-	//   5. TransferData              — 0x36 × 8192 blocks of 128 bytes each
-	//   6. RequestTransferExit       — 0x37
-	//
-	// ⚠️ BLOCKER: The write-session SecurityAccess key algorithm (for subfunction
-	// 0x03/0x04) is currently UNKNOWN. It is embedded in the obfuscated
-	// `ecuflash.exe` binary and cannot be extracted by static analysis alone.
-	// See `security.ts` for details and resolution options.
-	// See also: HANDSHAKE_ANALYSIS.md §7.5 and DEVELOPMENT.md for the blocker entry.
+	// Evo X erase/program integration remains tracked in GitHub issues #5/#10.
+	// The kernel upload/read implementation lives in evox-kernel.ts.
 }
 
 // Suppress unused-variable warnings for CAN ID constants that are defined
@@ -518,3 +556,11 @@ export {
 	CMD_READ_WORD_INC,
 	CMD_READ_BYTE,
 };
+
+export type { EvoXKernelArtifacts } from "./evox-kernel.js";
+export {
+	computeKernelSecurityKey,
+	EvoXKernelSession,
+	validateEvoXKernelArtifacts,
+} from "./evox-kernel.js";
+export { computeFlashSecurityKey } from "./security.js";

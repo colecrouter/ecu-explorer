@@ -40,7 +40,7 @@ Check out the available apps:
 | **Nissan (older)** | NCS K-line | ❌ | ❌ | ❌ | K-line (future) | Not Started |
 | **OBD-II (any)** | ISO 14229 | ❌ | ❌ | ✅ | CAN (OpenPort 2.0) | Ready |
 
-**Legend**: ✅ = Complete, ⏳ = In Progress, ❌ = Not Started, ❌* = Blocked on security key, ❌** = Requires K-line hardware
+**Legend**: ✅ = Complete, ⏳ = In Progress, ❌ = Not Started, ❌* = Flash programming integration pending, ❌** = Requires K-line hardware
 
 ---
 
@@ -79,6 +79,13 @@ Try running the command below to verify if the connection is available in your e
 ```bash
 npm run tools:inspect-device -- connect --verbose
 ```
+
+The Evo X V1.09 kernel upload/read path is available with caller-supplied encoded
+wire images. In desktop VS Code, set `ecuExplorer.evoX.bootstrapPath` and
+`ecuExplorer.evoX.kernelPath`, then use **Read ROM from Device**. The CLI equivalent
+uses `read-rom --protocol mut3 --bootstrap <wire-file> --kernel <wire-file> --out <rom-file>`.
+See [the kernel investigation](specs/EVO_X_KERNEL_RESEARCH.md#application-implementation-2026-10-13)
+for the expected files, validated capture evidence, and remaining hardware work.
 
 For headless debugging of the MCP ROM/log flows, use the matching tools:
 

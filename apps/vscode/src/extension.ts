@@ -548,7 +548,25 @@ export async function activate(
 		"openport2",
 		new OpenPort2Transport(options?.openPortRuntime),
 	);
-	deviceManager.registerProtocol(new Mut3Protocol());
+	deviceManager.registerProtocol(
+		new Mut3Protocol({
+			loadKernelArtifacts: async () => {
+				const config = vscode.workspace.getConfiguration("ecuExplorer.evoX");
+				const bootstrapPath = config.get<string>("bootstrapPath", "");
+				const kernelPath = config.get<string>("kernelPath", "");
+				if (!bootstrapPath && !kernelPath) return undefined;
+				if (!bootstrapPath || !kernelPath)
+					throw new Error(
+						"Set both Evo X bootstrapPath and kernelPath to the captured encoded wire files",
+					);
+				const [bootstrap, kernel] = await Promise.all([
+					vscode.workspace.fs.readFile(vscode.Uri.file(bootstrapPath)),
+					vscode.workspace.fs.readFile(vscode.Uri.file(kernelPath)),
+				]);
+				return { bootstrap, kernel };
+			},
+		}),
+	);
 	deviceManager.registerProtocol(new MitsubishiBootloaderProtocol());
 	deviceManager.registerProtocol(new SubaruProtocol());
 	deviceManager.registerProtocol(new UdsProtocol());
