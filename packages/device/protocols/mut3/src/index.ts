@@ -7,8 +7,13 @@ import type {
 	LiveDataSession,
 	PidDescriptor,
 	RomProgress,
+	WriteOptions,
 } from "@ecu-explorer/device";
-import { type EvoXKernelArtifacts, EvoXKernelSession } from "./evox-kernel.js";
+import {
+	type EvoXKernelArtifacts,
+	EvoXKernelSession,
+	validateEvoXRom,
+} from "./evox-kernel.js";
 import { extractAllRaxParameters, RAX_BLOCKS } from "./rax-decoder.js";
 import { computeSecurityKey } from "./security.js";
 
@@ -169,6 +174,8 @@ async function readRaxBlock(
 
 /** Optional caller-owned images for the captured Evo X RAM-kernel read path. */
 export interface Mut3ProtocolOptions {
+	/** Explicit recovery attachment, intended for a CLI restart after failed flashing. */
+	resumeKernel?: boolean;
 	/** Load images on demand; returning undefined retains the legacy diagnostic read path. */
 	loadKernelArtifacts?: () => Promise<EvoXKernelArtifacts | undefined>;
 }
@@ -199,6 +206,11 @@ export interface Mut3ProtocolOptions {
  */
 export class Mut3Protocol implements EcuProtocol {
 	private readonly romReads = new WeakSet<DeviceConnection>();
+	private readonly recoveryDevices = new Set<string>();
+	private readonly kernelSessions = new WeakMap<
+		DeviceConnection,
+		EvoXKernelSession
+	>();
 	private readonly livePolls = new WeakMap<DeviceConnection, number>();
 	/** Configure opt-in kernel upload without bundling ECU executable images. */
 	constructor(private readonly options: Mut3ProtocolOptions = {}) {}
@@ -265,6 +277,13 @@ export class Mut3Protocol implements EcuProtocol {
 	): LiveDataSession {
 		if (this.romReads.has(connection))
 			throw new Error("Cannot start live logging during a ROM read");
+		if (
+			this.kernelSessions.has(connection) ||
+			this.recoveryDevices.has(connection.deviceInfo.id)
+		)
+			throw new Error(
+				"A flash kernel is retained for recovery; diagnostic logging cannot resume yet",
+			);
 		this.livePolls.set(connection, (this.livePolls.get(connection) ?? 0) + 1);
 		let running = true;
 		const startTime = Date.now();
@@ -445,6 +464,13 @@ export class Mut3Protocol implements EcuProtocol {
 		onProgress: (progress: RomProgress) => void,
 		onEvent?: (event: EcuEvent) => void,
 	): Promise<Uint8Array> {
+		if (
+			this.kernelSessions.has(connection) ||
+			this.recoveryDevices.has(connection.deviceInfo.id)
+		)
+			throw new Error(
+				"A failed flash kernel is retained for recovery; retry the write or reconnect before a new ROM read",
+			);
 		const artifacts = await this.options.loadKernelArtifacts?.();
 		if (artifacts) {
 			const session = await EvoXKernelSession.upload(
@@ -453,7 +479,22 @@ export class Mut3Protocol implements EcuProtocol {
 				onProgress,
 				onEvent,
 			);
-			return session.readRom(onProgress);
+			let rom: Uint8Array;
+			try {
+				rom = await session.readRom(onProgress);
+			} catch (error) {
+				try {
+					await session.restoreDiagnostics();
+				} catch (cleanupError) {
+					throw new AggregateError(
+						[error, cleanupError],
+						"ROM read and diagnostic cleanup both failed",
+					);
+				}
+				throw error;
+			}
+			await session.restoreDiagnostics();
+			return rom;
 		}
 		// Step 1: Extended Diagnostic Session
 		await connection.sendFrame(
@@ -536,8 +577,71 @@ export class Mut3Protocol implements EcuProtocol {
 		return rom;
 	}
 
-	// Evo X erase/program integration remains tracked in GitHub issues #5/#10.
-	// The kernel upload/read implementation lives in evox-kernel.ts.
+	/** Write/dry-run through the captured kernel; successful operations restore diagnostics.
+	 * Failures retain the kernel for an explicit retry and never auto-reset an incomplete flash.
+	 */
+	async writeRom(
+		connection: DeviceConnection,
+		rom: Uint8Array,
+		onProgress: (progress: RomProgress) => void,
+		options: WriteOptions = {},
+		onEvent?: (event: EcuEvent) => void,
+	): Promise<void> {
+		options = { ...options };
+		const image = new Uint8Array(rom);
+		validateEvoXRom(image, options);
+		if ((this.livePolls.get(connection) ?? 0) > 0)
+			throw new Error("Stop live logging before writing ROM");
+		if (this.romReads.has(connection))
+			throw new Error("A ROM read/write is already using this connection");
+		this.romReads.add(connection);
+		try {
+			let session = this.kernelSessions.get(connection);
+			if (
+				!session &&
+				(this.options.resumeKernel ||
+					this.recoveryDevices.has(connection.deviceInfo.id))
+			) {
+				session = await EvoXKernelSession.resumeForRecovery(connection);
+				this.kernelSessions.set(connection, session);
+			}
+			if (!session) {
+				const artifacts = await this.options.loadKernelArtifacts?.();
+				if (!artifacts)
+					throw new Error(
+						"Evo X writes require both encoded bootstrap and kernel files",
+					);
+				session = await EvoXKernelSession.upload(
+					connection,
+					artifacts,
+					onProgress,
+					onEvent,
+				);
+				this.kernelSessions.set(connection, session);
+			}
+			await session.writeRom(image, onProgress, options, onEvent);
+			// Delete before cleanup: reset invalidates the cached kernel even if cleanup fails.
+			this.kernelSessions.delete(connection);
+			this.recoveryDevices.delete(connection.deviceInfo.id);
+			await session.restoreDiagnostics();
+		} catch (error) {
+			if (this.kernelSessions.has(connection))
+				this.recoveryDevices.add(connection.deviceInfo.id);
+			throw error;
+		} finally {
+			this.romReads.delete(connection);
+		}
+	}
+
+	/** Upload and validate ROM staging in RAM, without flash enable/erase/commit commands. */
+	async dryRunWrite(
+		connection: DeviceConnection,
+		rom: Uint8Array,
+		onProgress: (progress: RomProgress) => void,
+		onEvent?: (event: EcuEvent) => void,
+	): Promise<void> {
+		await this.writeRom(connection, rom, onProgress, { dryRun: true }, onEvent);
+	}
 }
 
 // Suppress unused-variable warnings for CAN ID constants that are defined
@@ -560,7 +664,9 @@ export {
 export type { EvoXKernelArtifacts } from "./evox-kernel.js";
 export {
 	computeKernelSecurityKey,
+	EVO_X_FLASH_SECTORS,
 	EvoXKernelSession,
 	validateEvoXKernelArtifacts,
+	validateEvoXRom,
 } from "./evox-kernel.js";
 export { computeFlashSecurityKey } from "./security.js";

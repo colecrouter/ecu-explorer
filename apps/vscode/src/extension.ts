@@ -1195,7 +1195,10 @@ export async function activate(
 				try {
 					// Step 4: Write ROM with progress reporting
 					// Determine if we can do a read-before-write for diff-based flashing
-					const hasReadRom = !!matchedProtocol.readRom;
+					// MUT-III selects sectors from live CRCs, including recovery retries.
+					const hasReadRom =
+						!!matchedProtocol.readRom &&
+						!(matchedProtocol instanceof Mut3Protocol);
 
 					await vscode.window.withProgress(
 						{
@@ -1208,7 +1211,7 @@ export async function activate(
 
 							// Phase 1: Read current ROM from ECU (if supported)
 							let originalRom: Uint8Array | undefined;
-							if (matchedProtocol?.readRom) {
+							if (hasReadRom && matchedProtocol?.readRom) {
 								originalRom = await matchedProtocol.readRom(
 									connection,
 									(romProgress: RomProgress) => {

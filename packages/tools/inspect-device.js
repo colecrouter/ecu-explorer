@@ -22,12 +22,15 @@ import { MitsubishiBootloaderProtocol } from "../device/protocols/mitsubishi-boo
 import {
 	Mut3Protocol,
 	RAX_PID_DESCRIPTORS,
+	validateEvoXKernelArtifacts,
+	validateEvoXRom,
 } from "../device/protocols/mut3/dist/index.js";
 import { Obd2Protocol } from "../device/protocols/obd2/dist/index.js";
 import { SubaruProtocol } from "../device/protocols/subaru/dist/index.js";
 import { UdsProtocol } from "../device/protocols/uds/dist/index.js";
 import { OpenPort2Transport } from "../device/transports/openport2/dist/index.js";
 import { formatDiagnosticOutput } from "../mcp/dist/formatters/diagnostics-formatter.js";
+import { deviceCommandOptions } from "./device-command-options.js";
 
 // Suppress console.warn since we handle errors explicitly
 console.warn = () => {};
@@ -1375,6 +1378,107 @@ prog
 		});
 	});
 
+/**
+ * Flash or validate a ROM with the captured Evo X kernel workflow.
+ * All input validation occurs before opening hardware; --dry-run modifies RAM only.
+ * @param {ReadRomDeviceOptions & { rom?: string; resumeKernel?: boolean }} opts
+ * @returns {Promise<void>}
+ */
+async function writeRomDevice(opts) {
+	if (!opts.rom || (!opts.resumeKernel && (!opts.bootstrap || !opts.kernel)))
+		throw new Error("write-rom requires --rom, --bootstrap and --kernel files");
+	if (
+		opts.protocol &&
+		!resolveProtocols(opts.protocol).every(
+			(protocol) => protocol instanceof Mut3Protocol,
+		)
+	)
+		throw new Error("write-rom supports --protocol mut3 only");
+	if (opts.resumeKernel && opts.dryRun)
+		throw new Error("Recovery requires a real write retry, not --dry-run");
+	const rom = await readFile(opts.rom);
+	validateEvoXRom(rom);
+	const protocol = new Mut3Protocol({
+		resumeKernel: opts.resumeKernel ?? false,
+		loadKernelArtifacts: async () => {
+			if (!opts.bootstrap || !opts.kernel) return undefined;
+			const [bootstrap, kernel] = await Promise.all([
+				readFile(opts.bootstrap),
+				readFile(opts.kernel),
+			]);
+			return { bootstrap, kernel };
+		},
+	});
+	if (!opts.resumeKernel && opts.bootstrap && opts.kernel) {
+		const [bootstrap, kernel] = await Promise.all([
+			readFile(opts.bootstrap),
+			readFile(opts.kernel),
+		]);
+		await validateEvoXKernelArtifacts({ bootstrap, kernel });
+	}
+	const transport = new OpenPort2Transport(
+		await createOpenPortRuntime(opts.transport),
+	);
+	const devices = await transport.listDevices();
+	const device = opts.device
+		? devices.find((device) => device.id === opts.device)
+		: devices[0];
+	if (!device) throw new Error("No matching OpenPort 2.0 device found");
+	const connection = /** @type {InitializableDeviceConnection} */ (
+		await transport.connect(device.id)
+	);
+	try {
+		await connection.initialize?.();
+		await protocol.writeRom(
+			connection,
+			rom,
+			(progress) => {
+				if (opts.verbose)
+					console.error(
+						`${progress.phase}: ${Math.round(progress.percentComplete)}% ${progress.message ?? ""}`,
+					);
+			},
+			{ dryRun: opts.dryRun ?? false },
+			(event) => {
+				if (opts.verbose) console.error(event.type);
+			},
+		);
+		console.log(
+			JSON.stringify({
+				operation: "write-rom",
+				dryRun: opts.dryRun ?? false,
+				bytes: rom.length,
+				diagnosticsRestored: true,
+			}),
+		);
+	} finally {
+		await connection.close();
+	}
+}
+
+prog
+	.command("write-rom")
+	.option(
+		"--resume-kernel",
+		"Attach to the existing V1.09 kernel after an interrupted flash",
+		false,
+	)
+	.describe("Flash an Evo X ROM or validate staging with --dry-run")
+	.option("--rom", "Complete 1 MiB ROM image with valid mitsucan checksum")
+	.option("--bootstrap", "Encoded 208-byte Evo X V1.09 bootstrap wire file")
+	.option("--kernel", "Encoded 5117-byte Evo X V1.09 kernel upload wire file")
+	.option(
+		"--dry-run",
+		"Check staging CRCs without flash erase/programming",
+		false,
+	)
+	.action((opts) => {
+		writeRomDevice(deviceCommandOptions(opts)).catch((error) => {
+			console.error(error instanceof Error ? error.message : String(error));
+			process.exitCode = 1;
+		});
+	});
+
 // Read ROM subcommand
 prog
 	.command("read-rom")
@@ -1392,7 +1496,7 @@ prog
 			kernel: opts.kernel,
 			verbose: opts.verbose,
 			traceFile: opts.traceFile,
-			dryRun: opts.dryRun,
+			dryRun: deviceCommandOptions(opts).dryRun,
 			transport: opts.transport,
 		}).catch((err) => {
 			console.error(err instanceof Error ? err.message : String(err));

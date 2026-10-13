@@ -1,15 +1,15 @@
 # Evo X flashing kernel investigation
 
-**Status:** decoded bootstrap/kernel recovered; upload and readback implemented offline on `feature/evox-kernel-upload`.
+**Status:** captured upload, readback, flash programming/dry-run, recovery attachment, and diagnostic cleanup implemented. Hardware validation remains in issue #3.
 **Last investigated:** 2026-10-13.
 
 This investigation concerns the code EcuFlash may upload to the Evo X ECU,
 not the older Evo 7/8/9 K-line kernels. The captured upload and command protocol
 now provide direct evidence, and both decoding layers have been reconstructed.
 The upload client replays three complete captured transfers byte-for-byte.
-Hardware validation and flash erase/program integration remain open in
-[issue #5](https://github.com/colecrouter/ecu-explorer/issues/5) and
-[issue #10](https://github.com/colecrouter/ecu-explorer/issues/10).
+The software workflow for [issue #5](https://github.com/colecrouter/ecu-explorer/issues/5)
+is implemented; hardware validation remains in [issue #3](https://github.com/colecrouter/ecu-explorer/issues/3),
+and other flashing variants remain in [issue #10](https://github.com/colecrouter/ecu-explorer/issues/10).
 
 ## Application implementation (2026-10-13)
 
@@ -56,6 +56,7 @@ npm run tools:inspect-device -- read-rom --protocol mut3 --transport serial \
   --out ./evox-readback.bin
 ```
 
+The initial upload/read milestone had these limits (superseded by the #5 workflow below):
 These flags do not support `--dry-run`. This implementation sends upload/preparation
 commands and reads ROM; it does not expose erase/program commands. A successful
 read leaves the uploaded kernel running. Restoring the factory diagnostic session
@@ -81,11 +82,90 @@ suites. The new kernel client has 97.72% line, 89.74% branch, and 100% function
 coverage. The three actual capture replays also passed. Hardware execution is
 still pending; the GitHub issues remain open for that and programming support.
 
-An independent agent reviewed the implementation before PR preparation. Its
+For the initial upload-only milestone, an independent agent reviewed the implementation before PR preparation. Its
 transmit-completion ownership and concurrent live-polling findings were fixed
 and covered by USB/serial and protocol regression tests. Re-review found no
 remaining blocking issues. Hardware execution and cleanup/reset remain outside
 this change and are tracked by the open issues above.
+
+## Flash, recovery, and cleanup workflow (#5)
+
+The writer reads the 20 nonuniform sector boundaries from the decoded kernel
+and compares **live ECU CRC32s** against the complete target image. A supplied
+`originalRom` is not trusted as current ECU state. Target images must be exactly
+1 MiB; the mitsucan ROM checksum is validated before upload/erase by default.
+The checksum-containing sector at `0xb0000` is programmed first, matching both
+recorded writes. Every changed sector is erased in full, then every non-erased
+4 KiB target block is staged with eight 512-byte `22` requests and committed
+through `24` with its CRC32. All-`ff` blocks remain erased. Sector CRCs are
+verified after `21` disables programming. Staging/commit and post-write CRC
+verification cannot be disabled by `verifyChecksums: false`; that API option
+only controls the separate ROM checksum validation.
+
+`dryRunWrite` follows the same sector planning and staging, using `23` to check
+the RAM-buffer CRC. It does not send flash enable `20`, erase `25`, or commit
+`24`. Use a complete valid target ROM for dry-run; the generic diagnostic
+`read-rom --dry-run` placeholder image is not supported by this workflow.
+
+Successful reads, writes, and write dry-runs restore factory diagnostics:
+`07`, factory session/security, the captured metadata/download, `36d4d4`,
+`37`, `31e102`, then `1101`. Both resets use bounded diagnostic-readiness
+probing (up to ten seconds) because an early request can be dropped while the
+ECU initializes. The final normal-mode `1a87` prefix must match. The final
+`1092` probe uses physical addressing in place of the recorded broadcast;
+optional broadcast keepalives/identity probes are not replayed. Reset/cleanup
+requests are not issued after a failed flash.
+
+A flash error triggers an attempt to disable programming and retains recovery
+state. If both the operation and disable fail, both errors are reported.
+Diagnostic logging/ordinary reads remain blocked while a failed kernel is
+retained. Repeating the VS Code write operation uses the retained kernel; after
+reconnection to the same device ID, it verifies V1.09 and reattaches. MUT-III
+writes skip the UI's read-before-write because their live CRC planning already
+selects changed sectors and supports recovery. Explicit CLI recovery uses
+`--resume-kernel`. Recovery always checks the version, disables programming,
+and requires a real write/complete target CRC match before permitting reset.
+
+```sh
+# Validate target staging without erasing/programming flash:
+npm run tools:inspect-device -- write-rom --protocol mut3 \
+  --rom ./target.hex --bootstrap ./research.local/evox-kernel/captured-bootstrap-wire.bin \
+  --kernel ./research.local/evox-kernel/captured-kernel-upload.bin --dry-run
+
+# Program the same target (omit --dry-run):
+npm run tools:inspect-device -- write-rom --protocol mut3 \
+  --rom ./target.hex --bootstrap ./research.local/evox-kernel/captured-bootstrap-wire.bin \
+  --kernel ./research.local/evox-kernel/captured-kernel-upload.bin
+
+# Retry an interrupted flash while the V1.09 kernel remains active:
+npm run tools:inspect-device -- write-rom --protocol mut3 --rom ./target.hex --resume-kernel
+```
+
+CLI flag parsing is tested with actual Sade arguments and the real CLI entry
+point. Dashed `--dry-run` / `--resume-kernel` flags are explicitly mapped;
+ambiguous nonboolean values are rejected before hardware access.
+
+The local `replay-application-flash.mjs` reproduces **332 recorded flash
+transaction messages: two erases and eighteen commits**, plus the two changed
+sectors' recorded post-write CRCs. Only those two sectors are reconstructed;
+untouched target sectors and their matching CRC replies are synthetic. This
+is transaction evidence, not reconstruction of a complete historical ROM.
+The local replay explicitly bypasses ROM checksum validation because unknown
+untouched bytes prevent validating the historical whole-ROM checksum. Actual
+application writes validate that checksum by default.
+
+Independent review found and resolved UI retry, CLI resume, reset readiness,
+and dashed-flag parsing issues. Regression tests additionally cover two
+non-erased blocks preserved across an 8 KiB erase, invalid inputs, unchanged
+sectors, dry-run, commit failures, post-write CRC mismatch, combined errors,
+and reconnection recovery. No vehicle was contacted during implementation.
+Hardware/runtime transport validation and actual recovery behavior remain
+unverified and tracked separately in #3.
+
+Final software validation: `npm run test:coverage` passed **1897 tests across
+94 files**. The kernel client's line/branch/function coverage is
+**96.01% / 85.59% / 96.55%**. Build, type, lint, and formatting checks passed;
+the three upload replays and the bounded 332-message flash replay passed.
 
 ## Evidence recovered
 
