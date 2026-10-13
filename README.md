@@ -34,13 +34,13 @@ Check out the available apps:
 
 | Vehicle | Protocol | ROM Read | ROM Write | Live Data | Transport | Status |
 |---------|----------|:--------:|:---------:|:---------:|-----------|--------|
-| **Mitsubishi EVO X (4B11T)** | MUT-III | ✅ | ❌* | ⏳ | CAN (OpenPort 2.0) | Partial |
+| **Mitsubishi EVO X (4B11T)** | MUT-III / RAM kernel | ✅ | ✅* | ⏳ | CAN (OpenPort 2.0) | Partial |
 | **Mitsubishi EVO X (Bootloader)** | UDS/Bootloader | ✅ | ✅ | ❌ | CAN (OpenPort 2.0) | Ready |
 | **Subaru WRX/STI/Forester** | KWP2000 | ✅ | ✅ | ⏳** | CAN (OpenPort 2.0) | Partial |
 | **Nissan (older)** | NCS K-line | ❌ | ❌ | ❌ | K-line (future) | Not Started |
 | **OBD-II (any)** | ISO 14229 | ❌ | ❌ | ✅ | CAN (OpenPort 2.0) | Ready |
 
-**Legend**: ✅ = Complete, ⏳ = In Progress, ❌ = Not Started, ❌* = Flash programming integration pending, ❌** = Requires K-line hardware
+**Legend**: ✅ = Complete, ⏳ = In Progress, ❌ = Not Started, ✅* = Capture-tested kernel workflow; hardware validation pending, ❌** = Requires K-line hardware
 
 ---
 
@@ -80,12 +80,17 @@ Try running the command below to verify if the connection is available in your e
 npm run tools:inspect-device -- connect --verbose
 ```
 
-The Evo X V1.09 kernel upload/read path is available with caller-supplied encoded
+The Evo X V1.09 kernel upload/read/write path is available with caller-supplied encoded
 wire images. In desktop VS Code, set `ecuExplorer.evoX.bootstrapPath` and
 `ecuExplorer.evoX.kernelPath`, then use **Read ROM from Device**. The CLI equivalent
 uses `read-rom --protocol mut3 --bootstrap <wire-file> --kernel <wire-file> --out <rom-file>`.
 See [the kernel investigation](specs/EVO_X_KERNEL_RESEARCH.md#application-implementation-2026-10-13)
 for the expected files, validated capture evidence, and remaining hardware work.
+Use **Write ROM to Device** for flashing after setting both kernel file paths.
+The CLI exposes `write-rom --rom <target> --bootstrap <wire-file> --kernel <wire-file>`;
+add `--dry-run` to validate staging, or use `--resume-kernel --rom <target>` to retry
+an interrupted operation. Successful operations restore factory diagnostics.
+
 
 For headless debugging of the MCP ROM/log flows, use the matching tools:
 
