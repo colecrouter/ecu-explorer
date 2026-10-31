@@ -112,6 +112,8 @@ export interface WriteOptions {
 
 export interface LiveDataSession {
 	stop(): void;
+	/** Resolves after polling has stopped and its final request has settled. */
+	readonly completion?: Promise<void>;
 	/** Save the recorded session to a file (CSV or binary) */
 	saveRecording?(uri: vscode.Uri): Promise<void>;
 }

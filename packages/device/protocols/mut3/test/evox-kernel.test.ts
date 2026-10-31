@@ -263,6 +263,38 @@ describe("Evo X kernel readback", () => {
 });
 
 describe("MUT-III operation exclusion", () => {
+	it("signals polling completion only after its final request releases the ROM lock", async () => {
+		const fake = transcript([]);
+		let rejectPoll!: (error: Error) => void;
+		fake.connection.sendFrame = () =>
+			new Promise<Uint8Array>((_resolve, reject) => {
+				rejectPoll = reject;
+			});
+		const protocol = new Mut3Protocol({
+			loadKernelArtifacts: async () => {
+				throw new Error("ROM reader reached");
+			},
+		});
+		const session = protocol.streamLiveData(
+			fake.connection,
+			[0x8000],
+			() => {},
+		);
+		session.stop();
+		let complete = false;
+		void session.completion?.then(() => {
+			complete = true;
+		});
+		await Promise.resolve();
+		expect(complete).toBe(false);
+		rejectPoll(new Error("Stopped polling request"));
+		await session.completion;
+		expect(complete).toBe(true);
+		await expect(protocol.readRom(fake.connection, () => {})).rejects.toThrow(
+			"ROM reader reached",
+		);
+	});
+
 	it("rejects ROM upload while a live-data request is still in flight, even after stop", async () => {
 		const fake = transcript([]);
 		fake.connection.sendFrame = () => new Promise<Uint8Array>(() => {});

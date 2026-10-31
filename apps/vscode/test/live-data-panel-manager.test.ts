@@ -76,6 +76,93 @@ describe("LiveDataPanelManager", () => {
 		return { connection, protocol };
 	}
 
+	it("drains the current request before resuming the selected stream after a ROM read", async () => {
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		const stop = vi.fn();
+		const protocol = createLiveDataProtocol();
+		if (!protocol.streamLiveData) throw new Error("Missing test stream");
+		vi.mocked(protocol.streamLiveData).mockReturnValue({ stop, completion });
+		const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
+		const frames = vi.fn();
+		const connection = createLiveDataConnection();
+		const recording = manager.streamForLogging(
+			connection,
+			protocol,
+			createLiveDataPids(),
+			frames,
+		);
+		let drained = false;
+		const pending = manager.suspendForRomRead().then((resume) => {
+			drained = true;
+			return resume;
+		});
+		await Promise.resolve();
+		expect(stop).toHaveBeenCalledOnce();
+		expect(drained).toBe(false);
+		settle();
+		const resume = await pending;
+		clock.mockReturnValue(5000);
+		resume();
+		resume();
+		vi.mocked(protocol.streamLiveData).mock.calls[1]?.[2]({
+			timestamp: 0,
+			pid: 0x0c,
+			value: 0,
+			unit: "rpm",
+		});
+		expect(frames).toHaveBeenCalledWith(
+			expect.objectContaining({ timestamp: 4000 }),
+		);
+		clock.mockRestore();
+		expect(protocol.streamLiveData).toHaveBeenCalledTimes(2);
+		recording.stop();
+		expect(stop).toHaveBeenCalledTimes(2);
+	});
+
+	it("stopping an older recording does not stop a replacement stream", () => {
+		const protocol = createLiveDataProtocol();
+		const connection = createLiveDataConnection();
+		const oldRecording = manager.streamForLogging(
+			connection,
+			protocol,
+			createLiveDataPids(),
+			vi.fn(),
+		);
+		manager.stopStreaming();
+		const replacement = manager.streamForLogging(
+			connection,
+			protocol,
+			createLiveDataPids(),
+			vi.fn(),
+		);
+		if (!protocol.streamLiveData) throw new Error("Missing test stream");
+		const replacementSession = vi.mocked(protocol.streamLiveData).mock
+			.results[1]?.value;
+		if (!replacementSession) throw new Error("Missing replacement session");
+		vi.mocked(replacementSession.stop).mockClear();
+		oldRecording.stop();
+		expect(replacementSession.stop).not.toHaveBeenCalled();
+		replacement.stop();
+		expect(replacementSession.stop).toHaveBeenCalledOnce();
+	});
+
+	it("does not restart streaming after a disconnect while a ROM read was paused", async () => {
+		const protocol = createLiveDataProtocol();
+		manager.streamForLogging(
+			createLiveDataConnection(),
+			protocol,
+			createLiveDataPids(),
+			vi.fn(),
+		);
+		const resume = await manager.suspendForRomRead();
+		manager.stopStreaming();
+		resume();
+		expect(protocol.streamLiveData).toHaveBeenCalledOnce();
+	});
+
 	beforeEach(() => {
 		mockPanel = createMockWebviewPanel("Live Data");
 

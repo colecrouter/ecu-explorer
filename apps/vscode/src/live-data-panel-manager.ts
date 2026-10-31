@@ -52,6 +52,9 @@ export class LiveDataPanelManager {
 		  }
 		| undefined;
 	private recordingSubscribers = 0;
+	private suspendedForRomRead = false;
+	private streamEpoch = 0;
+	private streamGeneration = 0;
 
 	private _onFrame = new vscode.EventEmitter<LiveDataFrame>();
 	/** Fires for each live data frame received from the device. */
@@ -133,7 +136,7 @@ export class LiveDataPanelManager {
 			this.activeSelection = undefined;
 			throw error;
 		}
-		const session = this.session;
+		const generation = this.streamGeneration;
 		this.recordingSubscribers++;
 		let stopped = false;
 		return {
@@ -142,7 +145,11 @@ export class LiveDataPanelManager {
 				stopped = true;
 				subscription.dispose();
 				this.recordingSubscribers--;
-				if ((ownsStream || this.panel == null) && this.session === session)
+				if (
+					(ownsStream || this.panel == null) &&
+					this.streamGeneration === generation &&
+					this.connection === connection
+				)
 					this.stopStreaming();
 			},
 		};
@@ -198,7 +205,13 @@ export class LiveDataPanelManager {
 		);
 	}
 
-	private startStreaming(pids: number[], profileId?: string) {
+	private startStreaming(
+		pids: number[],
+		profileId?: string,
+		elapsedBeforeStart?: number,
+	) {
+		if (this.suspendedForRomRead)
+			throw new Error("Live data is paused for a ROM read.");
 		if (!this.connection || !this.protocol || !this.protocol.streamLiveData) {
 			return;
 		}
@@ -214,17 +227,24 @@ export class LiveDataPanelManager {
 			...(profileId === undefined ? {} : { profileId }),
 		};
 
+		if (elapsedBeforeStart === undefined) this.streamGeneration++;
+		const timestampOffset = elapsedBeforeStart ?? 0;
+		this.streamEpoch = Date.now() - timestampOffset;
 		this.session = this.protocol.streamLiveData(
 			this.connection,
 			selection,
 			(frame: LiveDataFrame) => {
+				const timedFrame =
+					timestampOffset === 0
+						? frame
+						: { ...frame, timestamp: frame.timestamp + timestampOffset };
 				this.panel?.webview.postMessage({
 					type: "data",
-					frame,
+					frame: timedFrame,
 				});
 
 				// Fire the onFrame event so LoggingManager (and others) can subscribe
-				this._onFrame.fire(frame);
+				this._onFrame.fire(timedFrame);
 			},
 			(health: LiveDataHealth) => {
 				console.log(
@@ -239,6 +259,44 @@ export class LiveDataPanelManager {
 		);
 
 		this.panel?.webview.postMessage({ type: "streamingStarted" });
+	}
+
+	/** Pause polling, drain its last request, and return a one-shot resume action. */
+	async suspendForRomRead(): Promise<() => void> {
+		if (this.suspendedForRomRead)
+			throw new Error("A ROM read already paused live data.");
+		this.suspendedForRomRead = true;
+		const selection = this.activeSelection;
+		const epoch = this.streamEpoch;
+		const connection = this.connection;
+		const session = this.session;
+		try {
+			session?.stop();
+			await session?.completion;
+			if (this.session === session) this.session = undefined;
+			this.panel?.webview.postMessage({ type: "streamingStopped" });
+		} catch (error) {
+			this.suspendedForRomRead = false;
+			throw error;
+		}
+		let resumed = false;
+		return () => {
+			if (resumed) return;
+			resumed = true;
+			this.suspendedForRomRead = false;
+			if (
+				session &&
+				selection &&
+				this.activeSelection === selection &&
+				this.connection === connection
+			) {
+				this.startStreaming(
+					selection.pids,
+					selection.profileId,
+					Date.now() - epoch,
+				);
+			}
+		};
 	}
 
 	/** Stop ECU polling when requested by the panel or device lifecycle. */

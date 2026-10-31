@@ -30,6 +30,10 @@
 			"import": "./dist/formatters/yaml-formatter.js",
 			"types": "./dist/formatters/yaml-formatter.d.ts"
 		},
+		"./table-diff": {
+			"import": "./dist/table-diff.js",
+			"types": "./dist/table-diff.d.ts"
+		},
 		"./rom-loader": {
 			"import": "./dist/rom-loader.js",
 			"types": "./dist/rom-loader.d.ts"

@@ -15,6 +15,7 @@
 		"src/webview/main.ts",
 		"src/webview/chart-main.ts",
 		"src/webview/live-data.ts",
+		"src/webview/rom-diff.ts",
 		"./**/*.svelte.test.ts",
 		"./**/*.svelte.spec.ts",
 		"node_modules/**"

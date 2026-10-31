@@ -36,6 +36,22 @@
 	"contributes": {
 		"commands": [
 			{
+				"command": "ecuExplorer.compareSavedRoms",
+				"title": "ECU Explorer: Compare Saved ROMs"
+			},
+			{
+				"command": "ecuExplorer.compareActiveRomWithSaved",
+				"title": "ECU Explorer: Compare Active ROM with Saved ROM"
+			},
+			{
+				"command": "ecuExplorer.compareSavedRomWithEcu",
+				"title": "ECU Explorer: Compare Saved ROM with ECU"
+			},
+			{
+				"command": "ecuExplorer.compareActiveRomWithEcu",
+				"title": "ECU Explorer: Compare Active ROM with ECU"
+			},
+			{
 				"command": "rom.open",
 				"title": "ECU Explorer: Open ROM"
 			},

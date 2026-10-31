@@ -145,9 +145,10 @@ export class Obd2Protocol implements EcuProtocol {
 			}
 		};
 
-		poll();
+		const completion = poll();
 
 		return {
+			completion,
 			stop: () => {
 				running = false;
 			},

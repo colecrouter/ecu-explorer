@@ -22,6 +22,7 @@ export default defineConfig({
 				table: path.resolve(here, "src/webview/main.ts"),
 				chart: path.resolve(here, "src/webview/chart-main.ts"),
 				"live-data": path.resolve(here, "src/webview/live-data.ts"),
+				"rom-diff": path.resolve(here, "src/webview/rom-diff.ts"),
 			},
 			output: {
 				entryFileNames: "[name].js",

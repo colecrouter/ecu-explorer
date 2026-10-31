@@ -39,6 +39,7 @@ import {
 	setGraphCommandsContext,
 	setTableCommandsContext,
 } from "./commands/index.js";
+import { registerRomComparisonCommands } from "./commands/rom-comparison-commands.js";
 import { readConfig } from "./config.js";
 import { exportActiveTableCsvFlow } from "./csv/export.js";
 import { importTableFromCsvFlow } from "./csv/import.js";
@@ -788,6 +789,21 @@ export async function activate(
 	// Initialize LoggingManager
 	loggingManager = new LoggingManager();
 	ctx.subscriptions.push(loggingManager);
+	registerRomComparisonCommands(ctx, {
+		registry,
+		workspaceState: persistedWorkspaceState,
+		deviceManager,
+		liveData: liveDataPanelManager,
+		logging: loggingManager,
+		getActiveDocument: () => {
+			const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+			if (!(input instanceof vscode.TabInputCustom)) return undefined;
+			return (
+				editorProvider?.getTableDocument(input.uri)?.romDocument ??
+				editorProvider?.getDocument(input.uri)
+			);
+		},
+	});
 
 	// Wire LoggingManager state changes to DeviceStatusBarManager
 	ctx.subscriptions.push(

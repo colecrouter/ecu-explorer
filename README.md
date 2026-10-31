@@ -48,6 +48,23 @@ Check out the available apps:
 
 See [FEATURES.md](FEATURES.md) for a detailed features list.
 
+## Compare ROMs
+
+The command palette includes **ECU Explorer: Compare Saved ROMs**, **Compare
+Active ROM with Saved ROM**, **Compare Saved ROM with ECU**, and **Compare Active
+ROM with ECU**. Active ROM comparisons capture unsaved edits from the focused
+ROM or table editor.
+
+The comparison viewer lists changed tables, provides baseline/comparison grids
+and signed cell deltas, and flags changed axes, missing tables and incompatible
+layouts. Search by table name, category or status, or include unchanged tables.
+ECU comparisons read once, pause live logging while the read completes, and save
+a timestamped baseline in the workspace's `ECU Snapshots/` folder (extension
+storage when no workspace is open). The ECU is the baseline for these comparisons.
+
+See [the comparison specification](specs/rom-comparison-view.md) for source
+ordering, matching rules and protocol lifecycle details.
+
 ## Supported Vehicles & ECUs
 
 See **[PROTOCOL_SUPPORT.md](PROTOCOL_SUPPORT.md)** for detailed per-vehicle capabilities.

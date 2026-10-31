@@ -975,13 +975,18 @@ export class Mut3Protocol implements EcuProtocol {
 			);
 		}
 		this.livePolls.set(connection, (this.livePolls.get(connection) ?? 0) + 1);
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
 		const complete = () => {
+			settle();
 			const remaining = (this.livePolls.get(connection) ?? 1) - 1;
 			if (remaining > 0) this.livePolls.set(connection, remaining);
 			else this.livePolls.delete(connection);
 		};
 		try {
-			return start(complete);
+			return { ...start(complete), completion };
 		} catch (error) {
 			complete();
 			throw error;
