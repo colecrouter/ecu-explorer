@@ -49,6 +49,14 @@ jobs:
             - name: Install Playwright
               run: npx playwright install --with-deps chromium
 
+            - name: Setup Python for firmware contracts
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+
+            - name: Run offline firmware contracts
+              run: npm run firmware:evox:test
+
             - name: Run tests
               run: npm test
 

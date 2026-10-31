@@ -1,6 +1,6 @@
 # Source-built Evo X RAM kernel: reuse investigation
 
-Status: feasibility investigated; captured bootstrap bundled; no replacement kernel implemented.
+Status: offline C core and repeatable target build started on `feature/evox-source-kernel`; captured bootstrap bundled.
 Investigated: 2026-10-31. Related: issues #3 (hardware validation), #10
 (flashing variants), and the completed #5 software workflow.
 
@@ -121,5 +121,16 @@ uses a different command subset.
    flash enable/disable, erase, staging and commits, including failure recovery.
    Existing captures are protocol oracles; bench validation remains necessary.
 
-The exact next implementation unit is milestone 1. CAN initialization and an
-uploadable bootstrap are deliberately outside that unit's acceptance criteria.
+## Milestone 1 progress (2026-10-31)
+
+[Offline core and commands](../firmware/evox/README.md) now provide original C
+CRC32/read-request validation, sanitized host contracts, a synthetic assembly
+entry and linker layout, and a configurable M32R build. Two target builds match
+at 184 bytes with no unresolved symbols. This uses the existing ordinary GCC
+installation; no adjacent project implementation was copied. The output is
+explicitly not uploadable and is not integrated into the host profile.
+
+Milestone 1 remains in progress: target simulator execution and an audited
+uploadable startup layout are still pending. The exact next unit is simulator
+execution of the freshly compiled CRC/parser routines. CAN initialization and
+an uploadable bootstrap remain outside this offline unit's acceptance criteria.
