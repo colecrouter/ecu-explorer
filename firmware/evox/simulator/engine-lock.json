@@ -1,0 +1,20 @@
+{
+  "engine": "GNU GDB 16.3 M32R simulator",
+  "model": "m32r/d",
+  "archive_sha256": "bcfcd095528a987917acf9fff3f1672181694926cc18d609c99d0042c00224c5",
+  "files": {
+    "source": {
+      "include/sim/sim.h": "a2be5ee8bc7dc4ab353c0558ecb1e5b67a12336587c4f88a2ba91a58e427122c",
+      "include/sim/callback.h": "5805e69edaad48d389f57739593fdf7b66cd7b2f65fb7e42fce36ae035db11bd",
+      "sim/m32r/m32r-sim.h": "541eebf506d91329da223fa6065964d93b8b9e752f3aacb220ca9ce8313953a7"
+    },
+    "build": {
+      "sim/config.h": "ee71e9554125899e5eb0623fadeb0df7a9d53e5d5e1d8e269f2db0db1891fb67",
+      "sim/m32r/libsim.a": "dcceaa4a924fd43ad11289f8a997fad10f403c404579c2e9445d15cb93d86dbb",
+      "opcodes/.libs/libopcodes.a": "de08b0a2c307abf83cbafd87250d5cefa952f771383aea18318c4307b7925f16",
+      "bfd/.libs/libbfd.a": "18f9215b84b6a8c745de7e479ae108a78a95d3ce2861f04fa7a129232a28afbe",
+      "libiberty/libiberty.a": "467d419413f13e9689bbae3aa63df00ceeb5f01bff5bc82a12402b467dd7c3d6",
+      "gnulib/import/libgnu.a": "14aa95e7f34168fa633c76a9c6f344c74d080efe81d5990a9296a18dd572dc9a"
+    }
+  }
+}

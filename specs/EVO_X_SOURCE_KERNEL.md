@@ -130,7 +130,14 @@ at 184 bytes with no unresolved symbols. This uses the existing ordinary GCC
 installation; no adjacent project implementation was copied. The output is
 explicitly not uploadable and is not integrated into the host profile.
 
-Milestone 1 remains in progress: target simulator execution and an audited
-uploadable startup layout are still pending. The exact next unit is simulator
-execution of the freshly compiled CRC/parser routines. CAN initialization and
-an uploadable bootstrap remain outside this offline unit's acceptance criteria.
+[Compiled M32R simulator execution](../firmware/evox/simulator/README.md) now
+passes 578 returning calls and two negative engine controls. The checker covers
+results, exact permitted writes, complete mapped memory and callee-preserved
+registers; failure-injection tests exercise checker rejection. Engine and
+source/tool/input/output identities are pinned in the run evidence. The
+[receipt](../firmware/evox/simulator/validation.json) records the finite corpus.
+
+An audited uploadable startup layout remains pending; the current entry is a
+synthetic infinite-loop fixture, not ECU initialization. The next unit is to
+establish startup state, RAM ownership and CAN peripheral requirements before
+implementing the read-only agent. No hardware evidence is claimed.

@@ -38,6 +38,7 @@
 	],
 	"scripts": {
 		"build": "npm run build --workspaces",
+		"firmware:evox:simulate": "python3 -B firmware/evox/simulator/run.py",
 		"firmware:evox:build": "python3 -B firmware/evox/tools/build.py",
 		"firmware:evox:test": "python3 -B -m unittest discover -s firmware/evox/test -v",
 		"check": "npm run check --workspaces --if-present && tsc --noEmit -p tsconfig.test.node.json && tsc --noEmit -p tsconfig.test.vscode.json && tsc --noEmit -p tsconfig.test.browser.json",

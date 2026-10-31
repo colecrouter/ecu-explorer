@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "validation": "finite compiled M32R execution; no ECU hardware",
+  "engine": "GNU GDB 16.3 M32R simulator",
+  "model": "m32r/d",
+  "cases": 580,
+  "returned": 578,
+  "limit_controls": 1,
+  "fault_controls": 1,
+  "max_steps": 77860,
+  "symbols": {
+    "evox_offline_entry": 4096,
+    "evox_crc32": 4100,
+    "evox_parse_read": 4164
+  },
+  "target": {
+    "elf_sha256": "c05106b48fcd2ce296109f6541775c40c05efb7ad2abb6e01afe082ea1293a27",
+    "binary_sha256": "3bb1f58c1497ea4b58cd3ef2295669274a775b59b7562f46b96cf46b3f2b4b64",
+    "code_bytes": 184,
+    "stack": [
+      {
+        "function": "evox_crc32",
+        "bytes": 0
+      },
+      {
+        "function": "evox_parse_read",
+        "bytes": 0
+      }
+    ]
+  },
+  "date": "2026-10-31",
+  "source_sha256": {
+    "kernel/core.c": "b8ca2ae4c4280948abe1fdce8c6f8102d51c87938d8dec4942bfef1a4928cc4f",
+    "kernel/core.h": "60627f99b9de1005005d264a4357be665e183bb58297ccacab76048fe3669f04",
+    "kernel/entry.S": "55cf4fed935be6c5a2af94d22e6e363cc32529a25d097201ae96ac77276fb296",
+    "kernel/link.ld": "18df7cff635284823d4bcfa4397d4aba59c1af1dc6c5dec3993c679fb5fefbd5",
+    "tools/build.py": "cabc0de8f09e76bc4b665f6d2553303fa1efb9b6004ec2d106eef678facacf9f",
+    "test/core.c": "9897cde8394d87fd5d32a036875e3c3fceb7adc120fbc5ea6d97b5193b564191",
+    "test/test_core.py": "cd87660599d79c21a7af544ca824a987278c3684e654688538caeeaa85998b5d",
+    "test/test_simulator_checker.py": "e9aea9066d15d2618122cee1035dc0ae91a4aa16f50db0ca4a11536b7c77a296",
+    "simulator/README.md": "4598f81e2f8db85f32f076250e60fbe4a214b3bddbcc2f5c85ed0afa6805366f",
+    "simulator/contracts.py": "3b250e2c1dae008ccfd7c8e9e2b0ce23d63e338e53f09c3cb048bf797a77e3e2",
+    "simulator/engine-lock.json": "6d9a25b9e35654402828c4781d71c0bc971443bb2407e781349805e7d4af691b",
+    "simulator/run.py": "e6aded039334fd0b212e80efc40acba73e5ff1b9fd118fef9a605b3703918b2b",
+    "simulator/runner.c": "7971d00fb45732805642c1dc9e3f9a302abf1ca44f4255ff01591353441ad848"
+  },
+  "artifact_sha256": {
+    "validation.json": "d16a5dcbae3afcdc917dfeb9703ad0be528c1200ea78904f915db8b0bb7d5518",
+    "input.packet": "88442c640d4ef218c34c8e4a23ceb9e8eb110a2feab65cf668c26a04ae5d2893",
+    "snapshots.jsonl": "2d4133beea038fd8640c5edff537103816a36c0ba937164fec96cbd9bb2ac902",
+    "runner": "a01650a7be69fe948bcfb60212168f09c676b5f363f6a1c554821437466be511"
+  },
+  "limitations": "Finite normal-memory GNU simulation only; no ECU startup, CAN, MMIO, interrupts or hardware execution."
+}

@@ -62,7 +62,11 @@ On 2026-10-31 the host sanitizer harness passed. Two M32R links produced identic
 bytes for each current leaf. Image SHA-256:
 `3bb1f58c1497ea4b58cd3ef2295669274a775b59b7562f46b96cf46b3f2b4b64`.
 
-Target **execution** is still pending. The next unit is to run these freshly
-compiled routines through the adjacent project's GNU M32R simulator machinery
-with independent memory/register contracts. That precedes an uploadable startup
-entry and peripheral implementation. No ECU operations have been performed.
+[GNU M32R simulator execution](simulator/README.md) now passes 578 returning
+calls plus unmapped-memory fault and step-limit controls. Results, output writes,
+callee-preserved registers and all mapped memory are checked against independent
+contracts; see the [receipt](simulator/validation.json).
+
+The next unit is an audited startup/RAM layout and peripheral investigation for
+a read-only agent. The current synthetic entry remains non-uploadable. No ECU
+operations have been performed.
