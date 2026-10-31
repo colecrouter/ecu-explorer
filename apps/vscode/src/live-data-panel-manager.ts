@@ -157,6 +157,7 @@ export class LiveDataPanelManager {
 		const same =
 			this.connection === connection &&
 			this.protocol === protocol &&
+			this.configuration?.revision === configuration.revision &&
 			this.activeSelection?.profileId === configuration.profileId &&
 			this.activeSelection?.pids.join(",") ===
 				configuration.pids.map((pid) => pid.pid).join(",");

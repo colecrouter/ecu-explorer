@@ -234,6 +234,28 @@ describe("LiveDataPanelManager", () => {
 		expect(session.stop).not.toHaveBeenCalled();
 	});
 
+	it("restarts a stream when an imported file's revision changes without changing channel IDs", async () => {
+		const session = createLiveDataSession();
+		const protocol = createLiveDataProtocol({ session });
+		const connection = createLiveDataConnection();
+		const configuration = {
+			protocolName: protocol.name,
+			profileName: "External XML",
+			profileId: "evoscan:file.xml",
+			pids: createLiveDataPids(),
+			revision: "before",
+		};
+		await manager.applyConfiguration(connection, protocol, configuration, true);
+		await manager.applyConfiguration(
+			connection,
+			protocol,
+			{ ...configuration, revision: "after" },
+			true,
+		);
+		expect(session.stop).toHaveBeenCalledOnce();
+		expect(protocol.streamLiveData).toHaveBeenCalledTimes(2);
+	});
+
 	it("rejects configuration changes during an ECU ROM read", async () => {
 		const resume = await manager.suspendForRomRead();
 		await expect(

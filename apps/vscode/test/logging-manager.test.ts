@@ -59,6 +59,30 @@ describe("LoggingManager", () => {
 	});
 
 	describe("startLog", () => {
+		it("quotes imported EvoScan channel names and units in CSV headers", async () => {
+			const first = createSamplePids()[0];
+			if (!first) throw new Error("Missing PID fixture");
+			const pid = {
+				...first,
+				name: "Fuel Trim (LTFT)(Bank1,Rear)(MUT52)",
+				unit: 'V,"raw"',
+			};
+			await manager.startLog([pid]);
+			manager.onFrame({
+				pid: pid.pid,
+				timestamp: 1,
+				value: 25,
+				unit: pid.unit,
+			});
+			await manager.stopLog({ notify: false });
+			const csv = new TextDecoder().decode(persistedLogBytes);
+			expect(csv).toContain(
+				'Timestamp (ms),"Fuel Trim (LTFT)(Bank1,Rear)(MUT52)"\n',
+			);
+			expect(csv).toContain('Unit,"V,""raw"""\n');
+			expect(csv).toContain("1,25\n");
+		});
+
 		it("starts a source without a panel and saves its first sample", async () => {
 			let sampling = false;
 			await manager.startLog({

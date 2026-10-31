@@ -11,6 +11,41 @@ import {
 import { createMockWorkspaceState } from "./mocks/vscode-harness.js";
 
 describe("native logging configuration", () => {
+	it("preselects DataLog channels and carries the file revision into the stream configuration", async () => {
+		const state = createMockWorkspaceState();
+		const pids = createLiveDataPids();
+		const first = createLiveDataProfiles()[0];
+		if (!first) throw new Error("Missing profile");
+		const profile = {
+			...first,
+			defaultPids: [pids[1].pid],
+			revision: "new-file-revision",
+		};
+		vi.mocked(vscode.window.showQuickPick).mockResolvedValue(undefined);
+		const store = new LoggingConfigurationStore(state);
+		await store.choose(
+			createLiveDataConnection(),
+			createLiveDataProtocol({ profiles: [profile] }),
+		);
+		expect(vi.mocked(vscode.window.showQuickPick).mock.calls[0]?.[0]).toEqual([
+			expect.objectContaining({ picked: false }),
+			expect.objectContaining({ picked: true }),
+		]);
+		vi.mocked(state.get).mockReturnValue({
+			protocolName: "Test Protocol",
+			profileId: profile.id,
+			pids: [pids[1].pid],
+		});
+		expect(
+			(
+				await store.resolve(
+					createLiveDataConnection(),
+					createLiveDataProtocol({ profiles: [profile] }),
+				)
+			)?.revision,
+		).toBe("new-file-revision");
+	});
+
 	it("uses the native channel multi-select and persists only accepted selections", async () => {
 		const state = createMockWorkspaceState();
 		const store = new LoggingConfigurationStore(state);

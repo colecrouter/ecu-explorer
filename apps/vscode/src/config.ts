@@ -25,6 +25,8 @@ export interface EcuExplorerConfig {
 	logging: {
 		/** Which PID columns to include in CSV logs. "all" or array of PID names. Default: "all" */
 		columns: string[] | "all";
+		configurationPaths: string[];
+		units: "metric" | "original";
 	};
 }
 
@@ -49,6 +51,10 @@ export function readConfig(resource?: vscode.Uri): EcuExplorerConfig {
 		},
 		logsFolder: config.get<string>("logsFolder", "logs"),
 		logging: {
+			configurationPaths: config.get<string[]>("logging.configurationPaths", [
+				"DataSettings",
+			]),
+			units: config.get<"metric" | "original">("logging.units", "metric"),
 			columns: config.get<string[] | "all">("logging.columns", "all"),
 		},
 	};

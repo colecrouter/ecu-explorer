@@ -46,6 +46,7 @@ import { exportActiveTableCsvFlow } from "./csv/export.js";
 import { importTableFromCsvFlow } from "./csv/import.js";
 import { DeviceManagerImpl } from "./device-manager.js";
 import { DeviceStatusBarManager } from "./device-status-bar.js";
+import { EvoScanProfileLoader } from "./evoscan-profile-loader.js";
 import { GraphPanelManager } from "./graph-panel-manager.js";
 import { GraphPanelSerializer } from "./graph-panel-serializer.js";
 import {
@@ -462,8 +463,16 @@ export async function activate(
 		"openport2",
 		new OpenPort2Transport(options?.openPortRuntime),
 	);
+	const loggingConfigurationOutput = vscode.window.createOutputChannel(
+		"ECU Explorer Logging",
+	);
+	ctx.subscriptions.push(loggingConfigurationOutput);
+	const evoScanProfiles = new EvoScanProfileLoader((message) =>
+		loggingConfigurationOutput.appendLine(message),
+	);
 	deviceManager.registerProtocol(
 		new Mut3Protocol({
+			loadLoggingProfiles: () => evoScanProfiles.load(),
 			loadKernelArtifacts: async () => {
 				const config = vscode.workspace.getConfiguration("ecuExplorer.evoX");
 				const bootstrapPath = config.get<string>("bootstrapPath", "");

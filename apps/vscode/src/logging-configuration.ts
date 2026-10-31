@@ -10,6 +10,7 @@ export interface LoggingConfiguration {
 	protocolName: string;
 	profileId?: string;
 	profileName: string;
+	revision?: string;
 	pids: PidDescriptor[];
 }
 interface SavedConfiguration {
@@ -100,13 +101,23 @@ export class LoggingConfigurationStore {
 						await vscode.window.showQuickPick(
 							ordered.map((profile) => ({
 								label: profile.name,
-								description:
+								description: [
 									profile.id === preferred ? "Current" : profile.status,
-								detail: profile.description ?? "",
+									profile.decodeFamily === "evoscan-expression"
+										? "EvoScan XML"
+										: "",
+								]
+									.filter(Boolean)
+									.join(" · "),
+								detail: [profile.description, profile.statusDetail]
+									.filter(Boolean)
+									.join(" · "),
 								profile,
 							})),
 							{
 								title: "Logging configuration · Profile",
+								matchOnDescription: true,
+								matchOnDetail: true,
 								placeHolder: "Select the profile that matches your ECU ROM",
 							},
 						)
@@ -122,7 +133,11 @@ export class LoggingConfigurationStore {
 				label: pid.name,
 				description: pid.unit,
 				detail: `PID 0x${pid.pid.toString(16)}`,
-				picked: remembered ? remembered.includes(pid.pid) : true,
+				picked: remembered
+					? remembered.includes(pid.pid)
+					: profile.defaultPids
+						? profile.defaultPids.includes(pid.pid)
+						: true,
 				pid,
 			})),
 			{
@@ -151,6 +166,7 @@ export class LoggingConfigurationStore {
 	): LoggingConfiguration {
 		return {
 			protocolName: protocol.name,
+			...(profile.revision ? { revision: profile.revision } : {}),
 			profileName: profile.name,
 			pids,
 			...(profile.id ? { profileId: profile.id } : {}),

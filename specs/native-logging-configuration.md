@@ -21,8 +21,8 @@ Paused recording remains paused. A configuration change during an ECU ROM read
 is rejected without altering its lifecycle. Wideband-only logging remains
 available without an ECU profile.
 
-No arbitrary DataSettings XML import is added here. Built-in profiles remain the
-supported source of ECU channel descriptors.
+External EvoScan profiles are now provided by the [EvoScan live-profile loader](evoscan-live-profiles.md), alongside built-in profiles. The picker honours each
+file's DataLog defaults and retains file revisions in its stream snapshot.
 
 ## Implementation and verification
 

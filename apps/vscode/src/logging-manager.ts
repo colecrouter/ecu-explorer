@@ -6,6 +6,11 @@ import type {
 import * as vscode from "vscode";
 import { readConfig } from "./config.js";
 
+/** Preserve XML display names containing CSV delimiters or quotes. */
+function csvCell(value: string): string {
+	return /[,"\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
 export type LoggingState = "idle" | "recording" | "paused";
 
 export interface LogChannelDescriptor {
@@ -161,13 +166,13 @@ export class LoggingManager implements vscode.Disposable {
 
 		// Build CSV header row: Timestamp (ms),<PID Name 1>,<PID Name 2>,...
 		const headerCols = this.columnOrder
-			.map((columnKey) => this.columnNames.get(columnKey) ?? columnKey)
+			.map((columnKey) => csvCell(this.columnNames.get(columnKey) ?? columnKey))
 			.join(",");
 		const headerRow = `Timestamp (ms),${headerCols}`;
 
 		// Build units row: Unit,<unit1>,<unit2>,...
 		const unitCols = this.columnOrder
-			.map((columnKey) => this.columnUnits.get(columnKey) ?? "")
+			.map((columnKey) => csvCell(this.columnUnits.get(columnKey) ?? ""))
 			.join(",");
 		const unitsRow = `Unit,${unitCols}`;
 

@@ -1,6 +1,9 @@
 import { XMLParser } from "fast-xml-parser";
 
 type EvoScanDataListItemNode = {
+	DataLog?: string;
+	GaugeMin?: string;
+	GaugeMax?: string;
 	Display?: string;
 	LogReference?: string;
 	RequestID?: string | number;
@@ -106,6 +109,9 @@ interface Mut3LoggingChannelDefinition {
 	request: Mut3LoggingRequest;
 	request2: Mut3LoggingRequest | null;
 	decode: Mut3LoggingDecodeModel;
+	defaultSelected?: boolean;
+	minValue?: number;
+	maxValue?: number;
 	priority: number | null;
 	visible: boolean | null;
 	notes: string | null;
@@ -186,10 +192,12 @@ function asBoolean(value: unknown): boolean | null {
 		case "1":
 		case "true":
 		case "yes":
+		case "y":
 			return true;
 		case "0":
 		case "false":
 		case "no":
+		case "n":
 			return false;
 		default:
 			return null;
@@ -294,6 +302,9 @@ function parseChannelsFromModeNode(
 				responseBytes: asNumber(item.ResponseBytes),
 				signed: asBoolean(item.Signed) ?? false,
 			},
+			defaultSelected: asBoolean(item.DataLog) ?? true,
+			minValue: asNumber(item.GaugeMin) ?? 0,
+			maxValue: asNumber(item.GaugeMax) ?? 255,
 			priority: asNumber(item.Priority),
 			visible: asBoolean(item.Visible),
 			notes: asString(item.Notes),

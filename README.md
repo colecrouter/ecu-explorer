@@ -50,14 +50,28 @@ See [FEATURES.md](FEATURES.md) for a detailed features list.
 
 ## Configure logging
 
-Run **ECU Explorer: Change Logging Configuration** to choose a built-in profile
-and select channels using VS Code's native multi-select. The workspace remembers
+Run **ECU Explorer: Change Logging Configuration** to choose a built-in or
+EvoScan XML profile and select channels using VS Code's native multi-select. The workspace remembers
 the selection for both **Start Live Data** and **Start Live Data Log**.
 
 Live Data shows the current profile and selected values, with a **Change
 Configuration** button. Accepting a change during recording saves the current
 CSV and continues in a new file with the new columns; cancelling leaves the
 current recording untouched. See the [logging configuration specification](specs/native-logging-configuration.md).
+
+EvoScan profiles are discovered from `DataSettings/` by default. Configure
+`ecuExplorer.logging.configurationPaths` with files or directories to search;
+workspace-relative paths and linked folders are supported. Each XML ECU variant
+appears separately, with `DataLog` channels preselected. Mode23 reads, `CALC`,
+channel references and `BITS` formulas are supported. `ecuExplorer.logging.units`
+defaults to metric formulas; choose `original` for the file's original formulas.
+
+Files reload when logging configuration is resolved. Re-select the configuration
+to apply edits to an active recording. Unsupported channels and invalid files
+are explained in the **ECU Explorer Logging** output channel. WDB uses the existing
+wideband connection; CAN-bank and alternate-controller protocols are unavailable.
+See [EvoScan profile support](specs/evoscan-live-profiles.md) for details.
+
 
 ## Compare ROMs
 

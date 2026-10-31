@@ -12,6 +12,20 @@ import type {
 	WriteOptions,
 } from "@ecu-explorer/device";
 import {
+	type EvoScanRuntimeProfile,
+	streamEvoScanProfile,
+} from "./evoscan-runtime.js";
+
+export type {
+	EvoScanRuntimeChannel,
+	EvoScanRuntimeProfile,
+} from "./evoscan-runtime.js";
+export {
+	compileEvoScanProfiles,
+	streamEvoScanProfile,
+} from "./evoscan-runtime.js";
+
+import {
 	type EvoXKernelArtifacts,
 	EvoXKernelSession,
 	validateEvoXRom,
@@ -645,6 +659,8 @@ async function readRaxBlock(
 export interface Mut3ProtocolOptions {
 	/** Explicit recovery attachment, intended for a CLI restart after failed flashing. */
 	resumeKernel?: boolean;
+	/** Caller-owned external EvoScan files, reloaded before profile selection. */
+	loadLoggingProfiles?: () => Promise<readonly EvoScanRuntimeProfile[]>;
 	/** Load images on demand; returning undefined retains the legacy diagnostic read path. */
 	loadKernelArtifacts?: () => Promise<EvoXKernelArtifacts | undefined>;
 }
@@ -657,7 +673,7 @@ function decodeMode23Value(data: Uint8Array): number {
 	return value >>> 0;
 }
 
-async function readMode23Value(
+async function readEvoScanMode23Value(
 	connection: DeviceConnection,
 	address: number,
 	size: 1 | 2 | 4,
@@ -665,7 +681,7 @@ async function readMode23Value(
 	const response = await connection.sendFrame(
 		new Uint8Array([
 			SID_READ_MEMORY_BY_ADDRESS,
-			0x80,
+			(address >>> 16) & 0xff,
 			(address >>> 8) & 0xff,
 			address & 0xff,
 			size,
@@ -674,7 +690,7 @@ async function readMode23Value(
 
 	if (response[0] !== 0x63) {
 		throw new Error(
-			`Mode 23 read failed for 0x80${address.toString(16).padStart(4, "0")}: ECU returned [${Array.from(
+			`Mode 23 read failed for 0x${address.toString(16).padStart(6, "0")}: ECU returned [${Array.from(
 				response,
 			)
 				.map((b) => `0x${b.toString(16)}`)
@@ -685,11 +701,20 @@ async function readMode23Value(
 	const payload = response.slice(1);
 	if (payload.length < size) {
 		throw new Error(
-			`Mode 23 read for 0x80${address.toString(16).padStart(4, "0")} returned ${payload.length} bytes, expected ${size}`,
+			`Mode 23 read for 0x${address.toString(16).padStart(6, "0")} returned ${payload.length} bytes, expected ${size}`,
 		);
 	}
 
 	return decodeMode23Value(payload.slice(0, size));
+}
+
+/** Built-in maps store the low 16 bits of the 0x80xxxx RAM address. */
+async function readMode23Value(
+	connection: DeviceConnection,
+	address: number,
+	size: 1 | 2 | 4,
+): Promise<number> {
+	return readEvoScanMode23Value(connection, 0x800000 | address, size);
 }
 
 async function readMode23Block(
@@ -779,6 +804,7 @@ async function enterMode23LoggingSession(
  * - EcuFlash 1.44 binary analysis (see HANDSHAKE_ANALYSIS.md §7.2, §7.4)
  */
 export class Mut3Protocol implements EcuProtocol {
+	private externalProfiles = new Map<string, EvoScanRuntimeProfile>();
 	private readonly romReads = new WeakSet<DeviceConnection>();
 	private readonly recoveryDevices = new Set<string>();
 	private readonly kernelSessions = new WeakMap<
@@ -832,7 +858,12 @@ export class Mut3Protocol implements EcuProtocol {
 		connection: DeviceConnection,
 	): Promise<LiveDataProfileDescriptor[]> {
 		if (connection.deviceInfo.transportName === "openport2") {
+			const external = (await this.options.loadLoggingProfiles?.()) ?? [];
+			this.externalProfiles = new Map(
+				external.map((profile) => [profile.descriptor.id, profile]),
+			);
 			return [
+				...external.map((profile) => profile.descriptor),
 				RAX_MODE23_PATCH_LIVE_DATA_PROFILE,
 				GOLDEN_USDM_V3_LIVE_DATA_PROFILE,
 			];
@@ -874,6 +905,22 @@ export class Mut3Protocol implements EcuProtocol {
 		const profileId = getRequestedProfileId(pidsOrSelection);
 
 		if (connection.deviceInfo.transportName === "openport2") {
+			const external = profileId
+				? this.externalProfiles.get(profileId)
+				: undefined;
+			if (external) {
+				return this.trackLivePoll(connection, (onComplete) =>
+					streamEvoScanProfile(
+						external,
+						pids,
+						(address, size) =>
+							readEvoScanMode23Value(connection, address, size),
+						onFrame,
+						onHealth,
+						onComplete,
+					),
+				);
+			}
 			if (profileId === GOLDEN_USDM_V3_PROFILE_ID) {
 				if (
 					pids.some(
@@ -1248,6 +1295,7 @@ export {
 	decodeMode23Pid,
 	decodeRaxPid,
 	readMode23Value,
+	readEvoScanMode23Value,
 	readRaxBlock,
 	CMD_SET_ADDRESS,
 	CMD_READ_WORD_INC,

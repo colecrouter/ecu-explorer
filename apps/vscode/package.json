@@ -402,6 +402,27 @@
 					"scope": "resource",
 					"description": "Folder where live data log CSV files are saved. Relative paths are resolved from the workspace root."
 				},
+				"ecuExplorer.logging.configurationPaths": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [
+						"DataSettings"
+					],
+					"scope": "resource",
+					"description": "EvoScan XML files or folders. Relative paths are resolved from each workspace folder. Files are reloaded when resolving logging configuration."
+				},
+				"ecuExplorer.logging.units": {
+					"type": "string",
+					"enum": [
+						"metric",
+						"original"
+					],
+					"default": "metric",
+					"scope": "resource",
+					"description": "Use EvoScan MetricEval/MetricUnit when available, or the original Eval/Unit formulas. Changes apply to the next logging stream."
+				},
 				"ecuExplorer.logging.columns": {
 					"type": [
 						"array",

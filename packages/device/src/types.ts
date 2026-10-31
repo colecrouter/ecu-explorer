@@ -78,6 +78,10 @@ export interface LiveDataProfileDescriptor {
 	decodeFamily?: string;
 	status: LiveDataProfileStatus;
 	statusDetail?: string;
+	/** Default channel selection supplied by an external configuration. */
+	defaultPids?: readonly number[];
+	/** Changes when external decode rules change. */
+	revision?: string;
 	pids: PidDescriptor[];
 }
 
