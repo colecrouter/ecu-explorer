@@ -600,17 +600,17 @@ describe("extractAllRaxParameters", () => {
 		const buffer = new Uint8Array([0x80, 0x80, 0x80, 0x80]);
 		const values = extractAllRaxParameters(buffer, RAX_A_BLOCK);
 		expect(Object.keys(values).length).toBe(RAX_A_BLOCK.parameters.length);
-		expect(values["STFT Bank 1"]).toBeDefined();
-		expect(values["LTFT Bank 1"]).toBeDefined();
+		expect(values["Short-Term Fuel Trim Bank 1 (STFT)"]).toBeDefined();
+		expect(values["Long-Term Fuel Trim Bank 1 (LTFT)"]).toBeDefined();
 	});
 
 	it("returns correct values for fuel trim block with known data", () => {
 		const buffer = new Uint8Array([0x80, 0x90, 0x70, 0x88]);
 		const values = extractAllRaxParameters(buffer, RAX_A_BLOCK);
-		expect(values["STFT Bank 1"]).toBeCloseTo(0.0, 5);
-		expect(values["LTFT Bank 1"]).toBeCloseTo(1.6, 5);
-		expect(values["STFT Bank 2"]).toBeCloseTo(-1.6, 5);
-		expect(values["LTFT Bank 2"]).toBeCloseTo(0.8, 5);
+		expect(values["Short-Term Fuel Trim Bank 1 (STFT)"]).toBeCloseTo(0.0, 5);
+		expect(values["Long-Term Fuel Trim Bank 1 (LTFT)"]).toBeCloseTo(1.6, 5);
+		expect(values["Short-Term Fuel Trim Bank 2 (STFT)"]).toBeCloseTo(-1.6, 5);
+		expect(values["Long-Term Fuel Trim Bank 2 (LTFT)"]).toBeCloseTo(0.8, 5);
 	});
 
 	it("returns all parameter names for each block", () => {

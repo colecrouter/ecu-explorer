@@ -23,7 +23,7 @@ High-level feature overview across vehicle platforms and implementation status.
 | **Workspace Settings** | Definition paths, provider config | ✅ | Per-workspace configuration |
 | **MCP Integration** | Stdio transport | ✅ | 5 tools for LLM access |
 
-*MUT-III ROM write blocked on unknown write-session key; use Bootloader method instead.
+*MUT-III ROM write and recovery are implemented through the captured Evo X RAM kernel. Hardware validation is pending; see [Evo X kernel research](specs/EVO_X_KERNEL_RESEARCH.md).
 
 ---
 
@@ -70,7 +70,7 @@ High-level feature overview across vehicle platforms and implementation status.
 
 | Capability | Mitsubishi | Subaru | OBD-II | Notes |
 |------------|------------|--------|--------|-------|
-| **ROM Operations** | ✅ Full | ✅ Full | ❌ None | Mitsubishi write blocked on algorithm |
+| **ROM Operations** | ✅ Full | ✅ Full | ❌ None | Evo X kernel write is capture-tested; hardware validation pending |
 | **Real-Time Logging** | ⏳ 48 params | ⏳ 100+ params | ✅ 8 PIDs | K-line transport is blocker for Mitsu/Subaru |
 | **Data Visualization** | ✅ Full | ✅ Full | ✅ Partial | 3D graphs for Mitsu/Subaru; charts for OBD-II |
 | **CSV Export** | ✅ Full | ✅ Full | ✅ Full | Wide format across all |

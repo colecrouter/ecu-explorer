@@ -777,6 +777,7 @@ export async function activate(
 				if (!deviceManager?.activeConnection) {
 					return;
 				}
+				await loggingManager?.flushLog();
 				const deviceName = deviceManager.activeConnection.deviceName;
 				await deviceManager.disconnect();
 				vscode.window.showInformationMessage(
@@ -852,6 +853,7 @@ export async function activate(
 				if (widebandManager == null) {
 					return;
 				}
+				await loggingManager?.flushLog();
 				const deviceName =
 					widebandManager.activeSession?.candidate.device.name ??
 					widebandManager.lastCandidate?.device.name;
@@ -1304,9 +1306,10 @@ export async function activate(
 				return;
 			}
 			const pids =
-				active?.protocol.getSupportedPids != null
+				liveDataPanelManager?.getActiveLoggingPids() ??
+				(active?.protocol.getSupportedPids != null
 					? await active.protocol.getSupportedPids(active.connection)
-					: [];
+					: []);
 			const channels =
 				activeWidebandMode == null
 					? []

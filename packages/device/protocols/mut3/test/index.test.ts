@@ -5,14 +5,24 @@ import type {
 } from "@ecu-explorer/device";
 import { describe, expect, it, vi } from "vitest";
 import {
+	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
+	buildMutiiiCanExecutionPlan,
 	buildRaxPidDescriptors,
 	CMD_READ_BYTE,
 	CMD_READ_WORD_INC,
 	CMD_SET_ADDRESS,
+	decodeMutiiiCanPid,
 	decodeRaxPid,
+	MODE23_RESEARCH_PROFILE_ID,
+	MUTIII_CAN_PID_DESCRIPTORS,
 	Mut3Protocol,
+	RAX_KLINE_LIVE_DATA_PROFILE,
+	RAX_KLINE_PROFILE_ID,
+	RAX_MODE23_PATCH_LIVE_DATA_PROFILE,
+	RAX_MODE23_PATCH_PROFILE_ID,
 	RAX_PID_BASE,
 	RAX_PID_DESCRIPTORS,
+	readMode23Value,
 	readRaxBlock,
 } from "../src/index.js";
 import { RAX_A_BLOCK, RAX_BLOCKS, RAX_C_BLOCK } from "../src/rax-decoder.js";
@@ -44,6 +54,29 @@ function makeMockConnection(
 		stopStream: vi.fn(),
 		close: vi.fn().mockResolvedValue(undefined),
 	};
+}
+
+function makeMode23Mock(
+	values: Map<number, number[]>,
+	transportName = "openport2",
+): DeviceConnection {
+	return makeMockConnection(
+		transportName,
+		vi.fn(async (data) => {
+			if (data[0] === 0x10 && data[1] === 0x92) {
+				return new Uint8Array([0x50, 0x92]);
+			}
+
+			if (data[0] !== 0x23 || data[1] !== 0x80) {
+				throw new Error(`Unexpected Mode 23 request: [${Array.from(data)}]`);
+			}
+
+			const address = ((data[2] ?? 0) << 8) | (data[3] ?? 0);
+			const size = data[4] ?? 0;
+			const payload = values.get(address) ?? new Array(size).fill(0);
+			return new Uint8Array([0x63, ...payload.slice(0, size)]);
+		}),
+	);
 }
 
 /**
@@ -241,6 +274,44 @@ describe("Mut3Protocol", () => {
 			expect(rom[0]).toBe(0x00); // block 0, byte 0
 			expect(rom[0x80]).toBe(0x01); // block 1, byte 0
 			expect(rom[0x100]).toBe(0x02); // block 2, byte 0
+		});
+	});
+
+	describe("mutiii-can scaffold", () => {
+		it("builds a grouped execution plan by CAN bank", () => {
+			const rpm = MUTIII_CAN_PID_DESCRIPTORS.find(
+				(pid) => pid.name === "Engine RPM",
+			);
+			const knock = MUTIII_CAN_PID_DESCRIPTORS.find(
+				(pid) => pid.name === "Knock Sum",
+			);
+			const battery = MUTIII_CAN_PID_DESCRIPTORS.find(
+				(pid) => pid.name === "Battery Voltage",
+			);
+
+			expect(rpm).toBeDefined();
+			expect(knock).toBeDefined();
+			expect(battery).toBeDefined();
+			if (rpm == null || knock == null || battery == null) {
+				throw new Error("Expected built-in MUTIII CAN descriptors to exist");
+			}
+
+			const plan = buildMutiiiCanExecutionPlan([
+				rpm.pid,
+				knock.pid,
+				battery.pid,
+			]);
+
+			expect(plan.missingPids).toEqual([]);
+			expect(plan.groups).toHaveLength(3);
+			expect(plan.groups.map((group) => group.bank)).toEqual([0, 2, 11]);
+			expect(plan.groups[2]?.slots).toEqual([1]);
+		});
+
+		it("records missing CAN PIDs in the scaffold plan", () => {
+			const plan = buildMutiiiCanExecutionPlan([0x9fff]);
+			expect(plan.groups).toEqual([]);
+			expect(plan.missingPids).toEqual([0x9fff]);
 		});
 	});
 
@@ -521,7 +592,7 @@ describe("decodeRaxPid()", () => {
 		if (param === undefined) {
 			throw new Error("Expected decoded parameter index to exist");
 		}
-		expect(param.name).toBe("RPM");
+		expect(param.name).toBe("Engine RPM");
 	});
 });
 
@@ -649,12 +720,38 @@ describe("readRaxBlock()", () => {
 	});
 });
 
+describe("readMode23Value()", () => {
+	it("sends a Mode 23 single-frame CAN read with 0x80 address prefix", async () => {
+		const sendFrame = vi
+			.fn()
+			.mockResolvedValue(new Uint8Array([0x63, 0x01, 0x2c]));
+		const connection = makeMockConnection("openport2", sendFrame);
+
+		await readMode23Value(connection, 0x875e, 2);
+
+		expect(sendFrame).toHaveBeenCalledWith(
+			new Uint8Array([0x23, 0x80, 0x87, 0x5e, 0x02]),
+		);
+	});
+
+	it("decodes big-endian unsigned values from the Mode 23 response payload", async () => {
+		const connection = makeMockConnection(
+			"openport2",
+			vi.fn().mockResolvedValue(new Uint8Array([0x63, 0x00, 0x01, 0x02, 0x03])),
+		);
+
+		await expect(readMode23Value(connection, 0x8fc0, 4)).resolves.toBe(
+			0x00010203,
+		);
+	});
+});
+
 // ── getSupportedPids ──────────────────────────────────────────────────────────
 
 describe("Mut3Protocol.getSupportedPids()", () => {
 	it("resolves to an array of PidDescriptors", async () => {
 		const protocol = new Mut3Protocol();
-		const connection = makeMockConnection("openport2");
+		const connection = makeMockConnection("kline");
 		const pids = await protocol.getSupportedPids?.(connection);
 		expect(Array.isArray(pids)).toBe(true);
 		expect(pids.length).toBeGreaterThan(0);
@@ -668,33 +765,66 @@ describe("Mut3Protocol.getSupportedPids()", () => {
 		expect(sendFrame).not.toHaveBeenCalled();
 	});
 
-	it("includes a descriptor for RPM with unit 'RPM'", async () => {
+	it("returns the mixed RAX + direct Mode23 descriptors for openport2", async () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
 		const pids = await protocol.getSupportedPids?.(connection);
-		const rpm = pids.find((p) => p.name === "RPM");
-		expect(rpm).toBeDefined();
-		expect(rpm?.unit).toBe("RPM");
+		expect(pids).toEqual(RAX_MODE23_PATCH_LIVE_DATA_PROFILE.pids);
+		expect(pids.length).toBeGreaterThan(RAX_PID_DESCRIPTORS.length);
+		expect(
+			pids.find((pid) => pid.name === "Long-Term Fuel Trim Idle (LTFT)")?.unit,
+		).toBe("%");
+		expect(pids.find((pid) => pid.name === "MAF Volts")?.unit).toBe("V");
 	});
 
-	it("all PID numbers are in the RAX synthetic range (≥ 0x8000)", async () => {
+	it("returns RAX descriptors for kline", async () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMockConnection("kline");
+		const pids = await protocol.getSupportedPids?.(connection);
+		expect(pids).toEqual(RAX_PID_DESCRIPTORS);
+		expect(pids.find((pid) => pid.name === "Vehicle Speed")?.unit).toBe("km/h");
+		expect(pids.find((pid) => pid.name === "Battery Voltage")?.unit).toBe("V");
+		expect(
+			pids.find((pid) => pid.name === "Engine Coolant Temperature (ECT)")?.unit,
+		).toBe("°C");
+	});
+
+	it("returns normalized units for openport2 Mode23 descriptors", async () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
+		const pids = await protocol.getSupportedPids?.(connection);
+		expect(pids).toHaveLength(RAX_MODE23_PATCH_LIVE_DATA_PROFILE.pids.length);
+		expect(pids.find((pid) => pid.name === "Battery Voltage")?.unit).toBe("V");
+		expect(
+			pids.find((pid) => pid.name === "Engine Coolant Temperature (ECT)")?.unit,
+		).toBe("°C");
+	});
+
+	it("all kline PID numbers are in the RAX synthetic range (≥ 0x8000)", async () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMockConnection("kline");
 		const pids = await protocol.getSupportedPids?.(connection);
 		for (const p of pids) {
-			expect(p.pid).toBeGreaterThanOrEqual(0x8000);
+			expect(p.pid).toBeGreaterThanOrEqual(RAX_PID_BASE);
 		}
 	});
+});
 
-	it("contains exactly the same number of PIDs as total RAX parameters", async () => {
+describe("Mut3Protocol.getLiveDataProfiles()", () => {
+	it("returns only the supported Mode23 RAX profile for openport2", async () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
-		const pids = await protocol.getSupportedPids?.(connection);
-		const expectedTotal = RAX_BLOCKS.reduce(
-			(acc, b) => acc + b.parameters.length,
-			0,
-		);
-		expect(pids.length).toBe(expectedTotal);
+		const profiles = await protocol.getLiveDataProfiles?.(connection);
+
+		expect(profiles).toEqual([RAX_MODE23_PATCH_LIVE_DATA_PROFILE]);
+	});
+
+	it("returns the ready K-line RAX profile for kline", async () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMockConnection("kline");
+		const profiles = await protocol.getLiveDataProfiles?.(connection);
+
+		expect(profiles).toEqual([RAX_KLINE_LIVE_DATA_PROFILE]);
 	});
 });
 
@@ -720,7 +850,7 @@ describe("Mut3Protocol.streamLiveData()", () => {
 		const deviceInfo: DeviceInfo = {
 			id: "streaming-test",
 			name: "Streaming Test Device",
-			transportName: "openport2",
+			transportName: "kline",
 			connected: true,
 		};
 
@@ -769,7 +899,7 @@ describe("Mut3Protocol.streamLiveData()", () => {
 
 	it("does not call onFrame when no PIDs are requested", async () => {
 		const protocol = new Mut3Protocol();
-		const connection = makeMockConnection("openport2");
+		const connection = makeRaxStreamMock(new Map());
 		const onFrame = vi.fn();
 		const session = protocol.streamLiveData?.(connection, [], onFrame);
 
@@ -778,6 +908,209 @@ describe("Mut3Protocol.streamLiveData()", () => {
 		session.stop();
 
 		expect(onFrame).not.toHaveBeenCalled();
+	});
+
+	it("streams RAX data by default on openport2 when no profile id is provided", async () => {
+		const protocol = new Mut3Protocol();
+		const aBlockIdx = RAX_BLOCKS.findIndex((b) => b.blockId === "A");
+		const pid = RAX_PID_BASE + aBlockIdx * 100 + 0;
+		const connection = makeMode23Mock(
+			new Map<number, number[]>([
+				[RAX_A_BLOCK.requestId & 0xffff, [0x80, 0x80, 0x80, 0x80]],
+			]),
+		);
+		const frames: LiveDataFrame[] = [];
+		const session = protocol.streamLiveData?.(connection, [pid], (frame) =>
+			frames.push(frame),
+		);
+
+		await new Promise<void>((resolve) => setTimeout(resolve, 80));
+		session.stop();
+
+		expect(frames.length).toBeGreaterThan(0);
+	});
+
+	it("rejects the research Mode23 profile explicitly on openport2", () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMockConnection("openport2");
+
+		expect(() =>
+			protocol.streamLiveData?.(
+				connection,
+				{ pids: [0x9000], profileId: MODE23_RESEARCH_PROFILE_ID },
+				vi.fn(),
+			),
+		).toThrow(/intentionally unavailable/i);
+	});
+
+	it("accepts the Mode23 RAX patch profile explicitly on openport2", () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMode23Mock(new Map());
+
+		const session = protocol.streamLiveData?.(
+			connection,
+			{ pids: [RAX_PID_BASE], profileId: RAX_MODE23_PATCH_PROFILE_ID },
+			vi.fn(),
+		);
+
+		expect(typeof session.stop).toBe("function");
+		session.stop();
+	});
+
+	it("streams RAX frames over Mode23 on openport2 for the explicit profile", async () => {
+		const protocol = new Mut3Protocol();
+		const aBlockIdx = RAX_BLOCKS.findIndex((b) => b.blockId === "A");
+		const pid = RAX_PID_BASE + aBlockIdx * 100 + 0;
+		const connection = makeMode23Mock(
+			new Map<number, number[]>([
+				[RAX_A_BLOCK.requestId & 0xffff, [0x80, 0x80, 0x80, 0x80]],
+			]),
+		);
+
+		const frames: LiveDataFrame[] = [];
+		const session = protocol.streamLiveData?.(
+			connection,
+			{ pids: [pid], profileId: RAX_MODE23_PATCH_PROFILE_ID },
+			(frame) => frames.push(frame),
+		);
+
+		await new Promise<void>((resolve) => setTimeout(resolve, 80));
+		session.stop();
+
+		expect(frames.length).toBeGreaterThan(0);
+		for (const frame of frames) {
+			expect(frame.pid).toBe(pid);
+			expect(frame.value).toBe(0);
+			expect(frame.unit).toBe("%");
+		}
+
+		expect(connection.sendFrame).toHaveBeenCalledWith(
+			new Uint8Array([0x23, 0x80, 0x51, 0xac, 0x04]),
+		);
+	});
+
+	it("streams validated direct Mode23 add-on frames on openport2", async () => {
+		const protocol = new Mut3Protocol();
+		const pid = RAX_MODE23_PATCH_LIVE_DATA_PROFILE.pids.find(
+			(descriptor) => descriptor.name === "MAF Volts",
+		)?.pid;
+		if (pid == null) {
+			throw new Error("Expected MAF Volts PID to be exposed on openport2");
+		}
+
+		const connection = makeMode23Mock(
+			new Map<number, number[]>([[0x8fb0, [0x02, 0x00]]]),
+		);
+
+		const frames: LiveDataFrame[] = [];
+		const session = protocol.streamLiveData?.(
+			connection,
+			{ pids: [pid], profileId: RAX_MODE23_PATCH_PROFILE_ID },
+			(frame) => frames.push(frame),
+		);
+
+		await new Promise<void>((resolve) => setTimeout(resolve, 80));
+		session.stop();
+
+		expect(frames.length).toBeGreaterThan(0);
+		for (const frame of frames) {
+			expect(frame.pid).toBe(pid);
+			expect(frame.value).toBeCloseTo(2.5, 5);
+			expect(frame.unit).toBe("V");
+		}
+
+		expect(connection.sendFrame).toHaveBeenCalledWith(
+			new Uint8Array([0x23, 0x80, 0x8f, 0xb0, 0x02]),
+		);
+	});
+
+	it("streams mixed RAX and direct Mode23 selections in one openport2 session", async () => {
+		const protocol = new Mut3Protocol();
+		const aBlockIdx = RAX_BLOCKS.findIndex((b) => b.blockId === "A");
+		const raxPid = RAX_PID_BASE + aBlockIdx * 100 + 0;
+		const mafVoltsPid = RAX_MODE23_PATCH_LIVE_DATA_PROFILE.pids.find(
+			(descriptor) => descriptor.name === "MAF Volts",
+		)?.pid;
+		if (mafVoltsPid == null) {
+			throw new Error("Expected MAF Volts PID to be exposed on openport2");
+		}
+
+		const connection = makeMode23Mock(
+			new Map<number, number[]>([
+				[RAX_A_BLOCK.requestId & 0xffff, [0x80, 0x80, 0x80, 0x80]],
+				[0x8fb0, [0x02, 0x00]],
+			]),
+		);
+
+		const frames: LiveDataFrame[] = [];
+		const session = protocol.streamLiveData?.(
+			connection,
+			{ pids: [raxPid, mafVoltsPid], profileId: RAX_MODE23_PATCH_PROFILE_ID },
+			(frame) => frames.push(frame),
+		);
+
+		await new Promise<void>((resolve) => setTimeout(resolve, 80));
+		session.stop();
+
+		expect(
+			frames.some((frame) => frame.pid === raxPid && frame.unit === "%"),
+		).toBe(true);
+		expect(
+			frames.some(
+				(frame) =>
+					frame.pid === mafVoltsPid &&
+					frame.unit === "V" &&
+					Math.abs(frame.value - 2.5) < 1e-6,
+			),
+		).toBe(true);
+
+		expect(connection.sendFrame).toHaveBeenCalledWith(
+			new Uint8Array([0x23, 0x80, 0x51, 0xac, 0x04]),
+		);
+		expect(connection.sendFrame).toHaveBeenCalledWith(
+			new Uint8Array([0x23, 0x80, 0x8f, 0xb0, 0x02]),
+		);
+	});
+
+	it("rejects unsupported openport2 live data profile ids", () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeMockConnection("openport2");
+
+		expect(() =>
+			protocol.streamLiveData?.(
+				connection,
+				{ pids: [RAX_PID_BASE], profileId: "bogus-profile" },
+				vi.fn(),
+			),
+		).toThrow(/unsupported mut-iii can live data profile/i);
+	});
+
+	it("accepts an explicit K-line profile selection", () => {
+		const protocol = new Mut3Protocol();
+		const connection = makeRaxStreamMock(new Map());
+
+		const session = protocol.streamLiveData?.(
+			connection,
+			{ pids: [], profileId: RAX_KLINE_PROFILE_ID },
+			vi.fn(),
+		);
+
+		expect(typeof session.stop).toBe("function");
+		session.stop();
+	});
+
+	it("keeps low-level Mode 23 helpers in-tree even though CAN execution is disabled", async () => {
+		const connection = makeMode23Mock(
+			new Map<number, number[]>([
+				[0x4575, [0x80]],
+				[0x878c, [0x01, 0x00]],
+				[0x882f, [0x32]],
+			]),
+		);
+
+		await expect(readMode23Value(connection, 0x4575, 1)).resolves.toBe(0x80);
+		await expect(readMode23Value(connection, 0x878c, 2)).resolves.toBe(0x0100);
+		await expect(readMode23Value(connection, 0x882f, 1)).resolves.toBe(0x32);
 	});
 
 	it("emits LiveDataFrame for each requested PID", async () => {
@@ -958,18 +1291,25 @@ describe("Mut3Protocol.streamLiveData()", () => {
 		expect(frames.length).toBe(countAfterStop);
 	});
 
-	it("does not throw when PIDs are outside the RAX range", () => {
+	it("rejects invalid openport2 PID selections that do not map to RAX channels", () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
-		// OBD-II PIDs that have no mapping
-		expect(() => {
-			const session = protocol.streamLiveData?.(
-				connection,
-				[0x0c, 0x0d],
-				vi.fn(),
-			);
-			session.stop();
-		}).not.toThrow();
+		expect(() =>
+			protocol.streamLiveData?.(connection, [0x0c, 0x0d], vi.fn()),
+		).toThrow(/valid RAX or supported direct Mode23 PID selection/i);
+	});
+
+	it("decodes synthetic CAN MUTIII PIDs back to channel definitions", () => {
+		const firstPid = MUTIII_CAN_PID_DESCRIPTORS[0]?.pid;
+		expect(firstPid).toBeDefined();
+		expect(decodeMutiiiCanPid(firstPid ?? 0)).toMatchObject({
+			channelKey: "BATTERY",
+			request: {
+				bank: 0,
+				slot: 0,
+				raw: "CAN0-0",
+			},
+		});
 	});
 
 	it("emits decoded RPM value proportional to raw bytes (RAX_C block)", async () => {
@@ -1000,4 +1340,20 @@ describe("Mut3Protocol.streamLiveData()", () => {
 			expect(frame.unit).toBe("RPM");
 		}
 	});
+});
+it("rejects the disabled CAN MUTIII profile explicitly on openport2", () => {
+	const protocol = new Mut3Protocol();
+	const connection = makeMockConnection("openport2");
+	const openportPid = MUTIII_CAN_PID_DESCRIPTORS[0]?.pid ?? 0x9000;
+
+	expect(() =>
+		protocol.streamLiveData?.(
+			connection,
+			{
+				pids: [openportPid],
+				profileId: BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE.id,
+			},
+			vi.fn(),
+		),
+	).toThrow(/disabled/i);
 });

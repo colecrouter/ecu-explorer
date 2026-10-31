@@ -10,7 +10,7 @@ Comprehensive reference for vehicle support, protocol capabilities, and paramete
 
 | Make/Model | Protocol | ROM Read | ROM Write | Real-Time Data | Transport | Notes |
 |------------|----------|----------|-----------|-----------------|-----------|-------|
-| **Mitsubishi EVO X 4B11T** | MUT-III (UDS) | ✅ | ❌* | ⏳ | CAN 500kbps | Bootloader method works for write |
+| **Mitsubishi EVO X 4B11T** | MUT-III (UDS) | ✅ | ✅* | ⏳ | CAN 500kbps | Captured RAM-kernel workflow; hardware validation pending |
 | **Mitsubishi EVO X 4B11T** | Bootloader | ✅ | ✅ | ❌ | CAN 500kbps | **Recommended for ROM write** |
 | **Subaru WRX/STI/Forester** | KWP2000 | ✅ | ✅ | ⏳** | CAN 500kbps | Real-time logging awaits K-line |
 | **Nissan (older ECUs)** | NCS K-line | ❌ | ❌ | ❌ | K-line (planned) | Checksums implemented; protocols pending |
@@ -18,7 +18,7 @@ Comprehensive reference for vehicle support, protocol capabilities, and paramete
 | **Any OBD-II Vehicle** | ISO 14229-1 | ❌ | ❌ | ✅ | CAN 500kbps | 8 standard PIDs only |
 
 **Footnotes**:
-- ❌* = Blocked on security key (MUT-III write-session algorithm unknown)
+- ✅* = Capture-tested Evo X RAM-kernel workflow; hardware validation pending
 - ❌** = Requires K-line hardware (parameter streaming not yet available over CAN)
 
 ---
@@ -38,8 +38,8 @@ Comprehensive reference for vehicle support, protocol capabilities, and paramete
 | Operation | Status | Details |
 |-----------|--------|---------|
 | **Read ROM** | ✅ Complete | UDS 0x23 (ReadMemoryByAddress) with 0x80-byte blocks |
-| **Write ROM** | ❌ Blocked* | UDS 0x34 (RequestDownload) requires write-session security key (algorithm unknown) |
-| **Security Access** | ✅ Partial | Diagnostic session key: `(seed * 0x4081 + 0x1234) & 0xFFFF` ✅ Write session key: ❌ Unknown |
+| **Write ROM** | ✅ Capture-tested* | Captured Evo X RAM-kernel upload, write, verification, and recovery are implemented; hardware validation pending |
+| **Security Access** | ✅ Implemented | Diagnostic/read session and traced 4-byte flash-session key algorithms are implemented |
 | **Checksum Update** | ✅ Complete | Mitsucan ROM checksum automatically recomputed on save |
 | **Sector Erase** | ✅ Simulated | Diff-based: only changed sectors erased via bootloader alternative |
 
@@ -295,17 +295,15 @@ See **[TRANSPORT_LAYERS.md](TRANSPORT_LAYERS.md)** for detailed hardware specifi
 
 ### Mitsubishi EVO X (MUT-III)
 
-- ❌ **ROM Write via MUT-III (UDS)**: Write-session security key algorithm unknown
-  - **Classification**: ❌ Not Implemented (blocked on research)
-  - **Workaround**: Use Bootloader method (0x55 handshake) — ✅ Fully functional
-  - **Why Not Applicable**: MUT-III write is not applicable when Bootloader method is available and superior
-  - **Progress**: See [`MITSUCAN_WRITE_RESEARCH_PLAN.md`](MITSUCAN_WRITE_RESEARCH_PLAN.md)
+- ⏳ **ROM Write via MUT-III (UDS)**: Captured RAM-kernel workflow is implemented and transcript-tested
+  - **Classification**: Hardware validation pending
+  - **Alternative**: Separate Mitsubishi Bootloader method (0x55 handshake)
+  - **Progress**: See [`EVO_X_KERNEL_RESEARCH.md`](specs/EVO_X_KERNEL_RESEARCH.md)
 
-- ⏳ **Real-Time Logging (RAX Parameters)**: Requires K-line transport
-  - **Classification**: ⏳ In Progress (K-line Phase 2)
-  - **Current Status**: Infrastructure ready; parameter catalog complete (48 RAX parameters defined)
-  - **Blocker**: K-line transport layer not yet implemented; CAN cannot stream RAX data
-  - **Why Not Applicable**: RAX parameters are K-line only; CAN transport cannot access them (not a limitation of CAN, but a protocol design choice)
+- ⏳ **Real-Time Logging (RAX Parameters)**: CAN Mode 23 polling supports a limited traced set; K-line support remains in progress
+  - **Classification**: ⏳ In Progress
+  - **Current Status**: The Mode 23 RAX patch profile is available on OpenPort 2.0; the broader parameter map needs hardware validation
+  - **Progress**: See [`MUT3_LOGGING_CAPABILITIES.md`](specs/MUT3_LOGGING_CAPABILITIES.md)
 
 ### Subaru WRX/STI
 
@@ -393,7 +391,7 @@ See **[TRANSPORT_LAYERS.md](TRANSPORT_LAYERS.md)** for detailed hardware specifi
 
 **Blocker**: A dependency that prevents a feature from being implemented. Example: K-line transport is a blocker for MUT-III real-time logging.
 
-**Workaround**: An alternative method to achieve similar functionality when the primary method is blocked. Example: Bootloader method is a workaround for MUT-III ROM write when UDS write-session key is unknown.
+**Workaround**: An alternative method to achieve similar functionality when the primary method is blocked. Example: The separate Mitsubishi bootloader method provides another Evo X ROM write path.
 
 ---
 

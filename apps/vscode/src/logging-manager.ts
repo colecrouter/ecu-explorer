@@ -29,13 +29,17 @@ function isLoggingStartOptions(
  * stopped without the panel being open.
  *
  * The CSV uses a wide format: one column per PID, named by PID name.
- * All data is accumulated in-memory and written atomically on stopLog().
+ * Rows are buffered in memory briefly, then flushed to disk in chunks so
+ * long-running sessions do not retain the full log in extension memory.
  */
 export class LoggingManager implements vscode.Disposable {
+	private static readonly FLUSH_THRESHOLD_BYTES = 16 * 1024;
+
 	private state: LoggingState = "idle";
-	private csvBuffer = "";
+	private csvPreamble = "";
+	private pendingCsvRows = "";
+	private hasPersistedContent = false;
 	private recordingUri: vscode.Uri | undefined;
-	private sessionStartMs = 0;
 	private columns: string[] | "all" = "all";
 	/** pid -> log column key */
 	private pidColumnKeys: Map<number, string> = new Map();
@@ -49,6 +53,7 @@ export class LoggingManager implements vscode.Disposable {
 	private _onDidChangeState = new vscode.EventEmitter<LoggingState>();
 	readonly onDidChangeState: vscode.Event<LoggingState> =
 		this._onDidChangeState.event;
+	private flushPromise: Promise<void> = Promise.resolve();
 
 	/**
 	 * Start a new logging session.
@@ -156,8 +161,9 @@ export class LoggingManager implements vscode.Disposable {
 			.join(",");
 		const unitsRow = `Unit,${unitCols}`;
 
-		this.csvBuffer = `${headerRow}\n${unitsRow}\n`;
-		this.sessionStartMs = Date.now();
+		this.csvPreamble = `${headerRow}\n${unitsRow}\n`;
+		this.pendingCsvRows = "";
+		this.hasPersistedContent = false;
 
 		this.state = "recording";
 		this._onDidChangeState.fire(this.state);
@@ -234,6 +240,7 @@ export class LoggingManager implements vscode.Disposable {
 		}
 
 		const savedUri = this.recordingUri;
+		await this.flushLog();
 
 		this.state = "idle";
 		this._onDidChangeState.fire(this.state);
@@ -249,10 +256,7 @@ export class LoggingManager implements vscode.Disposable {
 			false,
 		);
 
-		if (savedUri && this.csvBuffer) {
-			const data = new TextEncoder().encode(this.csvBuffer);
-			await vscode.workspace.fs.writeFile(savedUri, data);
-
+		if (savedUri && this.hasPersistedContent) {
 			// Build relative path for display
 			const workspaceFolders = vscode.workspace.workspaceFolders;
 			let displayPath = savedUri.fsPath;
@@ -279,7 +283,9 @@ export class LoggingManager implements vscode.Disposable {
 		}
 
 		// Clear state
-		this.csvBuffer = "";
+		this.csvPreamble = "";
+		this.pendingCsvRows = "";
+		this.hasPersistedContent = false;
 		this.recordingUri = undefined;
 		this.pidColumnKeys.clear();
 		this.channelColumnKeys.clear();
@@ -288,6 +294,18 @@ export class LoggingManager implements vscode.Disposable {
 		this.columnOrder = [];
 
 		return savedUri;
+	}
+
+	async flushLog(): Promise<void> {
+		if (this.state === "idle") {
+			return;
+		}
+
+		this.flushPromise = this.flushPromise.then(async () => {
+			await this.flushPendingToDisk();
+		});
+
+		await this.flushPromise;
 	}
 
 	/**
@@ -340,11 +358,47 @@ export class LoggingManager implements vscode.Disposable {
 		columnKey: string,
 		value: number,
 	): void {
-		const relativeTs = timestamp - this.sessionStartMs;
 		const values = this.columnOrder.map((currentKey) =>
 			currentKey === columnKey ? String(value) : "",
 		);
-		this.csvBuffer += `${relativeTs},${values.join(",")}\n`;
+		this.pendingCsvRows += `${timestamp},${values.join(",")}\n`;
+		if (this.pendingCsvRows.length >= LoggingManager.FLUSH_THRESHOLD_BYTES) {
+			void this.flushLog();
+		}
+	}
+
+	private async flushPendingToDisk(): Promise<void> {
+		const targetUri = this.recordingUri;
+		if (targetUri == null) {
+			return;
+		}
+
+		const chunk =
+			this.hasPersistedContent === false
+				? `${this.csvPreamble}${this.pendingCsvRows}`
+				: this.pendingCsvRows;
+		if (chunk.length === 0) {
+			return;
+		}
+
+		this.pendingCsvRows = "";
+		this.csvPreamble = "";
+
+		let existing: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+		if (this.hasPersistedContent) {
+			try {
+				existing = await vscode.workspace.fs.readFile(targetUri);
+			} catch {
+				existing = new Uint8Array();
+			}
+		}
+
+		const chunkBytes = new TextEncoder().encode(chunk);
+		const combined = new Uint8Array(existing.length + chunkBytes.length);
+		combined.set(existing, 0);
+		combined.set(chunkBytes, existing.length);
+		await vscode.workspace.fs.writeFile(targetUri, combined);
+		this.hasPersistedContent = true;
 	}
 }
 

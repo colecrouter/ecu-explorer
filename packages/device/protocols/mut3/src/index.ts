@@ -4,7 +4,9 @@ import type {
 	EcuProtocol,
 	LiveDataFrame,
 	LiveDataHealth,
+	LiveDataProfileDescriptor,
 	LiveDataSession,
+	LiveDataStreamSelection,
 	PidDescriptor,
 	RomProgress,
 	WriteOptions,
@@ -14,8 +16,54 @@ import {
 	EvoXKernelSession,
 	validateEvoXRom,
 } from "./evox-kernel.js";
+import type { Mode23ParameterDescriptor } from "./mode23-parameters.js";
+import {
+	decodeMode23Pid,
+	MODE23_PID_BASE,
+	MODE23_PID_DESCRIPTORS,
+	MODE23_RESEARCH_LIVE_DATA_PROFILE,
+	MODE23_RESEARCH_PROFILE_ID,
+} from "./mode23-parameters.js";
+import {
+	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
+	BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID,
+} from "./mutiii-can-profile.js";
 import { extractAllRaxParameters, RAX_BLOCKS } from "./rax-decoder.js";
 import { computeSecurityKey } from "./security.js";
+
+export type {
+	Mut3LoggingChannelDefinition,
+	Mut3LoggingChannelProvenance,
+	Mut3LoggingDecodeModel,
+	Mut3LoggingProfile,
+	Mut3LoggingProfileSource,
+	Mut3LoggingRequest,
+	Mut3LoggingRequestKind,
+	MutiiiCanBankChannel,
+	MutiiiCanBankGroup,
+} from "./logging-profiles.js";
+export {
+	groupMutiiiCanChannels,
+	normalizeChannelKey,
+	parseEvoScanLoggingProfilesXml,
+	parseEvoScanLoggingProfileXml,
+	parseRequestToken,
+	summarizeLoggingProfile,
+} from "./logging-profiles.js";
+export {
+	buildMutiiiCanExecutionPlan,
+	describeMutiiiCanExecutionGap,
+	formatMutiiiCanExecutionPlan,
+} from "./mutiii-can-executor.js";
+export {
+	BUILTIN_EVOX_CAN_MUTIII_CHANNELS,
+	BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE,
+	BUILTIN_EVOX_CAN_MUTIII_PROFILE,
+	BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID,
+	decodeMutiiiCanPid,
+	MUTIII_CAN_PID_BASE,
+	MUTIII_CAN_PID_DESCRIPTORS,
+} from "./mutiii-can-profile.js";
 
 // Ref: https://github.com/harshadura/libmut/blob/master/libmut/mut.py
 // MUT-III ROM readback sequence — start_session(), security_access(), read_memory()
@@ -42,6 +90,9 @@ const SID_DIAGNOSTIC_SESSION_CONTROL = 0x10;
 const SID_SECURITY_ACCESS = 0x27;
 const SID_READ_MEMORY_BY_ADDRESS = 0x23;
 const ADDRESS_AND_LENGTH_FORMAT = 0x14; // 1 byte length, 3 bytes address
+// const MODE23_LOGGING_SESSION = 0x92;
+// const POSITIVE_RESPONSE_DIAGNOSTIC_SESSION_CONTROL =
+// 	SID_DIAGNOSTIC_SESSION_CONTROL + 0x40;
 
 // MUT-III serial/CAN direct memory commands (K-line / RAX streaming)
 // Reference: EvoScan_Protocol_Analysis.md — commands E0-E6
@@ -53,11 +104,14 @@ const CMD_READ_BYTE = 0xe1; // E1: Read 1 byte at current address (for odd-size 
 // RAX blocks refresh at ~10-20 Hz on CAN, ~10 Hz on K-line.
 // A 20 ms cycle gives headroom for multiple block reads per cycle.
 const RAX_POLL_INTERVAL_MS = 20;
+// const MODE23_POLL_INTERVAL_MS = 20;
 
 // Base PID number for synthetic MUT-III RAX PIDs.
 // OBD-II Mode 01 uses PIDs 0x00–0xFF. We use 0x8000–0x8FFF as a proprietary
 // range: pid = RAX_PID_BASE + (blockIndex * 100) + paramIndex
 const RAX_PID_BASE = 0x8000;
+const RAX_KLINE_PROFILE_ID = "mitsubishi-evox-rax-kline";
+const RAX_MODE23_PATCH_PROFILE_ID = "mitsubishi-evox-mode23-rax-patch";
 
 // ---------------------------------------------------------------------------
 // PID ↔ RAX parameter mapping helpers
@@ -99,6 +153,56 @@ function buildRaxPidDescriptors(): PidDescriptor[] {
 
 /** Cached PID descriptors (built once at module load, reused across calls). */
 const RAX_PID_DESCRIPTORS: PidDescriptor[] = buildRaxPidDescriptors();
+const OPENPORT2_SAFE_MODE23_EXTENSION_ADDRESSES = new Set<number>([
+	0x4573, // LTFT Idle
+	0x4575, // LTFT Cruise
+	0x45c5, // Cruise Light
+	0x8135, // Knock Flag
+	0x87ba, // MIVEC Load
+	0x88f1, // LTFT In Use
+	0x8b9b, // WGDC Correction
+	0x8fb0, // MAF Volts
+	0x9552, // Intake VVT Target
+	0x955e, // Exhaust VVT Target
+	0x958a, // Intake VVT Actual
+	0x9596, // Exhaust VVT Actual
+]);
+
+const OPENPORT2_MODE23_EXTENSION_DESCRIPTORS = MODE23_PID_DESCRIPTORS.filter(
+	(descriptor) =>
+		OPENPORT2_SAFE_MODE23_EXTENSION_ADDRESSES.has(descriptor.address),
+);
+
+const OPENPORT2_MODE23_PID_DESCRIPTORS: PidDescriptor[] = [
+	...RAX_PID_DESCRIPTORS,
+	...OPENPORT2_MODE23_EXTENSION_DESCRIPTORS,
+];
+
+const RAX_KLINE_LIVE_DATA_PROFILE: LiveDataProfileDescriptor = {
+	id: RAX_KLINE_PROFILE_ID,
+	name: "RAX Memory Blocks",
+	description:
+		"K-line-style E0/E5/E1 memory polling with RAX block decoding for supported Mitsubishi MUT-III sessions.",
+	transportFamily: "kline",
+	requestFamily: "e0-e5-e1-memory",
+	decodeFamily: "rax-bitfield-calc",
+	status: "ready",
+	statusDetail: "Streaming runtime is implemented for this profile family.",
+	pids: RAX_PID_DESCRIPTORS,
+};
+const RAX_MODE23_PATCH_LIVE_DATA_PROFILE: LiveDataProfileDescriptor = {
+	id: RAX_MODE23_PATCH_PROFILE_ID,
+	name: "Evo X Mode23 RAX Patch",
+	description:
+		"Streams the validated RAX engine blocks plus a curated set of direct Mode23 add-on channels from the EvoScan RAX Fast Logging profile.",
+	transportFamily: "can-iso15765",
+	requestFamily: "mode23",
+	decodeFamily: "rax-bitfield-calc",
+	status: "experimental",
+	statusDetail:
+		"Streams the RAX engine-block subset over Mode23 on openport2, plus validated direct Mode23 add-ons. Mixed CANx-y and external wideband channels from the EvoScan profile remain unsupported.",
+	pids: OPENPORT2_MODE23_PID_DESCRIPTORS,
+};
 
 /**
  * Decode a synthetic RAX PID back to its block index and parameter index.
@@ -118,6 +222,345 @@ function decodeRaxPid(
 	if (block === undefined) return null;
 	if (paramIdx >= block.parameters.length) return null;
 	return { blockIdx, paramIdx };
+}
+
+function getRequestedPids(
+	pidsOrSelection: number[] | LiveDataStreamSelection,
+): number[] {
+	return Array.isArray(pidsOrSelection)
+		? pidsOrSelection
+		: pidsOrSelection.pids;
+}
+
+function getRequestedProfileId(
+	pidsOrSelection: number[] | LiveDataStreamSelection,
+): string | undefined {
+	return Array.isArray(pidsOrSelection) ? undefined : pidsOrSelection.profileId;
+}
+
+function streamRaxLiveData(
+	connection: DeviceConnection,
+	pids: number[],
+	onFrame: (frame: LiveDataFrame) => void,
+	onHealth: ((health: LiveDataHealth) => void) | undefined,
+	readBlock: (
+		connection: DeviceConnection,
+		requestId: number,
+		blockSize: number,
+	) => Promise<Uint8Array>,
+	onComplete: () => void,
+): LiveDataSession {
+	let running = true;
+	const startTime = Date.now();
+
+	const pidMap = new Map<
+		number,
+		{ blockIdx: number; paramIdx: number; unit: string }
+	>();
+	for (const pid of pids) {
+		const decoded = decodeRaxPid(pid);
+		if (!decoded) continue;
+
+		const param = RAX_BLOCKS[decoded.blockIdx]?.parameters[decoded.paramIdx];
+		if (!param) continue;
+
+		pidMap.set(pid, { ...decoded, unit: param.unit });
+	}
+
+	const requiredBlockIndices = new Set<number>(
+		[...pidMap.values()].map((value) => value.blockIdx),
+	);
+
+	let frameCount = 0;
+	let droppedFrames = 0;
+	let lastHealthReportTime = startTime;
+	let totalLatencyMs = 0;
+	let latencySamples = 0;
+
+	const poll = async () => {
+		while (running) {
+			const cycleStart = Date.now();
+
+			for (const blockIdx of requiredBlockIndices) {
+				if (!running) break;
+
+				const block = RAX_BLOCKS[blockIdx];
+				if (!block) continue;
+
+				try {
+					const blockStart = Date.now();
+					const rawData = await readBlock(
+						connection,
+						block.requestId,
+						block.blockSize,
+					);
+					const latency = Date.now() - blockStart;
+					totalLatencyMs += latency;
+					latencySamples++;
+
+					const values = extractAllRaxParameters(rawData, block);
+					const timestamp = Date.now() - startTime;
+
+					for (const [
+						pid,
+						{ blockIdx: requestedBlockIdx, paramIdx, unit },
+					] of pidMap) {
+						if (requestedBlockIdx !== blockIdx) {
+							continue;
+						}
+						const paramName = block.parameters[paramIdx]?.name;
+						if (paramName === undefined) {
+							continue;
+						}
+						const value = values[paramName];
+						if (value === undefined) {
+							continue;
+						}
+						onFrame({ timestamp, pid, value, unit });
+						frameCount++;
+					}
+				} catch (error) {
+					droppedFrames++;
+					console.error(
+						`[MUT-III] Failed to read RAX block ${block.blockId} (0x${block.requestId.toString(16)}):`,
+						error,
+					);
+				}
+			}
+
+			const now = Date.now();
+			const elapsed = now - lastHealthReportTime;
+			if (onHealth && elapsed >= 1000) {
+				const samplesPerSecond = frameCount / (elapsed / 1000);
+				const avgLatencyMs =
+					latencySamples > 0 ? Math.round(totalLatencyMs / latencySamples) : 0;
+				const status =
+					samplesPerSecond === 0
+						? "stalled"
+						: samplesPerSecond < 5
+							? "degraded"
+							: "healthy";
+
+				onHealth({
+					samplesPerSecond: Math.round(samplesPerSecond),
+					droppedFrames,
+					latencyMs: avgLatencyMs,
+					status,
+				});
+
+				frameCount = 0;
+				droppedFrames = 0;
+				totalLatencyMs = 0;
+				latencySamples = 0;
+				lastHealthReportTime = now;
+			}
+
+			const cycleElapsed = Date.now() - cycleStart;
+			const waitMs = Math.max(0, RAX_POLL_INTERVAL_MS - cycleElapsed);
+			if (waitMs > 0) {
+				await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+			}
+		}
+	};
+
+	poll()
+		.catch((error) => {
+			console.error("[MUT-III] Streaming poll loop exited with error:", error);
+		})
+		.finally(onComplete);
+
+	return {
+		stop: () => {
+			running = false;
+		},
+	};
+}
+
+function decodeOpenport2Mode23ExtensionPid(
+	pid: number,
+): Mode23ParameterDescriptor | null {
+	const descriptor = decodeMode23Pid(pid);
+	if (descriptor == null) {
+		return null;
+	}
+	return OPENPORT2_SAFE_MODE23_EXTENSION_ADDRESSES.has(descriptor.address)
+		? descriptor
+		: null;
+}
+
+function streamOpenport2Mode23LiveData(
+	connection: DeviceConnection,
+	pids: number[],
+	onFrame: (frame: LiveDataFrame) => void,
+	onHealth: ((health: LiveDataHealth) => void) | undefined,
+	onComplete: () => void,
+): LiveDataSession {
+	let running = true;
+	const startTime = Date.now();
+
+	const raxPidMap = new Map<
+		number,
+		{ blockIdx: number; paramIdx: number; unit: string }
+	>();
+	const mode23PidMap = new Map<number, Mode23ParameterDescriptor>();
+
+	for (const pid of pids) {
+		const raxPid = decodeRaxPid(pid);
+		if (raxPid != null) {
+			const param = RAX_BLOCKS[raxPid.blockIdx]?.parameters[raxPid.paramIdx];
+			if (param != null) {
+				raxPidMap.set(pid, { ...raxPid, unit: param.unit });
+			}
+			continue;
+		}
+
+		const mode23Pid = decodeOpenport2Mode23ExtensionPid(pid);
+		if (mode23Pid != null) {
+			mode23PidMap.set(pid, mode23Pid);
+		}
+	}
+
+	const requiredBlockIndices = new Set<number>(
+		[...raxPidMap.values()].map((value) => value.blockIdx),
+	);
+
+	let frameCount = 0;
+	let droppedFrames = 0;
+	let lastHealthReportTime = startTime;
+	let totalLatencyMs = 0;
+	let latencySamples = 0;
+
+	const poll = async () => {
+		while (running) {
+			const cycleStart = Date.now();
+
+			for (const blockIdx of requiredBlockIndices) {
+				if (!running) break;
+
+				const block = RAX_BLOCKS[blockIdx];
+				if (block == null) continue;
+
+				try {
+					const blockStart = Date.now();
+					const rawData = await readMode23Block(
+						connection,
+						block.requestId,
+						block.blockSize,
+					);
+					const latency = Date.now() - blockStart;
+					totalLatencyMs += latency;
+					latencySamples++;
+
+					const values = extractAllRaxParameters(rawData, block);
+					const timestamp = Date.now() - startTime;
+
+					for (const [
+						pid,
+						{ blockIdx: requestedBlockIdx, paramIdx, unit },
+					] of raxPidMap) {
+						if (requestedBlockIdx !== blockIdx) {
+							continue;
+						}
+						const paramName = block.parameters[paramIdx]?.name;
+						if (paramName == null) {
+							continue;
+						}
+						const value = values[paramName];
+						if (value == null) {
+							continue;
+						}
+						onFrame({ timestamp, pid, value, unit });
+						frameCount++;
+					}
+				} catch (error) {
+					droppedFrames++;
+					console.error(
+						`[MUT-III] Failed to read RAX block ${block.blockId} (0x${block.requestId.toString(16)}):`,
+						error,
+					);
+				}
+			}
+
+			for (const [pid, descriptor] of mode23PidMap) {
+				if (!running) break;
+
+				try {
+					const readStart = Date.now();
+					const rawValue = await readMode23Value(
+						connection,
+						descriptor.address,
+						descriptor.size,
+					);
+					const latency = Date.now() - readStart;
+					totalLatencyMs += latency;
+					latencySamples++;
+
+					const value = descriptor.decodeRaw
+						? descriptor.decodeRaw(rawValue)
+						: rawValue;
+					const timestamp = Date.now() - startTime;
+					onFrame({
+						timestamp,
+						pid,
+						value,
+						unit: descriptor.unit,
+					});
+					frameCount++;
+				} catch (error) {
+					droppedFrames++;
+					console.error(
+						`[MUT-III] Failed to read Mode23 parameter ${descriptor.name} (0x${descriptor.address.toString(16)}):`,
+						error,
+					);
+				}
+			}
+
+			const now = Date.now();
+			const elapsed = now - lastHealthReportTime;
+			if (onHealth && elapsed >= 1000) {
+				const samplesPerSecond = frameCount / (elapsed / 1000);
+				const avgLatencyMs =
+					latencySamples > 0 ? Math.round(totalLatencyMs / latencySamples) : 0;
+				const status =
+					samplesPerSecond === 0
+						? "stalled"
+						: samplesPerSecond < 5
+							? "degraded"
+							: "healthy";
+
+				onHealth({
+					samplesPerSecond: Math.round(samplesPerSecond),
+					droppedFrames,
+					latencyMs: avgLatencyMs,
+					status,
+				});
+
+				frameCount = 0;
+				droppedFrames = 0;
+				totalLatencyMs = 0;
+				latencySamples = 0;
+				lastHealthReportTime = now;
+			}
+
+			const cycleElapsed = Date.now() - cycleStart;
+			const waitMs = Math.max(0, RAX_POLL_INTERVAL_MS - cycleElapsed);
+			if (waitMs > 0) {
+				await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+			}
+		}
+	};
+
+	poll()
+		.catch((error) => {
+			console.error("[MUT-III] Streaming poll loop exited with error:", error);
+		})
+		.finally(onComplete);
+
+	return {
+		stop: () => {
+			running = false;
+		},
+	};
 }
 
 /**
@@ -180,6 +623,112 @@ export interface Mut3ProtocolOptions {
 	loadKernelArtifacts?: () => Promise<EvoXKernelArtifacts | undefined>;
 }
 
+function decodeMode23Value(data: Uint8Array): number {
+	let value = 0;
+	for (const byte of data) {
+		value = (value << 8) | byte;
+	}
+	return value >>> 0;
+}
+
+async function readMode23Value(
+	connection: DeviceConnection,
+	address: number,
+	size: 1 | 2 | 4,
+): Promise<number> {
+	const response = await connection.sendFrame(
+		new Uint8Array([
+			SID_READ_MEMORY_BY_ADDRESS,
+			0x80,
+			(address >>> 8) & 0xff,
+			address & 0xff,
+			size,
+		]),
+	);
+
+	if (response[0] !== 0x63) {
+		throw new Error(
+			`Mode 23 read failed for 0x80${address.toString(16).padStart(4, "0")}: ECU returned [${Array.from(
+				response,
+			)
+				.map((b) => `0x${b.toString(16)}`)
+				.join(", ")}]`,
+		);
+	}
+
+	const payload = response.slice(1);
+	if (payload.length < size) {
+		throw new Error(
+			`Mode 23 read for 0x80${address.toString(16).padStart(4, "0")} returned ${payload.length} bytes, expected ${size}`,
+		);
+	}
+
+	return decodeMode23Value(payload.slice(0, size));
+}
+
+async function readMode23Block(
+	connection: DeviceConnection,
+	requestId: number,
+	blockSize: number,
+): Promise<Uint8Array> {
+	if ((requestId & 0xffff0000) !== 0x23800000) {
+		throw new Error(
+			`Unsupported RAX Mode23 request id 0x${requestId.toString(16)}: expected 0x2380xxxx token`,
+		);
+	}
+
+	const address = requestId & 0xffff;
+	const response = await connection.sendFrame(
+		new Uint8Array([
+			SID_READ_MEMORY_BY_ADDRESS,
+			0x80,
+			(address >>> 8) & 0xff,
+			address & 0xff,
+			blockSize,
+		]),
+	);
+
+	if (response[0] !== 0x63) {
+		throw new Error(
+			`Mode 23 RAX read failed for 0x${requestId.toString(16)}: ECU returned [${Array.from(
+				response,
+			)
+				.map((b) => `0x${b.toString(16)}`)
+				.join(", ")}]`,
+		);
+	}
+
+	const payload = response.slice(1);
+	if (payload.length < blockSize) {
+		throw new Error(
+			`Mode 23 RAX read for 0x${requestId.toString(16)} returned ${payload.length} bytes, expected ${blockSize}`,
+		);
+	}
+
+	return payload.slice(0, blockSize);
+}
+
+/*
+async function enterMode23LoggingSession(
+	connection: DeviceConnection,
+): Promise<void> {
+	const response = await connection.sendFrame(
+		new Uint8Array([SID_DIAGNOSTIC_SESSION_CONTROL, MODE23_LOGGING_SESSION]),
+	);
+
+	if (
+		response[0] !== POSITIVE_RESPONSE_DIAGNOSTIC_SESSION_CONTROL ||
+		response[1] !== MODE23_LOGGING_SESSION
+	) {
+		throw new Error(
+			`Mode 23 logging session failed: ECU returned [${Array.from(response)
+				.map((byte) => `0x${byte.toString(16)}`)
+				.join(", ")}]`,
+		);
+	}
+}
+*/
+
 /**
  * MUT-III ECU protocol implementation for Mitsubishi 4B11T ECUs (EVO X).
  *
@@ -191,8 +740,7 @@ export interface Mut3ProtocolOptions {
  * EcuFlash 1.44 calls this flash method **`mitsucan`**. It targets the
  * **Renesas M32186F8** CPU in the EVO X (Lancer Evolution X / 4B11T) — NOT
  * the SH7058 (which is used by Subaru ECUs and EVO 7/8/9). The `mitsucan`
- * path uses the ECU's built-in CAN bootloader directly; no kernel upload is
- * required (unlike the EVO 7/8/9 `mitsukernel` path over K-line).
+ * path uses a captured CAN RAM-kernel upload for ROM write and recovery.
  *
  * CAN IDs confirmed from EcuFlash 1.44 analysis:
  *   - Tester → ECU: `0x7E0`
@@ -243,9 +791,27 @@ export class Mut3Protocol implements EcuProtocol {
 	 * @returns All 48 RAX PidDescriptors
 	 */
 	async getSupportedPids(
-		_connection: DeviceConnection,
+		connection: DeviceConnection,
 	): Promise<PidDescriptor[]> {
-		return RAX_PID_DESCRIPTORS;
+		if (connection.deviceInfo.transportName === "openport2") {
+			return OPENPORT2_MODE23_PID_DESCRIPTORS;
+		}
+		if (connection.deviceInfo.transportName === "kline") {
+			return RAX_PID_DESCRIPTORS;
+		}
+		return [];
+	}
+
+	async getLiveDataProfiles(
+		connection: DeviceConnection,
+	): Promise<LiveDataProfileDescriptor[]> {
+		if (connection.deviceInfo.transportName === "openport2") {
+			return [RAX_MODE23_PATCH_LIVE_DATA_PROFILE];
+		}
+		if (connection.deviceInfo.transportName === "kline") {
+			return [RAX_KLINE_LIVE_DATA_PROFILE];
+		}
+		return [];
 	}
 
 	/**
@@ -271,157 +837,119 @@ export class Mut3Protocol implements EcuProtocol {
 	 */
 	streamLiveData(
 		connection: DeviceConnection,
+		pidsOrSelection: number[] | LiveDataStreamSelection,
+		onFrame: (frame: LiveDataFrame) => void,
+		onHealth?: (health: LiveDataHealth) => void,
+	): LiveDataSession {
+		const pids = getRequestedPids(pidsOrSelection);
+		const profileId = getRequestedProfileId(pidsOrSelection);
+
+		if (connection.deviceInfo.transportName === "openport2") {
+			if (
+				profileId === undefined ||
+				profileId === RAX_MODE23_PATCH_PROFILE_ID
+			) {
+				const validOpenport2PidCount = pids.filter(
+					(pid) =>
+						decodeRaxPid(pid) != null ||
+						decodeOpenport2Mode23ExtensionPid(pid) != null,
+				).length;
+				if (pids.length > 0 && validOpenport2PidCount === 0) {
+					throw new Error(
+						"MUT-III openport2 live logging requires a valid RAX or supported direct Mode23 PID selection.",
+					);
+				}
+				return this.trackLivePoll(connection, (onComplete) =>
+					streamOpenport2Mode23LiveData(
+						connection,
+						pids,
+						onFrame,
+						onHealth,
+						onComplete,
+					),
+				);
+			}
+			if (profileId === MODE23_RESEARCH_PROFILE_ID) {
+				throw new Error(
+					`${MODE23_RESEARCH_LIVE_DATA_PROFILE.name} is intentionally unavailable: ${MODE23_RESEARCH_LIVE_DATA_PROFILE.statusDetail}`,
+				);
+			}
+			if (profileId === BUILTIN_EVOX_CAN_MUTIII_PROFILE_ID) {
+				throw new Error(
+					`${BUILTIN_EVOX_CAN_MUTIII_LIVE_DATA_PROFILE.name} is disabled: CAN bank switching remains unresolved and throughput is too slow for viable logging.`,
+				);
+			}
+			if (profileId !== undefined) {
+				throw new Error(
+					`Unsupported MUT-III CAN live data profile "${profileId}" for transport ${connection.deviceInfo.transportName}.`,
+				);
+			}
+		}
+
+		if (
+			profileId !== undefined &&
+			connection.deviceInfo.transportName === "kline" &&
+			profileId !== RAX_KLINE_PROFILE_ID
+		) {
+			throw new Error(
+				`Unsupported MUT-III K-line live data profile "${profileId}" for transport ${connection.deviceInfo.transportName}.`,
+			);
+		}
+
+		return this.trackLivePoll(connection, (onComplete) =>
+			streamRaxLiveData(
+				connection,
+				pids,
+				onFrame,
+				onHealth,
+				readRaxBlock,
+				onComplete,
+			),
+		);
+	}
+
+	/** Keep ROM operations excluded until the polling request has settled. */
+	private trackLivePoll(
+		connection: DeviceConnection,
+		start: (onComplete: () => void) => LiveDataSession,
+	): LiveDataSession {
+		if (this.romReads.has(connection)) {
+			throw new Error("Cannot start live logging during a ROM read");
+		}
+		if (
+			this.kernelSessions.has(connection) ||
+			this.recoveryDevices.has(connection.deviceInfo.id)
+		) {
+			throw new Error(
+				"A flash kernel is retained for recovery; diagnostic logging cannot resume yet",
+			);
+		}
+		this.livePolls.set(connection, (this.livePolls.get(connection) ?? 0) + 1);
+		const complete = () => {
+			const remaining = (this.livePolls.get(connection) ?? 1) - 1;
+			if (remaining > 0) this.livePolls.set(connection, remaining);
+			else this.livePolls.delete(connection);
+		};
+		try {
+			return start(complete);
+		} catch (error) {
+			complete();
+			throw error;
+		}
+	}
+
+	/*
+	private streamMode23LiveData(
+		connection: DeviceConnection,
 		pids: number[],
 		onFrame: (frame: LiveDataFrame) => void,
 		onHealth?: (health: LiveDataHealth) => void,
 	): LiveDataSession {
-		if (this.romReads.has(connection))
-			throw new Error("Cannot start live logging during a ROM read");
-		if (
-			this.kernelSessions.has(connection) ||
-			this.recoveryDevices.has(connection.deviceInfo.id)
-		)
-			throw new Error(
-				"A flash kernel is retained for recovery; diagnostic logging cannot resume yet",
-			);
-		this.livePolls.set(connection, (this.livePolls.get(connection) ?? 0) + 1);
-		let running = true;
-		const startTime = Date.now();
-
-		// Map each requested pid to its block index and param index
-		const pidMap = new Map<
-			number,
-			{ blockIdx: number; paramIdx: number; unit: string }
-		>();
-		for (const pid of pids) {
-			const decoded = decodeRaxPid(pid);
-			if (!decoded) continue;
-
-			const param = RAX_BLOCKS[decoded.blockIdx]?.parameters[decoded.paramIdx];
-			if (!param) continue;
-
-			pidMap.set(pid, { ...decoded, unit: param.unit });
-		}
-
-		// Derive the unique set of block indices needed for requested pids
-		const requiredBlockIndices = new Set<number>(
-			[...pidMap.values()].map((v) => v.blockIdx),
-		);
-
-		// Health tracking
-		let frameCount = 0;
-		let droppedFrames = 0;
-		let lastHealthReportTime = startTime;
-		let totalLatencyMs = 0;
-		let latencySamples = 0;
-
-		const poll = async () => {
-			while (running) {
-				const cycleStart = Date.now();
-
-				for (const blockIdx of requiredBlockIndices) {
-					if (!running) break;
-
-					const block = RAX_BLOCKS[blockIdx];
-					if (!block) continue;
-
-					try {
-						const blockStart = Date.now();
-						const rawData = await readRaxBlock(
-							connection,
-							block.requestId,
-							block.blockSize,
-						);
-						const latency = Date.now() - blockStart;
-						totalLatencyMs += latency;
-						latencySamples++;
-
-						// Decode all parameters in this block
-						const values = extractAllRaxParameters(rawData, block);
-						const timestamp = Date.now() - startTime;
-
-						// Emit only the parameters that were requested
-						for (const [pid, { blockIdx: bIdx, paramIdx, unit }] of pidMap) {
-							if (bIdx === blockIdx) {
-								const paramName =
-									RAX_BLOCKS[blockIdx]?.parameters[paramIdx]?.name;
-								if (paramName === undefined) continue;
-								const value = values[paramName];
-								if (value !== undefined) {
-									onFrame({ timestamp, pid, value, unit });
-									frameCount++;
-								}
-							}
-						}
-					} catch (error) {
-						droppedFrames++;
-						console.error(
-							`[MUT-III] Failed to read RAX block ${block.blockId} (0x${block.requestId.toString(16)}):`,
-							error,
-						);
-					}
-				}
-
-				// Report health metrics periodically (every second)
-				const now = Date.now();
-				const elapsed = now - lastHealthReportTime;
-				if (onHealth && elapsed >= 1000) {
-					const samplesPerSecond = frameCount / (elapsed / 1000);
-					const avgLatencyMs =
-						latencySamples > 0
-							? Math.round(totalLatencyMs / latencySamples)
-							: 0;
-					const status =
-						samplesPerSecond === 0
-							? "stalled"
-							: samplesPerSecond < 5
-								? "degraded"
-								: "healthy";
-
-					onHealth({
-						samplesPerSecond: Math.round(samplesPerSecond),
-						droppedFrames,
-						latencyMs: avgLatencyMs,
-						status,
-					});
-
-					// Reset counters for next window
-					frameCount = 0;
-					droppedFrames = 0;
-					totalLatencyMs = 0;
-					latencySamples = 0;
-					lastHealthReportTime = now;
-				}
-
-				// Wait before next polling cycle
-				const cycleElapsed = Date.now() - cycleStart;
-				const waitMs = Math.max(0, RAX_POLL_INTERVAL_MS - cycleElapsed);
-				if (waitMs > 0) {
-					await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
-				}
-			}
-		};
-
-		// Start the polling loop (fire and forget; errors are caught within poll)
-		poll()
-			.catch((error) => {
-				console.error(
-					"[MUT-III] Streaming poll loop exited with error:",
-					error,
-				);
-			})
-			.finally(() => {
-				const remaining = (this.livePolls.get(connection) ?? 1) - 1;
-				if (remaining > 0) this.livePolls.set(connection, remaining);
-				else this.livePolls.delete(connection);
-			});
-
-		return {
-			stop: () => {
-				running = false;
-			},
-		};
+		// Intentionally disabled.
+		// The old hardcoded Mode 23 map remains here only as research scaffolding
+		// and should not be re-exposed without the planned CAN/RAX profile work.
 	}
+	*/
 
 	/**
 	 * Read the full ROM binary from the ECU using the MUT-III UDS sequence.
@@ -651,14 +1179,25 @@ void ECU_CAN_ID;
 
 // Export constants and helpers for testing
 export {
+	MODE23_PID_BASE,
+	MODE23_PID_DESCRIPTORS,
+	MODE23_RESEARCH_LIVE_DATA_PROFILE,
+	MODE23_RESEARCH_PROFILE_ID,
 	RAX_PID_BASE,
 	RAX_PID_DESCRIPTORS,
+	RAX_KLINE_LIVE_DATA_PROFILE,
+	RAX_KLINE_PROFILE_ID,
+	RAX_MODE23_PATCH_LIVE_DATA_PROFILE,
+	RAX_MODE23_PATCH_PROFILE_ID,
 	buildRaxPidDescriptors,
+	decodeMode23Pid,
 	decodeRaxPid,
+	readMode23Value,
 	readRaxBlock,
 	CMD_SET_ADDRESS,
 	CMD_READ_WORD_INC,
 	CMD_READ_BYTE,
+	SID_SECURITY_ACCESS,
 };
 
 export type { EvoXKernelArtifacts } from "./evox-kernel.js";

@@ -21,6 +21,7 @@ const OPEN_FOLDER_ACTION = "Open Folder";
 
 describe("LoggingManager", () => {
 	let manager: LoggingManager;
+	let persistedLogBytes: Uint8Array | undefined;
 
 	beforeEach(() => {
 		// Mock workspace folders
@@ -30,7 +31,18 @@ describe("LoggingManager", () => {
 
 		// Mock workspace.fs
 		vi.mocked(vscode.workspace.fs.createDirectory).mockResolvedValue(undefined);
-		vi.mocked(vscode.workspace.fs.writeFile).mockResolvedValue(undefined);
+		persistedLogBytes = undefined;
+		vi.mocked(vscode.workspace.fs.readFile).mockImplementation(async () => {
+			if (persistedLogBytes == null) {
+				throw new Error("File not found");
+			}
+			return persistedLogBytes;
+		});
+		vi.mocked(vscode.workspace.fs.writeFile).mockImplementation(
+			async (_uri, data) => {
+				persistedLogBytes = data;
+			},
+		);
 
 		// Mock workspace.getConfiguration
 		vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
@@ -388,6 +400,33 @@ describe("LoggingManager", () => {
 				writeFileCallCount,
 			);
 		});
+
+		it("should flush pending rows to disk before stopping", async () => {
+			await manager.startLog([...createSamplePids()]);
+			manager.onFrame({ timestamp: 1000, pid: 0x0c, value: 850, unit: "rpm" });
+
+			await manager.flushLog();
+			const flushedContent = new TextDecoder().decode(persistedLogBytes);
+			expect(flushedContent).toContain("850");
+
+			await manager.stopLog();
+			const finalContent = new TextDecoder().decode(persistedLogBytes);
+			expect(finalContent).toContain("850");
+		});
+
+		it("should append rows across multiple flushes without retaining prior rows in memory", async () => {
+			await manager.startLog([...createSamplePids()]);
+
+			manager.onFrame({ timestamp: 100, pid: 0x0c, value: 850, unit: "rpm" });
+			await manager.flushLog();
+
+			manager.onFrame({ timestamp: 200, pid: 0x05, value: 82, unit: "°C" });
+			await manager.flushLog();
+
+			const content = new TextDecoder().decode(persistedLogBytes);
+			expect(content).toContain("100,850,,");
+			expect(content).toContain("200,,82,");
+		});
 	});
 
 	describe("column filtering", () => {
@@ -444,12 +483,8 @@ describe("LoggingManager", () => {
 			const pids = createSamplePids();
 			await manager.startLog([...pids]);
 
-			// The session start time is captured at startLog; frame.timestamp is ms since session start
-			// In our implementation, relativeTs = frame.timestamp - sessionStartMs
-			// Since sessionStartMs = Date.now() at startLog time, and frame.timestamp is also ms,
-			// we need to use a timestamp that makes sense
 			manager.onFrame({
-				timestamp: Date.now(),
+				timestamp: 250,
 				pid: 0x0c,
 				value: 850,
 				unit: "rpm",
@@ -462,6 +497,7 @@ describe("LoggingManager", () => {
 			const lines = content.trim().split("\n");
 			// Should have header, units, and at least one data row
 			expect(lines.length).toBeGreaterThanOrEqual(3);
+			expect(lines[2]?.startsWith("250,")).toBe(true);
 		});
 
 		it("should produce sparse rows with empty cells for missing PIDs", async () => {
@@ -471,7 +507,7 @@ describe("LoggingManager", () => {
 
 			// Only send Engine RPM frame
 			manager.onFrame({
-				timestamp: Date.now(),
+				timestamp: 100,
 				pid: activePid.pid,
 				value: 850,
 				unit: activePid.unit,

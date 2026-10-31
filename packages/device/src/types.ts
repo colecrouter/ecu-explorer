@@ -67,6 +67,25 @@ export interface PidDescriptor {
 	maxValue: number;
 }
 
+export type LiveDataProfileStatus = "ready" | "experimental" | "unavailable";
+
+export interface LiveDataProfileDescriptor {
+	id: string;
+	name: string;
+	description?: string;
+	transportFamily?: string;
+	requestFamily?: string;
+	decodeFamily?: string;
+	status: LiveDataProfileStatus;
+	statusDetail?: string;
+	pids: PidDescriptor[];
+}
+
+export interface LiveDataStreamSelection {
+	pids: number[];
+	profileId?: string;
+}
+
 export interface LiveDataFrame {
 	timestamp: number; // ms since session start
 	pid: number;

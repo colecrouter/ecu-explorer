@@ -1,19 +1,40 @@
 <script lang="ts">
-	import type { PidDescriptor, LiveDataFrame } from "@ecu-explorer/device";
+	import type { LiveDataFrame, PidDescriptor } from "@ecu-explorer/device";
+
+	type LiveDataProfileDescriptor = {
+		id: string;
+		name: string;
+		description?: string;
+		transportFamily?: string;
+		requestFamily?: string;
+		decodeFamily?: string;
+		status: "ready" | "experimental" | "unavailable";
+		statusDetail?: string;
+		pids: PidDescriptor[];
+	};
 
 	const vscode = acquireVsCodeApi();
 
+	let profiles: LiveDataProfileDescriptor[] = [];
+	let selectedProfileId: string | null = null;
 	let supportedPids: PidDescriptor[] = [];
 	let selectedPids: Set<number> = new Set();
 	let liveData: Map<number, LiveDataFrame> = new Map();
 	let isStreaming = false;
-	let isRecording = false;
 	let startTime: number | null = null;
 	let duration = "00:00";
+	let currentProfile: LiveDataProfileDescriptor | null = null;
+	let visiblePids: PidDescriptor[] = [];
 
 	window.addEventListener("message", (event) => {
 		const message = event.data;
 		switch (message.type) {
+			case "supportedProfiles":
+				profiles = message.profiles;
+				selectedProfileId =
+					message.selectedProfileId ?? message.profiles[0]?.id ?? null;
+				selectedPids = new Set();
+				break;
 			case "supportedPids":
 				supportedPids = message.pids;
 				break;
@@ -28,11 +49,27 @@
 				break;
 			case "streamingStopped":
 				isStreaming = false;
-				isRecording = false;
 				startTime = null;
 				break;
 		}
 	});
+
+	function getCurrentProfile(): LiveDataProfileDescriptor | null {
+		return profiles.find((profile) => profile.id === selectedProfileId) ?? null;
+	}
+
+	function getVisiblePids(): PidDescriptor[] {
+		return getCurrentProfile()?.pids ?? supportedPids;
+	}
+
+	function onProfileChange(event: Event) {
+		const value = (event.currentTarget as HTMLSelectElement).value;
+		selectedProfileId = value.length > 0 ? value : null;
+		selectedPids = new Set();
+	}
+
+	$: currentProfile = getCurrentProfile();
+	$: visiblePids = getVisiblePids();
 
 	function togglePid(pid: number) {
 		if (selectedPids.has(pid)) {
@@ -44,10 +81,11 @@
 	}
 
 	function startStreaming() {
+		const profile = getCurrentProfile();
 		vscode.postMessage({
 			type: "startStreaming",
 			pids: Array.from(selectedPids),
-			record: isRecording,
+			profileId: profile?.id,
 		});
 	}
 
@@ -76,26 +114,67 @@
 		<h1>Live Data</h1>
 		<div class="controls">
 			{#if !isStreaming}
-				<label>
-					<input type="checkbox" bind:checked={isRecording} />
-					Record to CSV
-				</label>
-				<button on:click={startStreaming} disabled={selectedPids.size === 0}>
+				<button
+					on:click={startStreaming}
+					disabled={selectedPids.size === 0 ||
+						(currentProfile !== null &&
+							currentProfile.status === "unavailable")}
+				>
 					Start Streaming
 				</button>
 			{:else}
-				<span class="status">
-					{isRecording ? "🔴 Recording" : "🟢 Streaming"} - {duration}
-				</span>
+				<span class="status">Streaming - {duration}</span>
 				<button on:click={stopStreaming}>Stop</button>
 			{/if}
 		</div>
 	</header>
 
+	{#if profiles.length > 0}
+		<section class="profile-selector">
+			<h2>Logging Profile</h2>
+			<label class="profile-field">
+				<span>Profile</span>
+				<select
+					bind:value={selectedProfileId}
+					on:change={onProfileChange}
+					disabled={isStreaming}
+				>
+					{#each profiles as profile}
+						<option value={profile.id}>
+							{profile.name} [{profile.requestFamily ??
+								profile.transportFamily ??
+								"profile"}]
+						</option>
+					{/each}
+				</select>
+			</label>
+			{#if currentProfile}
+				<p class="profile-summary">
+					<strong>{currentProfile.status}</strong>
+					{#if currentProfile.transportFamily}
+						<span> • {currentProfile.transportFamily}</span>
+					{/if}
+					{#if currentProfile.requestFamily}
+						<span> • {currentProfile.requestFamily}</span>
+					{/if}
+					{#if currentProfile.decodeFamily}
+						<span> • {currentProfile.decodeFamily}</span>
+					{/if}
+				</p>
+				{#if currentProfile.description}
+					<p class="profile-note">{currentProfile.description}</p>
+				{/if}
+				{#if currentProfile.statusDetail}
+					<p class="profile-note">{currentProfile.statusDetail}</p>
+				{/if}
+			{/if}
+		</section>
+	{/if}
+
 	<section class="pid-selector">
 		<h2>Select PIDs</h2>
 		<div class="pid-grid">
-			{#each supportedPids as pid}
+			{#each visiblePids as pid}
 				<button
 					class="pid-chip"
 					class:selected={selectedPids.has(pid.pid)}
@@ -112,7 +191,7 @@
 		<h2>Real-time Data</h2>
 		<div class="data-grid">
 			{#each Array.from(selectedPids) as pidId}
-				{@const descriptor = supportedPids.find((p) => p.pid === pidId)}
+				{@const descriptor = visiblePids.find((p) => p.pid === pidId)}
 				{@const data = liveData.get(pidId)}
 				<div class="data-card">
 					<span class="label"
@@ -132,6 +211,36 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2rem;
+	}
+
+	.profile-selector {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.profile-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		max-width: 32rem;
+	}
+
+	.profile-field select {
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+		background: var(
+			--vscode-dropdown-background,
+			var(--vscode-input-background)
+		);
+		color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+	}
+
+	.profile-summary,
+	.profile-note {
+		margin: 0;
+		color: var(--vscode-descriptionForeground);
 	}
 
 	header {

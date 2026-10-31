@@ -7,13 +7,47 @@ import type {
 } from "@ecu-explorer/device";
 import { vi } from "vitest";
 
+type LiveDataProfileDescriptor = {
+	id: string;
+	name: string;
+	description?: string;
+	transportFamily?: string;
+	requestFamily?: string;
+	decodeFamily?: string;
+	status: "ready" | "experimental" | "unavailable";
+	statusDetail?: string;
+	pids: PidDescriptor[];
+};
+
+type LiveDataStreamSelection = {
+	pids: number[];
+	profileId?: string;
+};
+
+type ProfileAwareProtocol = EcuProtocol & {
+	getLiveDataProfiles?: (
+		connection: DeviceConnection,
+	) => Promise<LiveDataProfileDescriptor[]>;
+	streamLiveData?: (
+		connection: DeviceConnection,
+		pidsOrSelection: number[] | LiveDataStreamSelection,
+		onFrame: (frame: LiveDataFrame) => void,
+		onHealth?: (health: unknown) => void,
+	) => LiveDataSession;
+};
+
 type TestDeviceConnection = Pick<
 	DeviceConnection,
 	"deviceInfo" | "sendFrame" | "startStream" | "stopStream" | "close"
 >;
 
-type TestProtocol = Pick<EcuProtocol, "name" | "canHandle"> &
-	Partial<Pick<EcuProtocol, "getSupportedPids" | "streamLiveData">>;
+type TestProtocol = Pick<ProfileAwareProtocol, "name" | "canHandle"> &
+	Partial<
+		Pick<
+			ProfileAwareProtocol,
+			"getSupportedPids" | "getLiveDataProfiles" | "streamLiveData"
+		>
+	>;
 
 const LIVE_DATA_PIDS = [
 	{
@@ -38,6 +72,30 @@ export function createLiveDataPids() {
 		PidDescriptor,
 		PidDescriptor,
 	];
+}
+
+export function createLiveDataProfiles(
+	overrides: Partial<LiveDataProfileDescriptor>[] = [],
+) {
+	const [engineRpm, vehicleSpeed] = createLiveDataPids();
+	const baseProfiles: LiveDataProfileDescriptor[] = [
+		{
+			id: "test-ready",
+			name: "Test Ready Profile",
+			description: "Ready profile for live data tests.",
+			transportFamily: "test",
+			requestFamily: "test-request",
+			decodeFamily: "direct-scalar",
+			status: "ready",
+			statusDetail: "Ready for streaming.",
+			pids: [{ ...engineRpm }, { ...vehicleSpeed }],
+		},
+	];
+
+	return baseProfiles.map((profile, index) => ({
+		...profile,
+		...(overrides[index] ?? {}),
+	}));
 }
 
 export function createLiveDataFrame(overrides: Partial<LiveDataFrame> = {}) {
@@ -74,24 +132,30 @@ export function createLiveDataSession() {
 
 export function createLiveDataProtocol({
 	supportedPids = [],
+	profiles = [],
 	session = createLiveDataSession(),
 	onStreamStart,
 }: {
 	supportedPids?: readonly PidDescriptor[];
+	profiles?: readonly LiveDataProfileDescriptor[];
 	session?: LiveDataSession;
-	onStreamStart?: (onFrame: (frame: LiveDataFrame) => void) => void;
+	onStreamStart?: (
+		onFrame: (frame: LiveDataFrame) => void,
+		selection: number[] | LiveDataStreamSelection,
+	) => void;
 } = {}) {
 	return {
 		name: "Test Protocol",
 		canHandle: vi.fn(async () => true),
 		getSupportedPids: vi.fn(async () => [...supportedPids]),
+		getLiveDataProfiles: vi.fn(async () => [...profiles]),
 		streamLiveData: vi.fn(
 			(
 				_connection: DeviceConnection,
-				_pids: number[],
+				selection: number[] | LiveDataStreamSelection,
 				onFrame: (frame: LiveDataFrame) => void,
 			) => {
-				onStreamStart?.(onFrame);
+				onStreamStart?.(onFrame, selection);
 				return session;
 			},
 		),
