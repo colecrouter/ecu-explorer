@@ -36,6 +36,11 @@
 	"contributes": {
 		"commands": [
 			{
+				"command": "ecuExplorer.changeLoggingConfiguration",
+				"title": "Change Logging Configuration",
+				"category": "ECU Explorer"
+			},
+			{
 				"command": "ecuExplorer.compareSavedRoms",
 				"title": "ECU Explorer: Compare Saved ROMs"
 			},

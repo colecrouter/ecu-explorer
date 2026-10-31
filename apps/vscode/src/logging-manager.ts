@@ -104,7 +104,7 @@ export class LoggingManager implements vscode.Disposable {
 
 		// Build filename with ISO timestamp (colons and dots replaced with dashes)
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const fileName = `log-${timestamp}.csv`;
+		const fileName = `log-${timestamp}-${globalThis.crypto.randomUUID()}.csv`;
 		this.recordingUri = vscode.Uri.joinPath(logsFolderUri, fileName);
 
 		// Read column filter setting
@@ -253,7 +253,9 @@ export class LoggingManager implements vscode.Disposable {
 	 *
 	 * @returns The URI of the saved file, or undefined if no session was active
 	 */
-	async stopLog(): Promise<vscode.Uri | undefined> {
+	async stopLog(
+		options: { notify?: boolean } = {},
+	): Promise<vscode.Uri | undefined> {
 		if (this.state === "idle") {
 			return undefined;
 		}
@@ -277,7 +279,7 @@ export class LoggingManager implements vscode.Disposable {
 			false,
 		);
 
-		if (savedUri && this.hasPersistedContent) {
+		if (savedUri && this.hasPersistedContent && options.notify !== false) {
 			// Build relative path for display
 			const workspaceFolders = vscode.workspace.workspaceFolders;
 			let displayPath = savedUri.fsPath;
@@ -322,9 +324,11 @@ export class LoggingManager implements vscode.Disposable {
 			return;
 		}
 
-		this.flushPromise = this.flushPromise.then(async () => {
-			await this.flushPendingToDisk();
-		});
+		this.flushPromise = this.flushPromise
+			.catch(() => undefined)
+			.then(async () => {
+				await this.flushPendingToDisk();
+			});
 
 		await this.flushPromise;
 	}
@@ -404,24 +408,26 @@ export class LoggingManager implements vscode.Disposable {
 			return;
 		}
 
+		const preamble = this.csvPreamble;
+		const pendingRows = this.pendingCsvRows;
 		this.pendingCsvRows = "";
 		this.csvPreamble = "";
 
-		let existing: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
-		if (this.hasPersistedContent) {
-			try {
-				existing = await vscode.workspace.fs.readFile(targetUri);
-			} catch {
-				existing = new Uint8Array();
-			}
+		try {
+			const existing = this.hasPersistedContent
+				? await vscode.workspace.fs.readFile(targetUri)
+				: new Uint8Array();
+			const chunkBytes = new TextEncoder().encode(chunk);
+			const combined = new Uint8Array(existing.length + chunkBytes.length);
+			combined.set(existing, 0);
+			combined.set(chunkBytes, existing.length);
+			await vscode.workspace.fs.writeFile(targetUri, combined);
+			this.hasPersistedContent = true;
+		} catch (error) {
+			this.csvPreamble = preamble;
+			this.pendingCsvRows = pendingRows + this.pendingCsvRows;
+			throw error;
 		}
-
-		const chunkBytes = new TextEncoder().encode(chunk);
-		const combined = new Uint8Array(existing.length + chunkBytes.length);
-		combined.set(existing, 0);
-		combined.set(chunkBytes, existing.length);
-		await vscode.workspace.fs.writeFile(targetUri, combined);
-		this.hasPersistedContent = true;
 	}
 }
 

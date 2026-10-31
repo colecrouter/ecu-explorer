@@ -4,48 +4,18 @@
  * Tests panel creation, lifecycle, PID selection, data streaming, and CSV recording.
  */
 
-import type { LiveDataFrame } from "@ecu-explorer/device";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
-import { DeviceManagerImpl } from "../src/device-manager.js";
 import { LiveDataPanelManager } from "../src/live-data-panel-manager.js";
 import {
 	createLiveDataConnection,
-	createLiveDataFrame,
 	createLiveDataPids,
-	createLiveDataProfiles,
 	createLiveDataProtocol,
 	createLiveDataSession,
 } from "./mocks/live-data-fixtures.js";
 import { createExtensionContext } from "./mocks/vscode-harness.js";
-import type {
-	GraphCompatibleWebviewPanel,
-	MockWebviewMessage,
-} from "./mocks/webview-mock.js";
+import type { GraphCompatibleWebviewPanel } from "./mocks/webview-mock.js";
 import { createMockWebviewPanel } from "./mocks/webview-mock.js";
-
-// Mock interface for testing - only includes methods actually used by LiveDataPanelManager
-interface MockDeviceManager {
-	connect: typeof mockConnect;
-}
-
-type DeviceManagerLike = Pick<DeviceManagerImpl, "connect">;
-
-function asWebviewPanel(
-	panel: GraphCompatibleWebviewPanel,
-): vscode.WebviewPanel {
-	return panel as vscode.WebviewPanel;
-}
-
-function asDeviceManager(deviceManager: DeviceManagerLike): DeviceManagerImpl {
-	return deviceManager as DeviceManagerImpl;
-}
-
-// Mock the DeviceManagerImpl
-const mockConnect = vi.fn();
-const mockDeviceManager: MockDeviceManager = {
-	connect: mockConnect,
-};
 
 describe("LiveDataPanelManager", () => {
 	let manager: LiveDataPanelManager;
@@ -54,27 +24,6 @@ describe("LiveDataPanelManager", () => {
 		vscode.ExtensionContext,
 		"subscriptions" | "extensionUri"
 	>;
-	const waitForPanelWork = () =>
-		new Promise((resolve) => setTimeout(resolve, 50));
-
-	async function showReadyPanel({
-		connection = createLiveDataConnection(),
-		protocol = createLiveDataProtocol(),
-	}: {
-		connection?: ReturnType<typeof createLiveDataConnection>;
-		protocol?: ReturnType<typeof createLiveDataProtocol>;
-	} = {}) {
-		mockConnect.mockResolvedValue({
-			connection,
-			protocol,
-		});
-
-		await manager.showPanel();
-		mockPanel.webview._simulateMessage({ type: "ready" });
-		await waitForPanelWork();
-
-		return { connection, protocol };
-	}
 
 	it("drains the current request before resuming the selected stream after a ROM read", async () => {
 		let settle!: () => void;
@@ -165,522 +114,139 @@ describe("LiveDataPanelManager", () => {
 
 	beforeEach(() => {
 		mockPanel = createMockWebviewPanel("Live Data");
-
 		vi.mocked(vscode.window.createWebviewPanel).mockReturnValue(
-			asWebviewPanel(mockPanel),
+			mockPanel as vscode.WebviewPanel,
 		);
-
-		// Mock writeFile to prevent actual filesystem access
-		vi.mocked(vscode.workspace.fs.writeFile).mockResolvedValue(undefined);
-
+		vi.mocked(vscode.workspace.fs.readDirectory).mockResolvedValue([
+			["live-data-example.css", vscode.FileType.File],
+		]);
 		mockContext = createExtensionContext();
+		manager = new LiveDataPanelManager(mockContext as vscode.ExtensionContext);
+	});
 
-		manager = new LiveDataPanelManager(
-			mockContext as vscode.ExtensionContext,
-			asDeviceManager(mockDeviceManager),
+	it("opens a themed monitor and sends the configured channels on ready", async () => {
+		const pids = createLiveDataPids();
+		await manager.applyConfiguration(
+			createLiveDataConnection(),
+			createLiveDataProtocol(),
+			{
+				protocolName: "Test Protocol",
+				profileName: "Golden",
+				profileId: "golden",
+				pids: [pids[1]],
+			},
+			true,
 		);
+		await manager.showPanel();
+		mockPanel.webview._simulateMessage({ type: "ready" });
+		expect(mockPanel.webview.html).toContain("live-data-example.css");
+		expect(mockPanel.webview._getMessages()).toContainEqual({
+			type: "configuration",
+			profileName: "Golden",
+			pids: [pids[1]],
+			recording: false,
+		});
+		expect(mockPanel.webview._getMessages()).toContainEqual({
+			type: "streamingStarted",
+		});
+		await manager.showPanel();
+		expect(mockPanel.reveal).toHaveBeenCalledOnce();
 	});
 
-	describe("showPanel", () => {
-		it("should create a new webview panel", async () => {
-			await manager.showPanel();
-
-			expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
-				"ecuExplorerLiveData",
-				"Live Data",
-				vscode.ViewColumn.One,
-				expect.objectContaining({
-					enableScripts: true,
-					retainContextWhenHidden: true,
-				}),
-			);
+	it("routes configuration and start buttons to the shared native commands", async () => {
+		const execute = vi.spyOn(vscode.commands, "executeCommand");
+		await manager.showPanel();
+		mockPanel.webview._simulateMessage({ type: "changeConfiguration" });
+		mockPanel.webview._simulateMessage({
+			type: "startStreaming",
+			pids: [0xffff],
 		});
-
-		it("should set HTML content on the panel", async () => {
-			await manager.showPanel();
-
-			expect(mockPanel.webview.html).toContain("<!DOCTYPE html>");
-			expect(mockPanel.webview.html).toContain("live-data.js");
-		});
-
-		it("should reveal existing panel if already open", async () => {
-			await manager.showPanel();
-			await manager.showPanel();
-
-			// Should only create one panel
-			expect(vscode.window.createWebviewPanel).toHaveBeenCalledTimes(1);
-			expect(mockPanel.reveal).toHaveBeenCalledTimes(1);
-		});
+		expect(execute).toHaveBeenCalledWith(
+			"ecuExplorer.changeLoggingConfiguration",
+		);
+		expect(execute).toHaveBeenCalledWith("ecuExplorer.startLiveData");
 	});
 
-	describe("message handling", () => {
-		it("records samples from the selected profile", () => {
-			const frame = createLiveDataFrame();
-			const received: LiveDataFrame[] = [];
-			const protocol = createLiveDataProtocol({
-				onStreamStart: (onFrame, selection) => {
-					if (
-						!Array.isArray(selection) &&
-						selection.profileId === "golden-profile"
-					)
-						onFrame(frame);
-				},
-			});
-			const recording = manager.streamForLogging(
+	it("waits for the old request before applying a new profile", async () => {
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		const protocol = createLiveDataProtocol({
+			session: { stop: vi.fn(), completion },
+		});
+		const connection = createLiveDataConnection();
+		const pids = createLiveDataPids();
+		await manager.applyConfiguration(
+			connection,
+			protocol,
+			{ protocolName: protocol.name, profileName: "Old", pids: [pids[0]] },
+			true,
+		);
+		const applying = manager.applyConfiguration(
+			connection,
+			protocol,
+			{ protocolName: protocol.name, profileName: "New", pids: [pids[1]] },
+			true,
+		);
+		await Promise.resolve();
+		expect(protocol.streamLiveData).toHaveBeenCalledOnce();
+		settle();
+		await applying;
+		expect(manager.getActiveLoggingPids()).toEqual([pids[1]]);
+		expect(protocol.streamLiveData).toHaveBeenCalledTimes(2);
+	});
+
+	it("keeps a log's stream running when the monitor closes", async () => {
+		const session = createLiveDataSession();
+		const protocol = createLiveDataProtocol({ session });
+		const connection = createLiveDataConnection();
+		const pids = createLiveDataPids();
+		await manager.applyConfiguration(
+			connection,
+			protocol,
+			{ protocolName: protocol.name, profileName: "Test", pids },
+			true,
+		);
+		await manager.showPanel();
+		const recording = manager.streamForLogging(
+			connection,
+			protocol,
+			pids,
+			vi.fn(),
+		);
+		mockPanel.dispose();
+		expect(session.stop).not.toHaveBeenCalled();
+		recording.stop();
+		expect(session.stop).toHaveBeenCalledOnce();
+	});
+
+	it("does not let monitor controls stop polling underneath an active log", async () => {
+		const session = createLiveDataSession();
+		manager.streamForLogging(
+			createLiveDataConnection(),
+			createLiveDataProtocol({ session }),
+			createLiveDataPids(),
+			vi.fn(),
+		);
+		await manager.showPanel();
+		mockPanel.webview._simulateMessage({ type: "stopStreaming" });
+		expect(session.stop).not.toHaveBeenCalled();
+	});
+
+	it("rejects configuration changes during an ECU ROM read", async () => {
+		const resume = await manager.suspendForRomRead();
+		await expect(
+			manager.applyConfiguration(
 				createLiveDataConnection(),
-				protocol,
-				createLiveDataPids(),
-				(sample) => received.push(sample),
-				"golden-profile",
-			);
-			expect(received).toEqual([frame]);
-			recording.stop();
-		});
-		it("keeps a panel stream recording after the panel closes and releases it on stop", async () => {
-			const session = createLiveDataSession();
-			const { connection, protocol } = await showReadyPanel({
-				protocol: createLiveDataProtocol({ session }),
-			});
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c],
-			});
-			await waitForPanelWork();
-			const recording = manager.streamForLogging(
-				connection,
-				protocol,
-				createLiveDataPids(),
-				() => {},
-			);
-			mockPanel.dispose();
-			expect(session.stop).not.toHaveBeenCalled();
-			recording.stop();
-			expect(session.stop).toHaveBeenCalledOnce();
-		});
-
-		it("polls for recording without opening a panel and releases the stream", () => {
-			let receive: ((frame: LiveDataFrame) => void) | undefined;
-			const session = createLiveDataSession();
-			const protocol = createLiveDataProtocol({
-				session,
-				onStreamStart: (onFrame) => {
-					receive = onFrame;
+				createLiveDataProtocol(),
+				{
+					protocolName: "Test",
+					profileName: "Test",
+					pids: createLiveDataPids(),
 				},
-			});
-			const frames: LiveDataFrame[] = [];
-			const recording = manager.streamForLogging(
-				createLiveDataConnection(),
-				protocol,
-				createLiveDataPids(),
-				(frame) => frames.push(frame),
-			);
-			receive?.(createLiveDataFrame());
-			expect(frames).toEqual([createLiveDataFrame()]);
-			expect(vscode.window.createWebviewPanel).not.toHaveBeenCalled();
-			recording.stop();
-			expect(session.stop).toHaveBeenCalledOnce();
-			expect(manager.getActiveLoggingPids()).toBeUndefined();
-			receive?.(createLiveDataFrame());
-			expect(frames).toHaveLength(1);
-		});
-
-		it("records an existing panel stream without opening or stopping another poll", async () => {
-			let receive: ((frame: LiveDataFrame) => void) | undefined;
-			const session = createLiveDataSession();
-			const { connection, protocol } = await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					session,
-					onStreamStart: (onFrame) => {
-						receive = onFrame;
-					},
-				}),
-			});
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c],
-			});
-			await waitForPanelWork();
-			const frames: LiveDataFrame[] = [];
-			const recording = manager.streamForLogging(
-				connection,
-				protocol,
-				createLiveDataPids(),
-				(frame) => frames.push(frame),
-			);
-			receive?.(createLiveDataFrame());
-			expect(frames).toEqual([createLiveDataFrame()]);
-			recording.stop();
-			expect(session.stop).not.toHaveBeenCalled();
-			expect(protocol.streamLiveData).toHaveBeenCalledOnce();
-		});
-
-		it("reuses the connected ECU when opening Live Data", async () => {
-			const connection = createLiveDataConnection();
-			const pids = createLiveDataPids();
-			const deviceManager = new DeviceManagerImpl();
-			let opened = false;
-			deviceManager.registerTransport("test", {
-				name: "test",
-				listDevices: async () => [connection.deviceInfo],
-				connect: async () => {
-					if (opened) throw new Error("Cannot lock port");
-					opened = true;
-					return connection;
-				},
-			});
-			deviceManager.registerProtocol(
-				createLiveDataProtocol({ supportedPids: pids }),
-			);
-			await deviceManager.connect();
-			manager = new LiveDataPanelManager(
-				mockContext as vscode.ExtensionContext,
-				deviceManager,
-			);
-
-			await manager.showPanel();
-			mockPanel.webview._simulateMessage({ type: "ready" });
-			await waitForPanelWork();
-
-			expect(mockPanel.webview._getSentMessages()).toContainEqual({
-				type: "supportedPids",
-				pids,
-			});
-			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
-			mockPanel.dispose();
-			await deviceManager.disconnect();
-		});
-
-		it("should handle ready message and connect", async () => {
-			const [engineRpmPid] = createLiveDataPids();
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					supportedPids: [engineRpmPid],
-				}),
-			});
-
-			expect(mockConnect).toHaveBeenCalled();
-		});
-
-		it("should send supportedPids message when protocol has getSupportedPids", async () => {
-			const mockPids = createLiveDataPids();
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					supportedPids: mockPids,
-				}),
-			});
-
-			const messages = mockPanel.webview._getSentMessages();
-			const supportedPidsMsg = messages.find(
-				(m: MockWebviewMessage) => m.type === "supportedPids",
-			);
-			expect(supportedPidsMsg).toBeDefined();
-			expect(
-				(supportedPidsMsg as MockWebviewMessage & { pids: typeof mockPids })
-					.pids,
-			).toEqual(mockPids);
-		});
-
-		it("should show error message when connect fails", async () => {
-			mockConnect.mockRejectedValue(new Error("No device found"));
-
-			await manager.showPanel();
-			mockPanel.webview._simulateMessage({ type: "ready" });
-
-			await waitForPanelWork();
-
-			expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-				expect.stringContaining("No device found"),
-			);
-		});
-
-		it("should start streaming when startStreaming message is received", async () => {
-			const mockSession = createLiveDataSession();
-			const { connection: mockConnection, protocol: mockProtocol } =
-				await showReadyPanel({
-					connection: createLiveDataConnection(),
-					protocol: createLiveDataProtocol({
-						session: mockSession,
-					}),
-				});
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c, 0x0d],
-				record: false,
-			});
-
-			await waitForPanelWork();
-
-			expect(mockProtocol.streamLiveData).toHaveBeenCalledWith(
-				mockConnection,
-				{ pids: [0x0c, 0x0d] },
-				expect.any(Function),
-				expect.any(Function),
-			);
-
-			const messages = mockPanel.webview._getSentMessages();
-			const streamingStartedMsg = messages.find(
-				(m: MockWebviewMessage) => m.type === "streamingStarted",
-			);
-			expect(streamingStartedMsg).toBeDefined();
-		});
-
-		it("should send supportedProfiles when protocol exposes profile metadata", async () => {
-			const profiles = createLiveDataProfiles();
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					profiles,
-				}),
-			});
-
-			const messages = mockPanel.webview._getSentMessages();
-			const supportedProfilesMsg = messages.find(
-				(m: MockWebviewMessage) => m.type === "supportedProfiles",
-			);
-			expect(supportedProfilesMsg).toBeDefined();
-			expect(
-				(
-					supportedProfilesMsg as MockWebviewMessage & {
-						profiles: typeof profiles;
-						selectedProfileId: string;
-					}
-				).profiles,
-			).toEqual(profiles);
-			expect(
-				(
-					supportedProfilesMsg as MockWebviewMessage & {
-						profiles: typeof profiles;
-						selectedProfileId: string;
-					}
-				).selectedProfileId,
-			).toBe("test-ready");
-		});
-
-		it("passes through selected profile id when streaming starts", async () => {
-			const profiles = createLiveDataProfiles();
-			const { connection: mockConnection, protocol: mockProtocol } =
-				await showReadyPanel({
-					connection: createLiveDataConnection(),
-					protocol: createLiveDataProtocol({
-						profiles,
-					}),
-				});
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c],
-				profileId: "test-ready",
-			});
-			await waitForPanelWork();
-
-			expect(mockProtocol.streamLiveData).toHaveBeenCalledWith(
-				mockConnection,
-				{ pids: [0x0c], profileId: "test-ready" },
-				expect.any(Function),
-				expect.any(Function),
-			);
-		});
-
-		it("should expose active logging PIDs for the selected profile stream", async () => {
-			const [, vehicleSpeedPid] = createLiveDataPids();
-			const profilePid = {
-				pid: 0x8000,
-				name: "Profile RPM",
-				unit: "rpm",
-				minValue: 0,
-				maxValue: 9000,
-			};
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					profiles: createLiveDataProfiles([
-						{ pids: [profilePid, vehicleSpeedPid] },
-					]),
-				}),
-			});
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [profilePid.pid],
-				profileId: "test-ready",
-				record: false,
-			});
-			await waitForPanelWork();
-
-			expect(manager.getActiveLoggingPids()).toEqual([profilePid]);
-		});
-
-		it("should stop streaming when stopStreaming message is received", async () => {
-			const mockSession = createLiveDataSession();
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					session: mockSession,
-				}),
-			});
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c],
-				record: false,
-			});
-			await waitForPanelWork();
-
-			mockPanel.webview._simulateMessage({
-				type: "stopStreaming",
-			});
-			await waitForPanelWork();
-
-			expect(mockSession.stop).toHaveBeenCalled();
-
-			const messages = mockPanel.webview._getSentMessages();
-			const streamingStoppedMsg = messages.find(
-				(m: MockWebviewMessage) => m.type === "streamingStopped",
-			);
-			expect(streamingStoppedMsg).toBeDefined();
-		});
-
-		it("should clear active logging PIDs when streaming stops", async () => {
-			const [engineRpmPid] = createLiveDataPids();
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					supportedPids: createLiveDataPids(),
-				}),
-			});
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [engineRpmPid.pid],
-				record: false,
-			});
-			await waitForPanelWork();
-			expect(manager.getActiveLoggingPids()).toEqual([engineRpmPid]);
-
-			mockPanel.webview._simulateMessage({
-				type: "stopStreaming",
-			});
-			await waitForPanelWork();
-
-			expect(manager.getActiveLoggingPids()).toBeUndefined();
-		});
-	});
-
-	describe("CSV recording (deprecated — record field is now ignored)", () => {
-		it("should NOT write CSV file when record:true is sent (record field is deprecated)", async () => {
-			let capturedOnFrame: ((frame: LiveDataFrame) => void) | undefined;
-			const mockSession = createLiveDataSession();
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					session: mockSession,
-					onStreamStart: (onFrame) => {
-						capturedOnFrame = onFrame;
-					},
-				}),
-			});
-
-			// Mock workspace folders
-			vi.spyOn(vscode.workspace, "workspaceFolders", "get").mockReturnValue([
-				{ uri: vscode.Uri.file("/workspace"), name: "workspace", index: 0 },
-			] as readonly vscode.WorkspaceFolder[] | undefined);
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c],
-				record: true, // deprecated — should be ignored
-			});
-			await waitForPanelWork();
-
-			// Simulate receiving a frame
-			capturedOnFrame?.(createLiveDataFrame());
-
-			mockPanel.webview._simulateMessage({ type: "stopStreaming" });
-			await waitForPanelWork();
-
-			// CSV should NOT be written by the panel — logging is now handled by LoggingManager
-			expect(vscode.workspace.fs.writeFile).not.toHaveBeenCalled();
-		});
-
-		it("should still stream data even without a workspace folder (record field is ignored)", async () => {
-			const mockProtocol = createLiveDataProtocol({
-				session: createLiveDataSession(),
-			});
-
-			// No workspace folders
-			vi.spyOn(vscode.workspace, "workspaceFolders", "get").mockReturnValue(
-				undefined,
-			);
-
-			await showReadyPanel({
-				protocol: mockProtocol,
-			});
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c],
-				record: true, // deprecated — should be ignored
-			});
-			await waitForPanelWork();
-
-			// Streaming should still start (no error about workspace folder)
-			expect(vscode.window.showErrorMessage).not.toHaveBeenCalled();
-			expect(mockProtocol.streamLiveData).toHaveBeenCalled();
-		});
-	});
-
-	describe("onFrame event", () => {
-		it("should fire onFrame event for each received frame", async () => {
-			let capturedOnFrame: ((frame: LiveDataFrame) => void) | undefined;
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					session: createLiveDataSession(),
-					onStreamStart: (onFrame) => {
-						capturedOnFrame = onFrame;
-					},
-				}),
-			});
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c],
-				record: false,
-			});
-			await waitForPanelWork();
-
-			const receivedFrames: LiveDataFrame[] = [];
-			manager.onFrame((frame: LiveDataFrame) => receivedFrames.push(frame));
-
-			const testFrame = createLiveDataFrame();
-			capturedOnFrame?.(testFrame);
-
-			expect(receivedFrames).toHaveLength(1);
-			expect(receivedFrames[0]).toEqual(testFrame);
-		});
-	});
-
-	describe("panel lifecycle", () => {
-		it("should clean up when panel is disposed", async () => {
-			const mockSession = createLiveDataSession();
-			await showReadyPanel({
-				protocol: createLiveDataProtocol({
-					session: mockSession,
-				}),
-			});
-
-			mockPanel.webview._simulateMessage({
-				type: "startStreaming",
-				pids: [0x0c],
-				record: false,
-			});
-			await waitForPanelWork();
-
-			// Dispose the panel
-			mockPanel.dispose();
-			await waitForPanelWork();
-
-			// Session should be stopped
-			expect(mockSession.stop).toHaveBeenCalled();
-
-			// Creating a new panel should work (panel reference was cleared)
-			await manager.showPanel();
-			expect(vscode.window.createWebviewPanel).toHaveBeenCalledTimes(2);
-		});
+			),
+		).rejects.toThrow(/ROM read/);
+		resume();
 	});
 });

@@ -39,6 +39,7 @@ import {
 	setGraphCommandsContext,
 	setTableCommandsContext,
 } from "./commands/index.js";
+import { registerLoggingCommands } from "./commands/logging-commands.js";
 import { registerRomComparisonCommands } from "./commands/rom-comparison-commands.js";
 import { readConfig } from "./config.js";
 import { exportActiveTableCsvFlow } from "./csv/export.js";
@@ -60,6 +61,7 @@ import {
 import { selectHardwareCandidateFromSource } from "./hardware-source.js";
 import type { TableEditSession } from "./history/table-edit-session.js";
 import { LiveDataPanelManager } from "./live-data-panel-manager.js";
+import { LoggingConfigurationStore } from "./logging-configuration.js";
 import { LoggingManager, openLogsFolder } from "./logging-manager.js";
 import type { RomDocument } from "./rom/document.js";
 import {
@@ -784,11 +786,31 @@ export async function activate(
 	);
 
 	// Initialize LiveDataPanelManager
-	liveDataPanelManager = new LiveDataPanelManager(ctx, deviceManager);
+	liveDataPanelManager = new LiveDataPanelManager(ctx);
 
 	// Initialize LoggingManager
 	loggingManager = new LoggingManager();
 	ctx.subscriptions.push(loggingManager);
+	registerLoggingCommands(ctx, {
+		deviceManager,
+		liveData: liveDataPanelManager,
+		logging: loggingManager,
+		configuration: new LoggingConfigurationStore(ctx.workspaceState),
+		getAuxiliaryChannels: () =>
+			widebandManager?.activeSession && activeWidebandMode
+				? [
+						{
+							key: "wideband-primary",
+							name:
+								activeWidebandMode === "afr"
+									? "Wideband AFR"
+									: "Wideband Lambda",
+							unit: activeWidebandMode === "afr" ? "AFR" : "lambda",
+						},
+					]
+				: [],
+	});
+
 	registerRomComparisonCommands(ctx, {
 		registry,
 		workspaceState: persistedWorkspaceState,
@@ -1216,94 +1238,6 @@ export async function activate(
 		vscode.commands.registerCommand("ecuExplorer.selectDevice", () => {
 			vscode.window.showInformationMessage("Select Device is coming soon.");
 		}),
-		vscode.commands.registerCommand("ecuExplorer.startLog", async () => {
-			if (!loggingManager || loggingManager.loggingState !== "idle") {
-				return;
-			}
-			const active = deviceManager?.activeConnection;
-			const activeWideband = widebandManager?.activeSession;
-			if (!active && !activeWideband) {
-				vscode.window.showErrorMessage(
-					"No live data source connected. Connect an ECU or wideband first.",
-				);
-				return;
-			}
-			const activePids = liveDataPanelManager?.getActiveLoggingPids();
-			let pids =
-				activePids ??
-				(active?.protocol.getSupportedPids != null
-					? await active.protocol.getSupportedPids(active.connection)
-					: []);
-			let profileId: string | undefined;
-			if (activePids == null && active?.protocol.getLiveDataProfiles != null) {
-				const profiles = (
-					await active.protocol.getLiveDataProfiles(active.connection)
-				).filter((profile) => profile.status !== "unavailable");
-				const remembered = ctx.workspaceState.get<string>("loggingProfileId");
-				let selected = profiles.find((profile) => profile.id === remembered);
-				if (selected == null && profiles.length > 0) {
-					const pick =
-						profiles.length === 1
-							? { profile: profiles[0] }
-							: await vscode.window.showQuickPick(
-									profiles.map((profile) => ({
-										label: profile.name,
-										...(profile.description == null
-											? {}
-											: { detail: profile.description }),
-										profile,
-									})),
-									{
-										placeHolder:
-											"Select the logging profile that matches your ECU ROM",
-									},
-								);
-					selected = pick?.profile;
-					if (selected == null) return;
-				}
-				if (selected != null) {
-					pids = selected.pids;
-					profileId = selected.id;
-					await ctx.workspaceState.update("loggingProfileId", selected.id);
-				}
-			}
-			const channels =
-				activeWidebandMode == null
-					? []
-					: [
-							{
-								key: "wideband-primary",
-								name:
-									activeWidebandMode === "afr"
-										? "Wideband AFR"
-										: "Wideband Lambda",
-								unit: activeWidebandMode === "afr" ? "AFR" : "lambda",
-							},
-						];
-			const streamManager = liveDataPanelManager;
-			try {
-				await loggingManager.startLog({
-					pids,
-					channels,
-					...(active != null && pids.length > 0 && streamManager != null
-						? {
-								startStream: (onFrame) =>
-									streamManager.streamForLogging(
-										active.connection,
-										active.protocol,
-										pids,
-										onFrame,
-										profileId,
-									),
-							}
-						: {}),
-				});
-			} catch (error) {
-				vscode.window.showErrorMessage(
-					`Failed to start log: ${error instanceof Error ? error.message : String(error)}`,
-				);
-			}
-		}),
 		vscode.commands.registerCommand("ecuExplorer.pauseLog", () => {
 			loggingManager?.pauseLog();
 		}),
@@ -1316,15 +1250,7 @@ export async function activate(
 		vscode.commands.registerCommand("ecuExplorer.openLogsFolder", async () => {
 			await openLogsFolder(ctx);
 		}),
-		vscode.commands.registerCommand("ecuExplorer.startLiveData", async () => {
-			if (!liveDataPanelManager) {
-				vscode.window.showErrorMessage(
-					"Live Data panel manager is not initialized.",
-				);
-				return;
-			}
-			await liveDataPanelManager.showPanel();
-		}),
+
 		// Math operations
 		vscode.commands.registerCommand("rom.mathOpAdd", () => handleMathOpAdd()),
 		vscode.commands.registerCommand("rom.mathOpMultiply", () =>

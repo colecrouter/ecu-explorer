@@ -48,6 +48,17 @@ Check out the available apps:
 
 See [FEATURES.md](FEATURES.md) for a detailed features list.
 
+## Configure logging
+
+Run **ECU Explorer: Change Logging Configuration** to choose a built-in profile
+and select channels using VS Code's native multi-select. The workspace remembers
+the selection for both **Start Live Data** and **Start Live Data Log**.
+
+Live Data shows the current profile and selected values, with a **Change
+Configuration** button. Accepting a change during recording saves the current
+CSV and continues in a new file with the new columns; cancelling leaves the
+current recording untouched. See the [logging configuration specification](specs/native-logging-configuration.md).
+
 ## Compare ROMs
 
 The command palette includes **ECU Explorer: Compare Saved ROMs**, **Compare

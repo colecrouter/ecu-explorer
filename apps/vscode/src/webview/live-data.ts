@@ -8,8 +8,10 @@ if (!target) {
 	);
 }
 
+const vscode = acquireVsCodeApi();
 const app = mount(LiveDataApp, {
 	target,
+	props: { send: (message: { type: string }) => vscode.postMessage(message) },
 });
 
 export default app;

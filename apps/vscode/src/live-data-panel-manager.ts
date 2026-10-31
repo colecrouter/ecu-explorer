@@ -7,43 +7,15 @@ import type {
 	PidDescriptor,
 } from "@ecu-explorer/device";
 import * as vscode from "vscode";
-import type { DeviceManagerImpl } from "./device-manager.js";
-
-type LiveDataProfileDescriptor = {
-	id: string;
-	name: string;
-	description?: string;
-	transportFamily?: string;
-	requestFamily?: string;
-	decodeFamily?: string;
-	status: "ready" | "experimental" | "unavailable";
-	statusDetail?: string;
-	pids: PidDescriptor[];
-};
-
-type LiveDataStreamSelection = {
-	pids: number[];
-	profileId?: string;
-};
-
-type ProfileAwareProtocol = EcuProtocol & {
-	getLiveDataProfiles?: (
-		connection: DeviceConnection,
-	) => Promise<LiveDataProfileDescriptor[]>;
-	streamLiveData?: (
-		connection: DeviceConnection,
-		pidsOrSelection: number[] | LiveDataStreamSelection,
-		onFrame: (frame: LiveDataFrame) => void,
-		onHealth?: (health: LiveDataHealth) => void,
-	) => LiveDataSession;
-};
+import type { LoggingConfiguration } from "./logging-configuration.js";
 
 export class LiveDataPanelManager {
 	private panel: vscode.WebviewPanel | undefined;
 	private session: LiveDataSession | undefined;
 	private connection: DeviceConnection | undefined;
-	private protocol: ProfileAwareProtocol | undefined;
-	private supportedProfiles: readonly LiveDataProfileDescriptor[] = [];
+	private protocol: EcuProtocol | undefined;
+	private configuration: LoggingConfiguration | undefined;
+	private pendingStop: Promise<void> = Promise.resolve();
 	private supportedPids: readonly PidDescriptor[] = [];
 	private activeSelection:
 		| {
@@ -60,10 +32,7 @@ export class LiveDataPanelManager {
 	/** Fires for each live data frame received from the device. */
 	readonly onFrame: vscode.Event<LiveDataFrame> = this._onFrame.event;
 
-	constructor(
-		private context: vscode.ExtensionContext,
-		private deviceManager: DeviceManagerImpl,
-	) {}
+	constructor(private context: vscode.ExtensionContext) {}
 
 	async showPanel() {
 		if (this.panel) {
@@ -84,20 +53,31 @@ export class LiveDataPanelManager {
 			},
 		);
 
-		this.panel.webview.html = this.getWebviewContent(this.panel.webview);
+		this.panel.webview.html = await this.getWebviewContent(this.panel.webview);
 
 		this.panel.webview.onDidReceiveMessage(async (message) => {
 			switch (message.type) {
 				case "ready":
-					await this.handleReady();
+					this.postConfiguration();
+					this.panel?.webview.postMessage({
+						type: this.session ? "streamingStarted" : "streamingStopped",
+					});
 					break;
+
 				case "startStreaming":
-					// The `record` field is deprecated and ignored.
-					// Logging is now controlled exclusively via status bar commands (LoggingManager).
-					await this.startStreaming(message.pids, message.profileId);
+					await vscode.commands.executeCommand("ecuExplorer.startLiveData");
+					break;
+				case "changeConfiguration":
+					await vscode.commands.executeCommand(
+						"ecuExplorer.changeLoggingConfiguration",
+					);
 					break;
 				case "stopStreaming":
-					this.stopStreaming();
+					if (this.recordingSubscribers > 0) {
+						void vscode.window.showWarningMessage(
+							"Stop the active log before stopping live data.",
+						);
+					} else this.stopStreaming();
 					break;
 			}
 		});
@@ -124,7 +104,6 @@ export class LiveDataPanelManager {
 					throw new Error("This protocol does not support live data");
 				this.connection = connection;
 				this.protocol = protocol;
-				this.supportedProfiles = [];
 				this.supportedPids = [...pids];
 				this.startStreaming(
 					pids.map((pid) => pid.pid),
@@ -138,6 +117,7 @@ export class LiveDataPanelManager {
 		}
 		const generation = this.streamGeneration;
 		this.recordingSubscribers++;
+		this.postConfiguration();
 		let stopped = false;
 		return {
 			stop: () => {
@@ -145,6 +125,7 @@ export class LiveDataPanelManager {
 				stopped = true;
 				subscription.dispose();
 				this.recordingSubscribers--;
+				this.postConfiguration();
 				if (
 					(ownsStream || this.panel == null) &&
 					this.streamGeneration === generation &&
@@ -155,54 +136,58 @@ export class LiveDataPanelManager {
 		};
 	}
 
-	private async handleReady() {
-		try {
-			// Reuse the managed connection so Live Data and CSV logging share
-			// device state and never compete for the adapter's serial port.
-			const { connection, protocol } = await this.deviceManager.connect();
-			const profileAwareProtocol = protocol as ProfileAwareProtocol;
-			this.connection = connection;
-			this.protocol = profileAwareProtocol;
-
-			if (profileAwareProtocol.getLiveDataProfiles) {
-				const profiles =
-					await profileAwareProtocol.getLiveDataProfiles(connection);
-				if (profiles.length > 0) {
-					const defaultProfile = this.pickDefaultProfile(profiles);
-					this.supportedProfiles = profiles;
-					this.supportedPids = defaultProfile?.pids ?? [];
-					this.panel?.webview.postMessage({
-						type: "supportedProfiles",
-						profiles,
-						selectedProfileId: defaultProfile?.id,
-					});
-					return;
-				}
-			}
-
-			if (profileAwareProtocol.getSupportedPids) {
-				const pids = await profileAwareProtocol.getSupportedPids(connection);
-				this.supportedProfiles = [];
-				this.supportedPids = pids;
-				this.panel?.webview.postMessage({
-					type: "supportedPids",
-					pids,
-				});
-			}
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : String(error);
-			vscode.window.showErrorMessage(`Failed to connect: ${message}`);
-		}
+	get isStreaming(): boolean {
+		return this.session != null;
+	}
+	get isBusyWithRomRead(): boolean {
+		return this.suspendedForRomRead;
 	}
 
-	private pickDefaultProfile(
-		profiles: readonly LiveDataProfileDescriptor[],
-	): LiveDataProfileDescriptor | undefined {
-		return (
-			profiles.find((profile) => profile.status === "ready") ??
-			profiles.find((profile) => profile.status === "experimental") ??
-			profiles[0]
-		);
+	/** Apply the shared native selection after the previous poll has settled. */
+	async applyConfiguration(
+		connection: DeviceConnection,
+		protocol: EcuProtocol,
+		configuration: LoggingConfiguration,
+		start = false,
+	): Promise<void> {
+		if (this.suspendedForRomRead)
+			throw new Error(
+				"Wait for the ROM read to finish before changing logging configuration.",
+			);
+		const same =
+			this.connection === connection &&
+			this.protocol === protocol &&
+			this.activeSelection?.profileId === configuration.profileId &&
+			this.activeSelection?.pids.join(",") ===
+				configuration.pids.map((pid) => pid.pid).join(",");
+		if (!same) {
+			if (this.recordingSubscribers > 0)
+				throw new Error("Save the active log before changing channels.");
+			this.stopStreaming();
+			await this.pendingStop;
+		}
+		this.connection = connection;
+		this.protocol = protocol;
+		this.configuration = configuration;
+		this.supportedPids = configuration.pids;
+		this.postConfiguration();
+		if (start)
+			this.startStreaming(
+				configuration.pids.map((pid) => pid.pid),
+				configuration.profileId,
+			);
+	}
+
+	private postConfiguration(): void {
+		void this.panel?.webview.postMessage({
+			type: "configuration",
+			profileName:
+				this.configuration?.profileName ??
+				this.protocol?.name ??
+				"Not configured",
+			pids: this.configuration?.pids ?? this.getActiveLoggingPids() ?? [],
+			recording: this.recordingSubscribers > 0,
+		});
 	}
 
 	private startStreaming(
@@ -220,8 +205,7 @@ export class LiveDataPanelManager {
 			return;
 		}
 
-		const selection: LiveDataStreamSelection =
-			profileId === undefined ? { pids } : { pids, profileId };
+		const selection = profileId === undefined ? { pids } : { pids, profileId };
 		this.activeSelection = {
 			pids: [...pids],
 			...(profileId === undefined ? {} : { profileId }),
@@ -272,6 +256,7 @@ export class LiveDataPanelManager {
 		const session = this.session;
 		try {
 			session?.stop();
+			await this.pendingStop;
 			await session?.completion;
 			if (this.session === session) this.session = undefined;
 			this.panel?.webview.postMessage({ type: "streamingStopped" });
@@ -303,6 +288,11 @@ export class LiveDataPanelManager {
 	stopStreaming() {
 		if (this.session) {
 			this.session.stop();
+			const completion = this.session.completion;
+			if (completion)
+				this.pendingStop = Promise.all([this.pendingStop, completion]).then(
+					() => undefined,
+				);
 			this.session = undefined;
 		}
 		this.activeSelection = undefined;
@@ -316,19 +306,25 @@ export class LiveDataPanelManager {
 		}
 
 		const selectedPidSet = new Set(this.activeSelection.pids);
-		const profile =
-			this.activeSelection.profileId == null
-				? undefined
-				: this.supportedProfiles.find(
-						(candidate) => candidate.id === this.activeSelection?.profileId,
-					);
-		const availablePids = profile?.pids ?? this.supportedPids;
+		const availablePids = this.supportedPids;
 		return availablePids.filter((pid: PidDescriptor) =>
 			selectedPidSet.has(pid.pid),
 		);
 	}
 
-	private getWebviewContent(webview: vscode.Webview): string {
+	private async getWebviewContent(webview: vscode.Webview): Promise<string> {
+		const directory = vscode.Uri.joinPath(
+			this.context.extensionUri,
+			"dist",
+			"webview",
+		);
+		const entries = (await vscode.workspace.fs.readDirectory(directory)) ?? [];
+		const cssName = entries.find(
+			([name]) => name.startsWith("live-data-") && name.endsWith(".css"),
+		)?.[0];
+		const stylesheet = cssName
+			? `<link rel="stylesheet" href="${webview.asWebviewUri(vscode.Uri.joinPath(directory, cssName))}">`
+			: "";
 		const scriptUri = webview.asWebviewUri(
 			vscode.Uri.joinPath(
 				this.context.extensionUri,
@@ -345,6 +341,7 @@ export class LiveDataPanelManager {
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource}; img-src ${webview.cspSource} data:;">
 	<title>Live Data</title>
+	${stylesheet}
 </head>
 <body>
 	<div id="app"></div>

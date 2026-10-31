@@ -113,7 +113,7 @@ describe("ROM comparison commands", () => {
 			registry: { list: () => [provider] },
 			workspaceState: state,
 			deviceManager: manager,
-			liveData: new LiveDataPanelManager(context, manager),
+			liveData: new LiveDataPanelManager(context),
 			logging: new LoggingManager(),
 			getActiveDocument: () => active,
 		});

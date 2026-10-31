@@ -1,320 +1,193 @@
 <script lang="ts">
+	import { onMount } from "svelte";
 	import type { LiveDataFrame, PidDescriptor } from "@ecu-explorer/device";
-
-	type LiveDataProfileDescriptor = {
-		id: string;
-		name: string;
-		description?: string;
-		transportFamily?: string;
-		requestFamily?: string;
-		decodeFamily?: string;
-		status: "ready" | "experimental" | "unavailable";
-		statusDetail?: string;
-		pids: PidDescriptor[];
-	};
-
-	const vscode = acquireVsCodeApi();
-
-	let profiles: LiveDataProfileDescriptor[] = [];
-	let selectedProfileId: string | null = null;
-	let supportedPids: PidDescriptor[] = [];
-	let selectedPids: Set<number> = new Set();
-	let liveData: Map<number, LiveDataFrame> = new Map();
-	let isStreaming = false;
-	let startTime: number | null = null;
-	let duration = "00:00";
-	let currentProfile: LiveDataProfileDescriptor | null = null;
-	let visiblePids: PidDescriptor[] = [];
-
-	window.addEventListener("message", (event) => {
-		const message = event.data;
-		switch (message.type) {
-			case "supportedProfiles":
-				profiles = message.profiles;
-				selectedProfileId =
-					message.selectedProfileId ?? message.profiles[0]?.id ?? null;
-				selectedPids = new Set();
-				break;
-			case "supportedPids":
-				supportedPids = message.pids;
-				break;
-			case "data":
-				liveData.set(message.frame.pid, message.frame);
-				liveData = liveData; // trigger reactivity
-				break;
-			case "streamingStarted":
-				isStreaming = true;
-				startTime = Date.now();
-				updateDuration();
-				break;
-			case "streamingStopped":
-				isStreaming = false;
-				startTime = null;
-				break;
-		}
+	let { send }: { send: (message: { type: string }) => void } = $props();
+	let profileName = $state("Not configured");
+	let pids = $state<PidDescriptor[]>([]);
+	let liveData = $state<Record<number, LiveDataFrame>>({});
+	let isStreaming = $state(false);
+	let recording = $state(false);
+	let startTime = $state<number>();
+	let seconds = $state(0);
+	onMount(() => {
+		const receive = (event: MessageEvent) => {
+			const message = event.data;
+			switch (message.type) {
+				case "configuration": {
+					if (
+						profileName !== message.profileName ||
+						pids.map((pid) => pid.pid).join(",") !==
+							message.pids.map((pid: PidDescriptor) => pid.pid).join(",")
+					)
+						liveData = {};
+					profileName = message.profileName;
+					pids = message.pids;
+					recording = message.recording;
+					break;
+				}
+				case "data":
+					liveData[message.frame.pid] = message.frame;
+					break;
+				case "streamingStarted":
+					if (!isStreaming) {
+						startTime = Date.now();
+						seconds = 0;
+					}
+					isStreaming = true;
+					break;
+				case "streamingStopped":
+					isStreaming = false;
+					startTime = undefined;
+					break;
+			}
+		};
+		window.addEventListener("message", receive);
+		const timer = window.setInterval(() => {
+			if (startTime !== undefined)
+				seconds = Math.floor((Date.now() - startTime) / 1000);
+		}, 1000);
+		send({ type: "ready" });
+		return () => {
+			window.removeEventListener("message", receive);
+			window.clearInterval(timer);
+		};
 	});
-
-	function getCurrentProfile(): LiveDataProfileDescriptor | null {
-		return profiles.find((profile) => profile.id === selectedProfileId) ?? null;
-	}
-
-	function getVisiblePids(): PidDescriptor[] {
-		return getCurrentProfile()?.pids ?? supportedPids;
-	}
-
-	function onProfileChange(event: Event) {
-		const value = (event.currentTarget as HTMLSelectElement).value;
-		selectedProfileId = value.length > 0 ? value : null;
-		selectedPids = new Set();
-	}
-
-	$: currentProfile = getCurrentProfile();
-	$: visiblePids = getVisiblePids();
-
-	function togglePid(pid: number) {
-		if (selectedPids.has(pid)) {
-			selectedPids.delete(pid);
-		} else {
-			selectedPids.add(pid);
-		}
-		selectedPids = selectedPids;
-	}
-
-	function startStreaming() {
-		const profile = getCurrentProfile();
-		vscode.postMessage({
-			type: "startStreaming",
-			pids: Array.from(selectedPids),
-			profileId: profile?.id,
-		});
-	}
-
-	function stopStreaming() {
-		vscode.postMessage({ type: "stopStreaming" });
-	}
-
-	function updateDuration() {
-		if (startTime && isStreaming) {
-			const diff = Math.floor((Date.now() - startTime) / 1000);
-			const mins = Math.floor(diff / 60)
-				.toString()
-				.padStart(2, "0");
-			const secs = (diff % 60).toString().padStart(2, "0");
-			duration = `${mins}:${secs}`;
-			setTimeout(updateDuration, 1000);
-		}
-	}
-
-	// Signal ready
-	vscode.postMessage({ type: "ready" });
 </script>
 
 <main>
 	<header>
 		<h1>Live Data</h1>
 		<div class="controls">
-			{#if !isStreaming}
-				<button
-					on:click={startStreaming}
-					disabled={selectedPids.size === 0 ||
-						(currentProfile !== null &&
-							currentProfile.status === "unavailable")}
+			<button onclick={() => send({ type: "changeConfiguration" })}
+				>Change Configuration</button
+			>
+			{#if isStreaming}<button
+					disabled={recording}
+					title={recording
+						? "Stop the log before stopping live data"
+						: undefined}
+					onclick={() => send({ type: "stopStreaming" })}>Stop Streaming</button
 				>
-					Start Streaming
-				</button>
-			{:else}
-				<span class="status">Streaming - {duration}</span>
-				<button on:click={stopStreaming}>Stop</button>
-			{/if}
+			{:else}<button onclick={() => send({ type: "startStreaming" })}
+					>Start Streaming</button
+				>{/if}
 		</div>
 	</header>
-
-	{#if profiles.length > 0}
-		<section class="profile-selector">
-			<h2>Logging Profile</h2>
-			<label class="profile-field">
-				<span>Profile</span>
-				<select
-					bind:value={selectedProfileId}
-					on:change={onProfileChange}
-					disabled={isStreaming}
-				>
-					{#each profiles as profile}
-						<option value={profile.id}>
-							{profile.name} [{profile.requestFamily ??
-								profile.transportFamily ??
-								"profile"}]
-						</option>
-					{/each}
-				</select>
-			</label>
-			{#if currentProfile}
-				<p class="profile-summary">
-					<strong>{currentProfile.status}</strong>
-					{#if currentProfile.transportFamily}
-						<span> • {currentProfile.transportFamily}</span>
-					{/if}
-					{#if currentProfile.requestFamily}
-						<span> • {currentProfile.requestFamily}</span>
-					{/if}
-					{#if currentProfile.decodeFamily}
-						<span> • {currentProfile.decodeFamily}</span>
-					{/if}
-				</p>
-				{#if currentProfile.description}
-					<p class="profile-note">{currentProfile.description}</p>
-				{/if}
-				{#if currentProfile.statusDetail}
-					<p class="profile-note">{currentProfile.statusDetail}</p>
-				{/if}
-			{/if}
-		</section>
-	{/if}
-
-	<section class="pid-selector">
-		<h2>Select PIDs</h2>
-		<div class="pid-grid">
-			{#each visiblePids as pid}
-				<button
-					class="pid-chip"
-					class:selected={selectedPids.has(pid.pid)}
-					on:click={() => togglePid(pid.pid)}
-					disabled={isStreaming}
-				>
-					{pid.name}
-				</button>
-			{/each}
-		</div>
+	<section aria-label="Current logging configuration">
+		<h2>{profileName}</h2>
+		<p class="summary">
+			{pids.length} selected {pids.length === 1 ? "channel" : "channels"} · {isStreaming
+				? `Streaming · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`
+				: "Stopped"}{recording ? " · Log active" : ""}
+		</p>
 	</section>
-
-	<section class="data-display">
-		<h2>Real-time Data</h2>
-		<div class="data-grid">
-			{#each Array.from(selectedPids) as pidId}
-				{@const descriptor = visiblePids.find((p) => p.pid === pidId)}
-				{@const data = liveData.get(pidId)}
-				<div class="data-card">
-					<span class="label"
-						>{descriptor?.name ?? `PID 0x${pidId.toString(16)}`}</span
-					>
-					<span class="value">{data?.value.toFixed(2) ?? "--"}</span>
-					<span class="unit">{descriptor?.unit ?? ""}</span>
-				</div>
-			{/each}
-		</div>
+	<section aria-label="Live values">
+		{#if pids.length}<div class="data-grid">
+				{#each pids as pid (pid.pid)}
+					<div class="data-card">
+						<span class="label">{pid.name}</span><span class="value"
+							>{liveData[pid.pid]?.value.toFixed(2) ?? "—"}</span
+						><span class="unit">{pid.unit}</span>
+					</div>
+				{/each}
+			</div>
+		{:else}<p class="summary">
+				Choose Change Configuration to select a logging profile and channels.
+			</p>{/if}
 	</section>
 </main>
 
 <style>
-	main {
-		padding: 1rem;
-		display: flex;
-		flex-direction: column;
-		gap: 2rem;
-	}
-
-	.profile-selector {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.profile-field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		max-width: 32rem;
-	}
-
-	.profile-field select {
-		padding: 0.5rem 0.75rem;
-		border-radius: 6px;
-		border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
-		background: var(
-			--vscode-dropdown-background,
-			var(--vscode-input-background)
-		);
-		color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
-	}
-
-	.profile-summary,
-	.profile-note {
+	:global(body) {
 		margin: 0;
-		color: var(--vscode-descriptionForeground);
+		color: var(--vscode-foreground);
+		background: var(--vscode-editor-background);
+		font-family: var(--vscode-font-family);
+		font-size: var(--vscode-font-size);
 	}
-
+	main {
+		padding: 20px 24px;
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
+	}
 	header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+		gap: 16px;
 		border-bottom: 1px solid var(--vscode-panel-border);
-		padding-bottom: 1rem;
+		padding-bottom: 16px;
+		flex-wrap: wrap;
 	}
-
+	h1 {
+		margin: 0;
+		font-size: 20px;
+		font-weight: 600;
+	}
+	h2 {
+		margin: 0 0 8px;
+		font-size: 15px;
+		font-weight: 600;
+	}
 	.controls {
 		display: flex;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.status {
-		font-weight: bold;
-	}
-
-	.pid-grid {
-		display: flex;
+		gap: 8px;
 		flex-wrap: wrap;
-		gap: 0.5rem;
 	}
-
-	.pid-chip {
-		padding: 0.25rem 0.75rem;
-		border-radius: 1rem;
-		border: 1px solid var(--vscode-button-background);
-		background: transparent;
-		color: var(--vscode-foreground);
+	button {
+		font: inherit;
+		padding: 6px 12px;
+		border: 1px solid var(--vscode-button-border, transparent);
+		border-radius: 2px;
+		background: var(--vscode-button-secondaryBackground);
+		color: var(--vscode-button-secondaryForeground);
 		cursor: pointer;
 	}
-
-	.pid-chip.selected {
-		background: var(--vscode-button-background);
-		color: var(--vscode-button-foreground);
+	button:hover {
+		background: var(--vscode-button-secondaryHoverBackground);
 	}
-
-	.pid-chip:disabled {
+	button:focus-visible {
+		outline: 2px solid var(--vscode-focusBorder);
+		outline-offset: 2px;
+	}
+	button:disabled {
 		opacity: 0.5;
-		cursor: not-allowed;
+		cursor: default;
 	}
-
+	.summary {
+		color: var(--vscode-descriptionForeground);
+		margin: 0;
+		line-height: 1.5;
+	}
 	.data-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-		gap: 1rem;
+		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+		gap: 16px;
 	}
-
 	.data-card {
-		background: var(--vscode-sideBar-background);
-		padding: 1rem;
-		border-radius: 4px;
+		padding: 16px;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		gap: 0.5rem;
+		gap: 8px;
 		border: 1px solid var(--vscode-panel-border);
 	}
-
 	.label {
-		font-size: 0.8rem;
-		opacity: 0.8;
+		font-size: 13px;
 	}
-
 	.value {
-		font-size: 2rem;
-		font-weight: bold;
+		font-size: 28px;
+		font-variant-numeric: tabular-nums;
 	}
-
 	.unit {
-		font-size: 0.9rem;
-		opacity: 0.7;
+		color: var(--vscode-descriptionForeground);
+	}
+	@media (max-width: 500px) {
+		main {
+			padding: 16px;
+		}
+		.data-grid {
+			grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+		}
 	}
 </style>
