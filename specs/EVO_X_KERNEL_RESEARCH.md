@@ -721,3 +721,48 @@ OneDrive archive provided the traffic analyzed above.
 - [x] Confirm load/entry addresses, version string, and command dispatch table.
 - [ ] Establish the upload, execution, and kernel command protocol.
 - [ ] Validate any implementation against captured exchanges.
+
+
+## Hardware bring-up and cleanup readiness (2026-10-31)
+
+Live OpenPort serial testing exposed two adapter-framing differences: a
+header-only receive-start indication before the kernel version, and a repeated
+source CAN header on each fragment of a large ROM reply. The transport now
+preserves one envelope header and excludes the extra headers from application
+data. Captured-shape regression tests cover the version reply and a 1024-byte
+ROM block, including CAN-ID-looking bytes inside ROM data.
+
+A full 1 MiB hardware read passed its mitsucan checksum. After kernel reset,
+`1092` could already succeed while cleanup session `1085` returned `7f1012`.
+Previously this aborted cleanup and left the ECU in its boot/programming stub.
+Completing the recorded factory cleanup manually restored the normal `1a87`
+identity and standard OBD-II responses. No flash erase/programming was sent.
+
+Cleanup now bounds retries of the recorded `1092` -> `1085` negotiation
+to ten seconds, retrying only `7f1012` (session not yet supported) and
+`7f1021` (busy). Repeating `1085` alone proved insufficient after the real
+flash; retries re-establish `1092` first. Other rejections still fail immediately. A failure explicitly reports incomplete cleanup and possible
+boot/programming mode. Calling `restoreDiagnostics()` again on the same
+session resumes factory cleanup without resending kernel reset `07`; kernel
+memory and programming operations remain closed. The incomplete-flash guard
+still prevents reset after a failed programming operation.
+
+Regression tests cover transient rejection, deadline exhaustion, and cleanup
+resumption without a second kernel reset. The bootstrap supplied through text
+copying was damaged; the correct 208-byte wire image was recovered from the
+hash-matching original `session sample 1.candump` and passed the existing
+SHA-256 validator. Recovered proprietary images remain outside Git.
+
+
+The subsequent real write to the user-selected latest ROM programmed sectors
+`0xb0000` and `0x50000` and passed flash CRC verification. Its first automatic
+cleanup still exhausted the single-request retry; explicit captured cleanup
+restored diagnostics. Re-establishing the full session pair was then added.
+A post-fix 1 MiB CLI read completed in about 50 seconds with automatic cleanup,
+and matched the target byte-for-byte (SHA-256
+`c0ed9f35ad59cdca3af14779e47d622714dfdb44bee4a169aa829e4ff8faa4f7`).
+Normal ECU identity and standard OBD-II responses were verified afterward.
+The supply read 12.308 V before flashing and 12.134 V after final readback.
+Full software validation passed 1,946 tests, type checks, lint, and workspace
+build. This verifies the tested calibration/adapter path; engine-running
+behavior and interrupted-flash recovery were not exercised.

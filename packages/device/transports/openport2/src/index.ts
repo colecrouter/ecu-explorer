@@ -449,13 +449,29 @@ function consumeProtocolBytes(
 			offset + packetTotalLength,
 		);
 		const packetPayload = buffer.slice(payloadStart, payloadEnd);
+		// ISO15765 may announce a multi-frame receive with only the CAN ID.
+		// The completed packet carries its own CAN ID; this indication is not data.
+		const receiveStartIndication =
+			packetType === PACKET_NORMAL_START &&
+			packetPayload.length === 4 &&
+			hasKnownCanHeader(packetPayload);
 
 		if (
-			packetType === PACKET_NORMAL_START ||
+			(packetType === PACKET_NORMAL_START && !receiveStartIndication) ||
 			packetType === PACKET_NORMAL ||
 			packetType === PACKET_RX_END
 		) {
-			accumulatedPayload = appendBytes(accumulatedPayload, packetPayload);
+			// Each native adapter fragment can repeat the source CAN ID. Keep
+			// one envelope header, without stripping matching bytes inside data.
+			const repeatsCanHeader =
+				hasKnownCanHeader(accumulatedPayload) &&
+				hasKnownCanHeader(packetPayload) &&
+				decodeCanIdHeader(accumulatedPayload) ===
+					decodeCanIdHeader(packetPayload);
+			accumulatedPayload = appendBytes(
+				accumulatedPayload,
+				repeatsCanHeader ? packetPayload.slice(4) : packetPayload,
+			);
 		}
 
 		offset += packetTotalLength;

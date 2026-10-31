@@ -34,6 +34,66 @@ describe("captured Evo X factory unlock", () => {
 });
 
 describe("Evo X kernel upload", () => {
+	it("waits for the cleanup session after the ECU first answers diagnostic probes", async () => {
+		vi.useFakeTimers();
+		const spy = acceptSyntheticArtifacts();
+		try {
+			const steps = cleanup();
+			steps.splice(
+				2,
+				0,
+				["exchange", hex("1085"), hex("7f1012")],
+				["exchange", hex("1092"), hex("5092")],
+				["exchange", hex("1085"), hex("7f1021")],
+				["exchange", hex("1092"), hex("5092")],
+			);
+			const fake = transcript([...startup(), ...steps]);
+			const session = await EvoXKernelSession.upload(
+				fake.connection,
+				artifacts,
+			);
+			const restore = session.restoreDiagnostics();
+			await vi.runAllTimersAsync();
+			await restore;
+			fake.exhausted();
+		} finally {
+			spy.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
+	it("bounds cleanup retries and permits resuming cleanup without resetting the kernel again", async () => {
+		vi.useFakeTimers();
+		const spy = acceptSyntheticArtifacts();
+		try {
+			const failures: Array<["exchange", Uint8Array, Uint8Array]> = [];
+			for (let attempt = 0; attempt < 50; attempt++) {
+				if (attempt > 0) failures.push(["exchange", hex("1092"), hex("5092")]);
+				failures.push(["exchange", hex("1085"), hex("7f1012")]);
+			}
+			const fake = transcript([
+				...startup(),
+				...cleanup().slice(0, 2),
+				...failures,
+				...cleanup().slice(1),
+			]);
+			const session = await EvoXKernelSession.upload(
+				fake.connection,
+				artifacts,
+			);
+			const failure = expect(session.restoreDiagnostics()).rejects.toThrow(
+				/cleanup incomplete.*boot\/programming mode/i,
+			);
+			await vi.runAllTimersAsync();
+			await failure;
+			await expect(session.readMemory(0, 1)).rejects.toThrow(/closed/);
+			await session.restoreDiagnostics();
+			fake.exhausted();
+		} finally {
+			spy.mockRestore();
+			vi.useRealTimers();
+		}
+	});
 	it("uploads without waiting for per-chunk replies, verifies version and unlocks kernel", async () => {
 		const spy = acceptSyntheticArtifacts();
 		try {

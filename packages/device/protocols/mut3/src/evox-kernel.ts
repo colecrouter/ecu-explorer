@@ -115,14 +115,26 @@ export async function validateEvoXKernelArtifacts(
 	}
 }
 
-/** Upload, flash, and readback command client for the captured M32186 V1.09 RAM kernel.
- * See specs/EVO_X_KERNEL_RESEARCH.md and GitHub issues #5/#10.
- */
+/** Preserve the ECU reply so readiness retries remain narrowly scoped. */
+class UnexpectedEvoXReply extends Error {
+	constructor(
+		request: Uint8Array,
+		readonly response: Uint8Array,
+		expected: Uint8Array,
+	) {
+		super(
+			`Unexpected Evo X reply ${hex(response)} for ${hex(request)} (expected ${hex(expected)})`,
+		);
+	}
+}
+
+/** Upload, flash, read back, and restore diagnostics for the captured V1.09 kernel. */
 export class EvoXKernelSession {
 	readonly version = VERSION;
 	private unlocked = false;
 	private closed = false;
 	private recoveryRequired = false;
+	private cleanupStarted = false;
 	private constructor(private readonly connection: UploadConnection) {}
 
 	/** Replay the captured read-session bootstrap/upload and verify the running version.
@@ -231,9 +243,7 @@ export class EvoXKernelSession {
 			response = await this.connection.receiveMessage(remaining);
 		}
 		if (!isExpected() || (length !== null && response.length !== length))
-			throw new Error(
-				`Unexpected Evo X reply ${hex(response)} for ${hex(request)} (expected ${hex(expected)})`,
-			);
+			throw new UnexpectedEvoXReply(request, response, expected);
 		return response;
 	}
 
@@ -332,6 +342,50 @@ export class EvoXKernelSession {
 		throw new Error("ECU did not become ready for diagnostics after reset", {
 			cause: lastError,
 		});
+	}
+
+	/** A positive 1092 probe can precede readiness for the cleanup session. */
+	private async waitForCleanupSession(): Promise<void> {
+		const deadline = Date.now() + 10000;
+		let lastError: unknown;
+		let refreshSession = false;
+		while (Date.now() < deadline) {
+			try {
+				if (refreshSession) {
+					await this.exchange(
+						bytes("1092"),
+						bytes("5092"),
+						2,
+						Math.min(1000, deadline - Date.now()),
+					);
+				}
+				await this.exchange(
+					bytes("1085"),
+					bytes("5085"),
+					2,
+					Math.min(1000, deadline - Date.now()),
+				);
+				return;
+			} catch (error) {
+				// Retry only the observed not-yet-supported response and ECU busy.
+				if (
+					!(error instanceof UnexpectedEvoXReply) ||
+					!["7f1012", "7f1021"].includes(hex(error.response))
+				)
+					throw error;
+				lastError = error;
+				// A probe answered by the boot stub can leave the session stale.
+				// Re-establish the recorded 1092 -> 1085 pair on the next attempt.
+				refreshSession = true;
+			}
+			await new Promise<void>((resolve) =>
+				setTimeout(resolve, Math.min(200, Math.max(0, deadline - Date.now()))),
+			);
+		}
+		throw new Error(
+			"ECU did not accept the cleanup session before the readiness deadline",
+			{ cause: lastError },
+		);
 	}
 
 	/** Query the ECU's CRC32 over a bounded ROM region (command 02). */
@@ -505,39 +559,51 @@ export class EvoXKernelSession {
 		);
 	}
 
-	/** Restore factory diagnostics after a successful read/write using the recorded cleanup.
-	 * Do not call after a failed flash: the RAM kernel must remain available for recovery.
+	/** Complete factory cleanup without sending another kernel reset. */
+	private async finishFactoryCleanup(): Promise<void> {
+		await this.waitForFactoryReady();
+		await this.waitForCleanupSession();
+		const seed = await this.exchange(bytes("2705"), bytes("6705"), 6);
+		await this.exchange(
+			Uint8Array.from([0x27, 0x06, ...computeFlashSecurityKey(seed.slice(2))]),
+			bytes("670634"),
+		);
+		await this.exchange(bytes("3b9a01010026032700000001"), bytes("7b9a"));
+		await this.exchange(bytes("3420000001000002"), bytes("740101"));
+		await this.exchange(bytes("36d4d4"), bytes("76"));
+		await this.exchange(bytes("37"), bytes("77"));
+		await this.exchange(bytes("31e102"), bytes("71e100ffffff"));
+		await this.exchange(bytes("1101"), bytes("51"));
+		await this.waitForFactoryReady();
+		await this.exchange(bytes("1a87"), bytes("5a8704850001ff"), null);
+	}
+
+	/** Restore factory diagnostics after a successful read/write.
+	 * Failed cleanup can be retried on this session without resending kernel 07.
+	 * Never resets an incomplete flash; programming recovery must finish first.
 	 */
 	async restoreDiagnostics(): Promise<void> {
 		if (this.recoveryRequired)
 			throw new Error(
 				"Flash incomplete; keep the kernel running for recovery instead of resetting",
 			);
-		if (this.closed) throw new Error("Evo X kernel session is closed");
-		// Once reset is sent, this object must never be reused even if cleanup fails.
+		if (this.closed && !this.cleanupStarted)
+			throw new Error("Evo X kernel session is closed");
 		try {
-			await this.connection.sendOnly(bytes("07"));
-			await this.waitForFactoryReady();
-			await this.exchange(bytes("1085"), bytes("5085"));
-			const seed = await this.exchange(bytes("2705"), bytes("6705"), 6);
-			await this.exchange(
-				Uint8Array.from([
-					0x27,
-					0x06,
-					...computeFlashSecurityKey(seed.slice(2)),
-				]),
-				bytes("670634"),
+			if (!this.cleanupStarted) {
+				this.cleanupStarted = true;
+				// Retire kernel operations even if reset acknowledgement is lost.
+				this.closed = true;
+				await this.connection.sendOnly(bytes("07"));
+			}
+			const factory = new EvoXKernelSession(this.connection);
+			await factory.finishFactoryCleanup();
+			this.cleanupStarted = false;
+		} catch (error) {
+			throw new Error(
+				`ECU cleanup incomplete; ECU may remain in boot/programming mode. Cleanup must be resumed before normal operation: ${error instanceof Error ? error.message : String(error)}`,
+				{ cause: error },
 			);
-			await this.exchange(bytes("3b9a01010026032700000001"), bytes("7b9a"));
-			await this.exchange(bytes("3420000001000002"), bytes("740101"));
-			await this.exchange(bytes("36d4d4"), bytes("76"));
-			await this.exchange(bytes("37"), bytes("77"));
-			await this.exchange(bytes("31e102"), bytes("71e100ffffff"));
-			await this.exchange(bytes("1101"), bytes("51"));
-			await this.waitForFactoryReady();
-			await this.exchange(bytes("1a87"), bytes("5a8704850001ff"), null);
-		} finally {
-			this.closed = true;
 		}
 	}
 }

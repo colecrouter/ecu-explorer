@@ -942,6 +942,84 @@ describe("OpenPort2Transport", () => {
 	});
 
 	describe("transport name", () => {
+		it("reassembles a ROM block whose adapter packets repeat the CAN header", async () => {
+			const path = "/dev/cu.usbmodem-kernel-rom";
+			const expected = Uint8Array.from([
+				0x83,
+				...Array.from({ length: 1024 }, (_, i) => i & 0xff),
+			]);
+			// A CAN-ID-looking sequence inside ROM data must remain intact.
+			expected.set([0, 0, 7, 0xe8], 44);
+			const chunks = [
+				createAdapterPacket(0x36, 0x10, Uint8Array.of(0, 0, 7, 0xe0)),
+				createAdapterPacket(0x36, 0x80, Uint8Array.of(0, 0, 7, 0xe8)),
+			];
+			for (let offset = 0; offset < expected.length; offset += 64) {
+				const payload = expected.slice(offset, offset + 64);
+				chunks.push(
+					createAdapterPacket(
+						0x36,
+						offset + payload.length === expected.length ? 0x40 : 0,
+						Uint8Array.from([0, 0, 7, 0xe8, ...payload]),
+					),
+				);
+			}
+			const port = new FakeSerialPort(path, chunks);
+			const serial = new FakeSerialRuntime(
+				[
+					{
+						path,
+						vendorId: "0403",
+						productId: "cc4d",
+						manufacturer: "Tactrix",
+					},
+				],
+				new Map([[path, () => port]]),
+			);
+			const connection = await new OpenPort2Transport({ serial }).connect(
+				`openport2-serial:${path}`,
+			);
+			await expect(
+				connection.sendFrame(Uint8Array.from([3, 0, 0, 0, 0, 4, 0])),
+			).resolves.toEqual(expected);
+			await connection.close();
+		});
+		it("reads the captured kernel version after a header-only receive-start indication", async () => {
+			const path = "/dev/cu.usbmodem-kernel-version";
+			const expected = Uint8Array.from([
+				0x81,
+				...new TextEncoder().encode(
+					"OpenECU Mitsubishi M32186 CAN Kernel V1.09\0",
+				),
+			]);
+			const port = new FakeSerialPort(path, [
+				createAdapterPacket(0x36, 0x10, Uint8Array.of(0, 0, 7, 0xe0)),
+				createAdapterPacket(0x36, 0x80, Uint8Array.of(0, 0, 7, 0xe8)),
+				createAdapterPacket(
+					0x36,
+					0x40,
+					Uint8Array.from([0, 0, 7, 0xe8, ...expected]),
+				),
+			]);
+			const serial = new FakeSerialRuntime(
+				[
+					{
+						path,
+						vendorId: "0403",
+						productId: "cc4d",
+						manufacturer: "Tactrix",
+					},
+				],
+				new Map([[path, () => port]]),
+			);
+			const connection = await new OpenPort2Transport({ serial }).connect(
+				`openport2-serial:${path}`,
+			);
+			await expect(connection.sendFrame(Uint8Array.of(1))).resolves.toEqual(
+				expected,
+			);
+			await connection.close();
+		});
 		it("serial upload waits for TX_DONE and retains split response data", async () => {
 			const path = "/dev/cu.usbmodem-upload";
 			const first = createAdapterPacket(
