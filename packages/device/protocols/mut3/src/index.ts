@@ -16,7 +16,19 @@ import {
 	EvoXKernelSession,
 	validateEvoXRom,
 } from "./evox-kernel.js";
+import {
+	GOLDEN_USDM_V3_LIVE_DATA_PROFILE,
+	GOLDEN_USDM_V3_PARAMETERS,
+	GOLDEN_USDM_V3_PROFILE_ID,
+} from "./golden-usdm-v3.js";
 import type { Mode23ParameterDescriptor } from "./mode23-parameters.js";
+
+export {
+	GOLDEN_USDM_V3_LIVE_DATA_PROFILE,
+	GOLDEN_USDM_V3_PARAMETERS,
+	GOLDEN_USDM_V3_PROFILE_ID,
+} from "./golden-usdm-v3.js";
+
 import {
 	decodeMode23Pid,
 	MODE23_PID_BASE,
@@ -394,6 +406,7 @@ function streamOpenport2Mode23LiveData(
 	onFrame: (frame: LiveDataFrame) => void,
 	onHealth: ((health: LiveDataHealth) => void) | undefined,
 	onComplete: () => void,
+	directParameters: readonly Mode23ParameterDescriptor[] = OPENPORT2_MODE23_EXTENSION_DESCRIPTORS,
 ): LiveDataSession {
 	let running = true;
 	const startTime = Date.now();
@@ -403,6 +416,15 @@ function streamOpenport2Mode23LiveData(
 		{ blockIdx: number; paramIdx: number; unit: string }
 	>();
 	const mode23PidMap = new Map<number, Mode23ParameterDescriptor>();
+	const requestedPids = new Set(pids);
+	const addDirectPid = (pid: number): void => {
+		if (mode23PidMap.has(pid)) return;
+		const descriptor = directParameters.find((entry) => entry.pid === pid);
+		if (!descriptor) return;
+		for (const dependency of descriptor.dependencies ?? [])
+			addDirectPid(dependency);
+		mode23PidMap.set(pid, descriptor);
+	};
 
 	for (const pid of pids) {
 		const raxPid = decodeRaxPid(pid);
@@ -414,10 +436,7 @@ function streamOpenport2Mode23LiveData(
 			continue;
 		}
 
-		const mode23Pid = decodeOpenport2Mode23ExtensionPid(pid);
-		if (mode23Pid != null) {
-			mode23PidMap.set(pid, mode23Pid);
-		}
+		addDirectPid(pid);
 	}
 
 	const requiredBlockIndices = new Set<number>(
@@ -481,6 +500,7 @@ function streamOpenport2Mode23LiveData(
 				}
 			}
 
+			const directValues = new Map<number, number>();
 			for (const [pid, descriptor] of mode23PidMap) {
 				if (!running) break;
 
@@ -495,9 +515,15 @@ function streamOpenport2Mode23LiveData(
 					totalLatencyMs += latency;
 					latencySamples++;
 
-					const value = descriptor.decodeRaw
-						? descriptor.decodeRaw(rawValue)
-						: rawValue;
+					const value = descriptor.decodeWithDependencies
+						? descriptor.decodeWithDependencies(rawValue, directValues)
+						: descriptor.decodeRaw
+							? descriptor.decodeRaw(rawValue)
+							: rawValue;
+					if (!Number.isFinite(value))
+						throw new Error(`Invalid decoded value for ${descriptor.name}`);
+					directValues.set(pid, value);
+					if (!requestedPids.has(pid)) continue;
 					const timestamp = Date.now() - startTime;
 					onFrame({
 						timestamp,
@@ -806,7 +832,10 @@ export class Mut3Protocol implements EcuProtocol {
 		connection: DeviceConnection,
 	): Promise<LiveDataProfileDescriptor[]> {
 		if (connection.deviceInfo.transportName === "openport2") {
-			return [RAX_MODE23_PATCH_LIVE_DATA_PROFILE];
+			return [
+				RAX_MODE23_PATCH_LIVE_DATA_PROFILE,
+				GOLDEN_USDM_V3_LIVE_DATA_PROFILE,
+			];
 		}
 		if (connection.deviceInfo.transportName === "kline") {
 			return [RAX_KLINE_LIVE_DATA_PROFILE];
@@ -845,6 +874,27 @@ export class Mut3Protocol implements EcuProtocol {
 		const profileId = getRequestedProfileId(pidsOrSelection);
 
 		if (connection.deviceInfo.transportName === "openport2") {
+			if (profileId === GOLDEN_USDM_V3_PROFILE_ID) {
+				if (
+					pids.some(
+						(pid) => !GOLDEN_USDM_V3_PARAMETERS.some((p) => p.pid === pid),
+					)
+				) {
+					throw new Error(
+						"Golden USDM v3 requires PIDs from the Golden profile",
+					);
+				}
+				return this.trackLivePoll(connection, (onComplete) =>
+					streamOpenport2Mode23LiveData(
+						connection,
+						pids,
+						onFrame,
+						onHealth,
+						onComplete,
+						GOLDEN_USDM_V3_PARAMETERS,
+					),
+				);
+			}
 			if (
 				profileId === undefined ||
 				profileId === RAX_MODE23_PATCH_PROFILE_ID

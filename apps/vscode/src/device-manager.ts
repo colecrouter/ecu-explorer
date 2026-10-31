@@ -213,6 +213,21 @@ export class DeviceManagerImpl implements DeviceManager {
 
 		// Open a connection to the device
 		const connection = await transport.connect(selectedDevice.id);
+		// OpenPort connections need adapter identification, channel setup, and
+		// receive filters before ECU requests can be sent, as in runDiagnostic().
+		const adapter = connection as DeviceConnection & {
+			initialize?: () => Promise<void>;
+		};
+		try {
+			await adapter.initialize?.();
+		} catch (error) {
+			try {
+				await connection.close();
+			} catch {
+				// Preserve the initialization failure if cleanup also fails.
+			}
+			throw error;
+		}
 
 		// Auto-detect the protocol by trying each registered protocol
 		for (const protocol of this.protocols) {

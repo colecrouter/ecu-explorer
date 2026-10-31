@@ -578,6 +578,7 @@ export async function activate(
 	// Set VSCode context key when connection state changes
 	ctx.subscriptions.push(
 		deviceManager.onDidChangeConnection((conn) => {
+			liveDataPanelManager?.stopStreaming();
 			vscode.commands.executeCommand(
 				"setContext",
 				"ecuExplorer.deviceConnected",
@@ -881,13 +882,6 @@ export async function activate(
 	ctx.subscriptions.push(
 		loggingManager.onDidChangeState((state) => {
 			deviceStatusBarManager.updateLoggingState(state);
-		}),
-	);
-
-	// Wire LiveDataPanelManager frames to LoggingManager
-	ctx.subscriptions.push(
-		liveDataPanelManager.onFrame((frame) => {
-			loggingManager?.onFrame(frame);
 		}),
 	);
 
@@ -1296,7 +1290,7 @@ export async function activate(
 			vscode.window.showInformationMessage("Select Device is coming soon.");
 		}),
 		vscode.commands.registerCommand("ecuExplorer.startLog", async () => {
-			if (!loggingManager) {
+			if (!loggingManager || loggingManager.loggingState !== "idle") {
 				return;
 			}
 			const active = deviceManager?.activeConnection;
@@ -1307,11 +1301,45 @@ export async function activate(
 				);
 				return;
 			}
-			const pids =
-				liveDataPanelManager?.getActiveLoggingPids() ??
+			const activePids = liveDataPanelManager?.getActiveLoggingPids();
+			let pids =
+				activePids ??
 				(active?.protocol.getSupportedPids != null
 					? await active.protocol.getSupportedPids(active.connection)
 					: []);
+			let profileId: string | undefined;
+			if (activePids == null && active?.protocol.getLiveDataProfiles != null) {
+				const profiles = (
+					await active.protocol.getLiveDataProfiles(active.connection)
+				).filter((profile) => profile.status !== "unavailable");
+				const remembered = ctx.workspaceState.get<string>("loggingProfileId");
+				let selected = profiles.find((profile) => profile.id === remembered);
+				if (selected == null && profiles.length > 0) {
+					const pick =
+						profiles.length === 1
+							? { profile: profiles[0] }
+							: await vscode.window.showQuickPick(
+									profiles.map((profile) => ({
+										label: profile.name,
+										...(profile.description == null
+											? {}
+											: { detail: profile.description }),
+										profile,
+									})),
+									{
+										placeHolder:
+											"Select the logging profile that matches your ECU ROM",
+									},
+								);
+					selected = pick?.profile;
+					if (selected == null) return;
+				}
+				if (selected != null) {
+					pids = selected.pids;
+					profileId = selected.id;
+					await ctx.workspaceState.update("loggingProfileId", selected.id);
+				}
+			}
 			const channels =
 				activeWidebandMode == null
 					? []
@@ -1325,7 +1353,29 @@ export async function activate(
 								unit: activeWidebandMode === "afr" ? "AFR" : "lambda",
 							},
 						];
-			await loggingManager.startLog({ pids, channels });
+			const streamManager = liveDataPanelManager;
+			try {
+				await loggingManager.startLog({
+					pids,
+					channels,
+					...(active != null && pids.length > 0 && streamManager != null
+						? {
+								startStream: (onFrame) =>
+									streamManager.streamForLogging(
+										active.connection,
+										active.protocol,
+										pids,
+										onFrame,
+										profileId,
+									),
+							}
+						: {}),
+				});
+			} catch (error) {
+				vscode.window.showErrorMessage(
+					`Failed to start log: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
 		}),
 		vscode.commands.registerCommand("ecuExplorer.pauseLog", () => {
 			loggingManager?.pauseLog();

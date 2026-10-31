@@ -302,6 +302,51 @@ describe("DeviceManagerImpl", () => {
 		);
 	});
 
+	it("initializes the adapter before probing and publishing a connection", async () => {
+		const deviceManager = new DeviceManagerImpl();
+		let initialized = false;
+		const connection = {
+			...createMockConnection(),
+			initialize: async () => {
+				initialized = true;
+			},
+		};
+		deviceManager.registerTransport("test-transport", {
+			name: "test-transport",
+			listDevices: async () => [connection.deviceInfo],
+			connect: async () => connection,
+		});
+		deviceManager.registerProtocol({
+			name: "test",
+			canHandle: async () => initialized,
+		});
+		const active = await deviceManager.connect();
+		expect(active.connection).toBe(connection);
+		expect(active.state).toBe("connected");
+		await deviceManager.disconnect();
+	});
+
+	it("closes an adapter that fails initialization without reporting connected", async () => {
+		const deviceManager = new DeviceManagerImpl();
+		const connection = {
+			...createMockConnection(),
+			initialize: async () => {
+				throw new Error("Adapter identification timed out");
+			},
+		};
+		deviceManager.registerTransport("test-transport", {
+			name: "test-transport",
+			listDevices: async () => [connection.deviceInfo],
+			connect: async () => connection,
+		});
+		deviceManager.registerProtocol(createMockProtocol());
+		await expect(deviceManager.connect()).rejects.toThrow(
+			"Adapter identification timed out",
+		);
+		expect(deviceManager.activeConnection).toBeUndefined();
+		expect(connection.close).toHaveBeenCalledOnce();
+	});
+
 	describe("activeConnection getter", () => {
 		it("should return undefined when not connected", () => {
 			expect(manager.activeConnection).toBeUndefined();

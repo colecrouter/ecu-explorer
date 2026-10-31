@@ -7,6 +7,12 @@ export interface Mode23ParameterDescriptor extends PidDescriptor {
 	address: number;
 	size: 1 | 2 | 4;
 	decodeRaw?: (raw: number) => number;
+	/** Read these channels before decoding a dependent value such as boost. */
+	dependencies?: readonly number[];
+	decodeWithDependencies?: (
+		raw: number,
+		values: ReadonlyMap<number, number>,
+	) => number;
 }
 
 const MODE23_PID_BASE = 0x9000;

@@ -60,6 +60,23 @@ Save your modified ROM. Checksums are automatically recomputed on save.
 
 ## Features
 
+### Live Data Logging
+
+Connect using **ECU Explorer: Connect to Device**, then choose **Start Live Data Log**
+or click **Start Log** in the status bar. Recording starts ECU polling automatically;
+the Live Data panel does not need to be open. Stop the log to save the CSV in the
+configured logs folder.
+
+When the ECU offers multiple logging profiles, the first recording asks which
+profile matches the ROM and remembers that choice for the workspace. Choose
+**Golden 2011 USDM v3 EVOX** for that calibration's direct Mode23 map; this
+profile does not require the RAX patch. It includes 39 ECU channels in metric
+units. External wideband AFR comes from the separate wideband connection.
+
+To record selected channels, open **ECU Explorer: Start Live Data**, select channels,
+and click **Start Streaming** before starting the log. Recording reuses that stream.
+Stopping the log leaves a stream started in the panel running.
+
 ### ROM Explorer Tree View
 
 The ECU Explorer view shows:

@@ -6,6 +6,7 @@
  */
 
 import * as path from "node:path";
+import type { LiveDataFrame } from "@ecu-explorer/device";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 import { LoggingManager, openLogsFolder } from "../src/logging-manager.js";
@@ -58,6 +59,62 @@ describe("LoggingManager", () => {
 	});
 
 	describe("startLog", () => {
+		it("starts a source without a panel and saves its first sample", async () => {
+			let sampling = false;
+			await manager.startLog({
+				pids: createSamplePids(),
+				startStream: (onFrame) => {
+					sampling = true;
+					onFrame({ timestamp: 100, pid: 0x0c, value: 850, unit: "rpm" });
+					return {
+						stop: () => {
+							sampling = false;
+						},
+					};
+				},
+			});
+			expect(sampling).toBe(true);
+			await manager.stopLog();
+			expect(sampling).toBe(false);
+			expect(new TextDecoder().decode(persistedLogBytes)).toContain(
+				"100,850,,\n",
+			);
+		});
+
+		it("keeps recording idle when the source cannot start", async () => {
+			const states: string[] = [];
+			manager.onDidChangeState((state) => states.push(state));
+			await expect(
+				manager.startLog({
+					pids: createSamplePids(),
+					startStream: () => {
+						throw new Error("Cannot start polling");
+					},
+				}),
+			).rejects.toThrow("Cannot start polling");
+			expect(manager.loggingState).toBe("idle");
+			expect(states).toEqual([]);
+			expect(persistedLogBytes).toBeUndefined();
+		});
+
+		it("releases its source on disposal", async () => {
+			let receive: ((frame: LiveDataFrame) => void) | undefined;
+			await manager.startLog({
+				pids: createSamplePids(),
+				startStream: (onFrame) => {
+					receive = onFrame;
+					return {
+						stop: () => {
+							receive = undefined;
+						},
+					};
+				},
+			});
+			expect(receive).toBeDefined();
+			manager.dispose();
+			expect(receive).toBeUndefined();
+		});
+
 		it("should set state to recording after startLog", async () => {
 			const pids = createSamplePids();
 			await manager.startLog([...pids]);

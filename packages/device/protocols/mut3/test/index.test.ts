@@ -13,6 +13,8 @@ import {
 	CMD_SET_ADDRESS,
 	decodeMutiiiCanPid,
 	decodeRaxPid,
+	GOLDEN_USDM_V3_LIVE_DATA_PROFILE,
+	GOLDEN_USDM_V3_PROFILE_ID,
 	MODE23_RESEARCH_PROFILE_ID,
 	MUTIII_CAN_PID_DESCRIPTORS,
 	Mut3Protocol,
@@ -811,12 +813,15 @@ describe("Mut3Protocol.getSupportedPids()", () => {
 });
 
 describe("Mut3Protocol.getLiveDataProfiles()", () => {
-	it("returns only the supported Mode23 RAX profile for openport2", async () => {
+	it("offers RAX and Golden USDM v3 profiles for openport2", async () => {
 		const protocol = new Mut3Protocol();
 		const connection = makeMockConnection("openport2");
 		const profiles = await protocol.getLiveDataProfiles?.(connection);
 
-		expect(profiles).toEqual([RAX_MODE23_PATCH_LIVE_DATA_PROFILE]);
+		expect(profiles).toEqual([
+			RAX_MODE23_PATCH_LIVE_DATA_PROFILE,
+			GOLDEN_USDM_V3_LIVE_DATA_PROFILE,
+		]);
 	});
 
 	it("returns the ready K-line RAX profile for kline", async () => {
@@ -831,6 +836,72 @@ describe("Mut3Protocol.getLiveDataProfiles()", () => {
 // ── streamLiveData ────────────────────────────────────────────────────────────
 
 describe("Mut3Protocol.streamLiveData()", () => {
+	it("decodes Golden USDM v3 captured RPM, coolant, and speed without RAX reads", async () => {
+		const channels = GOLDEN_USDM_V3_LIVE_DATA_PROFILE.pids.filter((p) =>
+			["2-Byte RPM", "Coolant Temp", "Speed"].includes(p.name),
+		);
+		const replies = new Map([
+			[0x878c, [0, 0]],
+			[0x867f, [0x34]],
+			[0x882f, [0]],
+		]);
+		const connection = makeMockConnection(
+			"openport2",
+			vi.fn(async (tx: Uint8Array) => {
+				const address = (tx[2] ?? 0) * 256 + (tx[3] ?? 0);
+				const data = replies.get(address);
+				if (!data) throw new Error("Unexpected memory request");
+				return Uint8Array.from([0x63, ...data]);
+			}),
+		);
+		const frames: LiveDataFrame[] = [];
+		const session = new Mut3Protocol().streamLiveData(
+			connection,
+			{
+				pids: channels.map((p) => p.pid),
+				profileId: GOLDEN_USDM_V3_PROFILE_ID,
+			},
+			(frame) => frames.push(frame),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 60));
+		session.stop();
+		expect(channels).toHaveLength(3);
+		for (const [index, channel] of channels.entries()) {
+			expect(frames.find((frame) => frame.pid === channel.pid)?.value).toBe(
+				[0, 12, 0][index],
+			);
+		}
+	});
+
+	it("reads Golden barometric pressure as a dependency when only boost is selected", async () => {
+		const boost = GOLDEN_USDM_V3_LIVE_DATA_PROFILE.pids.find(
+			(p) => p.name === "PSIG",
+		);
+		if (!boost) throw new Error("Missing Golden boost channel");
+		const connection = makeMockConnection(
+			"openport2",
+			vi.fn(async (tx: Uint8Array) => {
+				const address = (tx[2] ?? 0) * 256 + (tx[3] ?? 0);
+				if (address === 0xab0d) return Uint8Array.from([0x63, 0xbf]);
+				if (address === 0x875e) return Uint8Array.from([0x63, 0x01, 0x29]);
+				throw new Error("Unexpected memory request");
+			}),
+		);
+		const frames: LiveDataFrame[] = [];
+		const session = new Mut3Protocol().streamLiveData(
+			connection,
+			{ pids: [boost.pid], profileId: GOLDEN_USDM_V3_PROFILE_ID },
+			(frame) => frames.push(frame),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 60));
+		session.stop();
+		expect(frames.length).toBeGreaterThan(0);
+		for (const frame of frames) {
+			expect(frame.pid).toBe(boost.pid);
+			expect(frame.value).toBeCloseTo(3.2902487);
+			expect(frame.unit).toBe("kPa");
+		}
+	});
 	/**
 	 * Build a connection mock suitable for RAX streaming tests.
 	 *

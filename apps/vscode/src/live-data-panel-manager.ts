@@ -51,6 +51,7 @@ export class LiveDataPanelManager {
 				profileId?: string;
 		  }
 		| undefined;
+	private recordingSubscribers = 0;
 
 	private _onFrame = new vscode.EventEmitter<LiveDataFrame>();
 	/** Fires for each live data frame received from the device. */
@@ -99,15 +100,59 @@ export class LiveDataPanelManager {
 		});
 
 		this.panel.onDidDispose(() => {
-			this.stopStreaming();
+			if (this.recordingSubscribers === 0) this.stopStreaming();
 			this.panel = undefined;
 		});
 	}
 
+	/** Record the existing stream, or start polling without opening a webview. */
+	streamForLogging(
+		connection: DeviceConnection,
+		protocol: EcuProtocol,
+		pids: readonly PidDescriptor[],
+		onFrame: (frame: LiveDataFrame) => void,
+		profileId?: string,
+	): LiveDataSession {
+		const subscription = this.onFrame(onFrame);
+		const ownsStream = this.session == null;
+		try {
+			if (ownsStream) {
+				if (!protocol.streamLiveData)
+					throw new Error("This protocol does not support live data");
+				this.connection = connection;
+				this.protocol = protocol;
+				this.supportedProfiles = [];
+				this.supportedPids = [...pids];
+				this.startStreaming(
+					pids.map((pid) => pid.pid),
+					profileId,
+				);
+			}
+		} catch (error) {
+			subscription.dispose();
+			this.activeSelection = undefined;
+			throw error;
+		}
+		const session = this.session;
+		this.recordingSubscribers++;
+		let stopped = false;
+		return {
+			stop: () => {
+				if (stopped) return;
+				stopped = true;
+				subscription.dispose();
+				this.recordingSubscribers--;
+				if ((ownsStream || this.panel == null) && this.session === session)
+					this.stopStreaming();
+			},
+		};
+	}
+
 	private async handleReady() {
 		try {
-			const { connection, protocol } =
-				await this.deviceManager.selectDeviceAndProtocol();
+			// Reuse the managed connection so Live Data and CSV logging share
+			// device state and never compete for the adapter's serial port.
+			const { connection, protocol } = await this.deviceManager.connect();
 			const profileAwareProtocol = protocol as ProfileAwareProtocol;
 			this.connection = connection;
 			this.protocol = profileAwareProtocol;
@@ -118,7 +163,7 @@ export class LiveDataPanelManager {
 				if (profiles.length > 0) {
 					const defaultProfile = this.pickDefaultProfile(profiles);
 					this.supportedProfiles = profiles;
-					this.supportedPids = [];
+					this.supportedPids = defaultProfile?.pids ?? [];
 					this.panel?.webview.postMessage({
 						type: "supportedProfiles",
 						profiles,
@@ -153,8 +198,12 @@ export class LiveDataPanelManager {
 		);
 	}
 
-	private async startStreaming(pids: number[], profileId?: string) {
+	private startStreaming(pids: number[], profileId?: string) {
 		if (!this.connection || !this.protocol || !this.protocol.streamLiveData) {
+			return;
+		}
+		if (this.session != null) {
+			this.panel?.webview.postMessage({ type: "streamingStarted" });
 			return;
 		}
 
@@ -192,7 +241,8 @@ export class LiveDataPanelManager {
 		this.panel?.webview.postMessage({ type: "streamingStarted" });
 	}
 
-	private async stopStreaming() {
+	/** Stop ECU polling when requested by the panel or device lifecycle. */
+	stopStreaming() {
 		if (this.session) {
 			this.session.stop();
 			this.session = undefined;

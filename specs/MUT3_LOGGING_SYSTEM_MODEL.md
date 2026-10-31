@@ -161,3 +161,28 @@ The current codebase does not need to perform that full refactor immediately, bu
   - transport/session
   - request family
   - decode family
+
+
+## Golden 2011 USDM v3 runtime (2026-10-31)
+
+The explicit **Golden 2011 USDM v3 EVOX** profile is implemented in
+[`golden-usdm-v3.ts`](../packages/device/protocols/mut3/src/golden-usdm-v3.ts).
+It preserves the 39 direct Mode23 ECU channels from Michael Golden's
+29 August 2014 EvoScan map, using metric formulas. Boost reads barometric
+pressure as a dependency even when only boost is selected. The XML's external
+wideband channel remains owned by the separate wideband source.
+
+This is a ROM-specific alternative to the RAX packed-block profile. It does
+not interpret ordinary memory as RAX blocks. The existing default protocol
+PID list remains unchanged; users select Golden in Live Data or the first
+Start Log profile picker. Start Log remembers its choice per workspace.
+
+Hardware validation on 2026-10-31 returned 873 samples across all 39 channels
+in a 2.2-second run, with zero dropped frames and approximately 3 ms request
+latency. Golden RPM, coolant, and speed matched OBD-II in the same session
+(0 RPM, 12 degrees C, 0 km/h). This validates communication and these control
+channels on the connected calibration; it does not establish compatibility
+with other ROMs or validate every channel throughout its operating range.
+
+Transcript regression coverage lives in
+[`index.test.ts`](../packages/device/protocols/mut3/test/index.test.ts).

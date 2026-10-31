@@ -1,4 +1,8 @@
-import type { LiveDataFrame, PidDescriptor } from "@ecu-explorer/device";
+import type {
+	LiveDataFrame,
+	LiveDataSession,
+	PidDescriptor,
+} from "@ecu-explorer/device";
 import * as vscode from "vscode";
 import { readConfig } from "./config.js";
 
@@ -13,6 +17,8 @@ export interface LogChannelDescriptor {
 export interface LoggingStartOptions {
 	pids?: readonly PidDescriptor[];
 	channels?: readonly LogChannelDescriptor[];
+	/** Start or subscribe to ECU polling once the CSV recorder can accept samples. */
+	startStream?: (onFrame: (frame: LiveDataFrame) => void) => LiveDataSession;
 }
 
 function isLoggingStartOptions(
@@ -54,6 +60,7 @@ export class LoggingManager implements vscode.Disposable {
 	readonly onDidChangeState: vscode.Event<LoggingState> =
 		this._onDidChangeState.event;
 	private flushPromise: Promise<void> = Promise.resolve();
+	private stream: LiveDataSession | undefined;
 
 	/**
 	 * Start a new logging session.
@@ -114,6 +121,9 @@ export class LoggingManager implements vscode.Disposable {
 			if (pidsOrOptions.channels != null) {
 				options.channels = pidsOrOptions.channels;
 			}
+			if (pidsOrOptions.startStream != null) {
+				options.startStream = pidsOrOptions.startStream;
+			}
 		}
 		const pids = [...(options.pids ?? [])];
 		const channels = [...(options.channels ?? [])];
@@ -166,6 +176,15 @@ export class LoggingManager implements vscode.Disposable {
 		this.hasPersistedContent = false;
 
 		this.state = "recording";
+		try {
+			this.stream = options.startStream?.((frame) => this.onFrame(frame));
+		} catch (error) {
+			this.state = "idle";
+			this.recordingUri = undefined;
+			this.csvPreamble = "";
+			this.pendingCsvRows = "";
+			throw error;
+		}
 		this._onDidChangeState.fire(this.state);
 
 		// Set VSCode context keys
@@ -240,6 +259,8 @@ export class LoggingManager implements vscode.Disposable {
 		}
 
 		const savedUri = this.recordingUri;
+		this.stream?.stop();
+		this.stream = undefined;
 		await this.flushLog();
 
 		this.state = "idle";
@@ -350,6 +371,8 @@ export class LoggingManager implements vscode.Disposable {
 	}
 
 	dispose(): void {
+		this.stream?.stop();
+		this.stream = undefined;
 		this._onDidChangeState.dispose();
 	}
 
