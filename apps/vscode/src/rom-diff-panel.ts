@@ -1,9 +1,10 @@
 import * as vscode from "vscode";
 import { buildRomComparison, type RomSnapshot } from "./rom/comparison.js";
-import type {
-	DiffSourceInfo,
-	DiffTableDetail,
-	DiffWebviewMessage,
+import {
+	type DiffSourceInfo,
+	type DiffTableDetail,
+	type DiffWebviewMessage,
+	encodeDiffValue,
 } from "./rom-diff-protocol.js";
 import { romDiffStyles } from "./rom-diff-styles.js";
 
@@ -60,9 +61,9 @@ export function showRomDiff(
 						is1D: snapshot.definition.kind === "table1d",
 						rows: snapshot.rows,
 						cols: snapshot.cols,
-						values: snapshot.values,
-						xAxisValues: snapshot.xAxisValues,
-						yAxisValues: snapshot.yAxisValues,
+						values: snapshot.values.map((row) => row.map(encodeDiffValue)),
+						xAxisValues: snapshot.xAxisValues.map(encodeDiffValue),
+						yAxisValues: snapshot.yAxisValues.map(encodeDiffValue),
 					};
 				const detail: DiffTableDetail = {
 					...summary,

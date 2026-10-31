@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-svelte";
 import type {
+	DiffGridData,
 	DiffSummaryMessage,
 	DiffTableDetail,
 } from "../../../apps/vscode/src/rom-diff-protocol.js";
@@ -67,6 +68,60 @@ const post = (data: unknown) =>
 	window.dispatchEvent(new MessageEvent("message", { data }));
 
 describe("ROM diff viewer", () => {
+	it("renders serialized infinities and gives equal infinities zero delta", async () => {
+		const infinite: DiffGridData = {
+			...grid,
+			values: [["Infinity"], ["-Infinity"]],
+		};
+		const screen = render(DiffGrid, {
+			grid: infinite,
+			label: "Infinite AFR values",
+		});
+		await expect
+			.element(screen.getByRole("cell", { name: "∞", exact: true }))
+			.toBeVisible();
+		await expect
+			.element(screen.getByRole("cell", { name: "−∞", exact: true }))
+			.toBeVisible();
+		screen.unmount();
+		const deltas = render(DiffGrid, {
+			grid: infinite,
+			other: infinite,
+			delta: true,
+			label: "Infinite deltas",
+		});
+		await expect
+			.element(
+				deltas
+					.getByRole("table")
+					.getByRole("cell", { name: "0", exact: true })
+					.first(),
+			)
+			.toBeVisible();
+		expect(deltas.container.textContent).not.toContain("NaN");
+	});
+	it.each([
+		{ value: "Infinity", baseline: 14.7 },
+		{ value: 14.7, baseline: "Infinity" },
+		{ value: "-Infinity", baseline: "Infinity" },
+	] as const)("marks the delta from $baseline to $value unavailable while highlighting the change", async ({
+		value,
+		baseline,
+	}) => {
+		const screen = render(DiffGrid, {
+			grid: { ...grid, rows: 1, values: [[value]] },
+			other: { ...grid, rows: 1, values: [[baseline]] },
+			delta: true,
+			label: "Undefined delta",
+		});
+		const cell = screen.getByRole("cell", { name: "—", exact: true });
+		await expect.element(cell).toBeVisible();
+		await expect.element(cell).toHaveClass("changed");
+		await expect
+			.element(cell)
+			.toHaveAttribute("title", "Delta unavailable for infinite values");
+	});
+
 	it("keeps Y-axis breakpoints for a two-dimensional table with one column", async () => {
 		const screen = render(DiffGrid, {
 			grid: {

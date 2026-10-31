@@ -70,3 +70,20 @@ or snapshot save opens no comparison. Comparison commands never write flash.
 
 Final validation: `npm run build`, `npm run check`, `npm run lint`, and
 `npm run test:coverage` (1,976 tests across 101 files).
+
+### Infinite decoded values (2026-10-31)
+
+AFR scalings such as `14.7 * 128 / raw` produce infinity for zero bytes.
+These values are valid displayable results: the viewer renders `∞` and `−∞`,
+with matching infinities treated as unchanged and a zero delta. A transition
+between finite and infinite values, or between opposite infinities, remains a
+changed cell with an unavailable delta (`—`). NaN results remain explicit decode
+failures. Infinity uses string tokens in webview messages to survive JSON
+serialization. Regression coverage includes the eleven zero-valued cells in
+`Max Lean Oct Avg AFR vs Load`, JSON transport, and rendered delta behavior.
+
+Infinity fix validation: build, type checks, lint, and coverage passed (1,983
+tests). Read-only reproduction against `diagnostic-id1050x-official-transient-stockscaled-v1.bin`
+and `diagnostic-id1050x-idle1600-fuelplus4-tpsgate2-v1.bin` reports the AFR table
+as unchanged, with eleven infinity values and eleven zero deltas after JSON
+transport.

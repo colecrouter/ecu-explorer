@@ -28,6 +28,52 @@ const snapshot = (
 ) => captureRomSnapshot(vscode.Uri.file(`/${label}.bin`), bytes, def, label);
 
 describe("ROM comparison", () => {
+	it("compares the zero-valued AFR table as unchanged despite infinite decoded values", () => {
+		const afr: ROMDefinition = {
+			...definition,
+			tables: [
+				{
+					...table("Max Lean Oct Avg AFR vs Load", 0),
+					rows: 11,
+					z: {
+						...table("AFR", 0).z,
+						length: 11,
+						transform: (raw) => (14.7 * 128) / raw,
+					},
+				},
+			],
+		};
+		const base = snapshot("Base", new Uint8Array(11), afr);
+		const target = snapshot("Target", new Uint8Array(11), afr);
+		const result = buildRomComparison(base, target).tables[0];
+		expect(result?.status).toBe("unchanged");
+		expect(result?.metrics?.cellsChanged).toBe(0);
+		expect(result?.baseSnapshot?.values.flat()).toEqual(
+			Array(11).fill(Infinity),
+		);
+		target.bytes[0] = 128;
+		const changed = buildRomComparison(base, target).tables[0];
+		expect(changed?.status).toBe("changed");
+		expect(changed?.metrics?.cellsChanged).toBe(1);
+	});
+	it("keeps NaN decoding failures explicit", () => {
+		const invalid: ROMDefinition = {
+			...definition,
+			tables: [
+				{
+					...table("Invalid", 0),
+					z: { ...table("Invalid", 0).z, transform: () => NaN },
+				},
+			],
+		};
+		const result = buildRomComparison(
+			snapshot("Base", undefined, invalid),
+			snapshot("Target", undefined, invalid),
+		).tables[0];
+		expect(result?.status).toBe("incompatible");
+		expect(result?.incompatibilityReason).toContain("NaN");
+	});
+
 	it("captures unsaved bytes without retaining the mutable editor buffer", () => {
 		const bytes = Uint8Array.of(9, 2, 3, 4);
 		const active = snapshot("Active (unsaved)", bytes);

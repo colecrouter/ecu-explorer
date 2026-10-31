@@ -90,9 +90,9 @@ export function buildRomComparison(
 							...snapshot.values.flat(),
 							...snapshot.xAxisValues,
 							...snapshot.yAxisValues,
-						].some((value) => !Number.isFinite(value))
+						].some((value) => Number.isNaN(value))
 					) {
-						throw new Error("Table contains non-finite decoded values.");
+						throw new Error("Table contains NaN decoded values.");
 					}
 				}
 				return analysis;

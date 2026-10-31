@@ -1,5 +1,9 @@
 <script lang="ts">
-	import type { DiffGridData } from "../rom-diff-protocol.js";
+	import {
+		diffValueDelta,
+		formatDiffValue as number,
+		type DiffGridData,
+	} from "../rom-diff-protocol.js";
 	let {
 		grid,
 		other,
@@ -13,12 +17,6 @@
 		start?: number;
 		delta?: boolean;
 	} = $props();
-	const number = (value: number | undefined) =>
-		value === undefined
-			? "—"
-			: Number.isFinite(value)
-				? String(Number(value.toFixed(4)))
-				: String(value);
 </script>
 
 <div class="grid-scroll">
@@ -47,9 +45,16 @@
 						{@const counterpart = other?.values[rowIndex]?.[col]}
 						{@const changed =
 							counterpart !== undefined && counterpart !== value}
-						<td class:changed title={changed ? "Changed cell" : undefined}
+						{@const deltaValue = diffValueDelta(value, counterpart)}
+						<td
+							class:changed
+							title={delta && deltaValue === undefined
+								? "Delta unavailable for infinite values"
+								: changed
+									? "Changed cell"
+									: undefined}
 							>{delta && counterpart !== undefined
-								? `${value - counterpart > 0 ? "+" : ""}${number(value - counterpart)}`
+								? `${deltaValue !== undefined && deltaValue > 0 ? "+" : ""}${number(deltaValue)}`
 								: number(value)}</td
 						>
 					{/each}

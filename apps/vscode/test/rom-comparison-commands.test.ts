@@ -5,7 +5,9 @@ import { registerRomComparisonCommands } from "../src/commands/rom-comparison-co
 import { DeviceManagerImpl } from "../src/device-manager.js";
 import { LiveDataPanelManager } from "../src/live-data-panel-manager.js";
 import { LoggingManager } from "../src/logging-manager.js";
+import { captureRomSnapshot } from "../src/rom/comparison.js";
 import { RomDocument } from "../src/rom/document.js";
+import { showRomDiff } from "../src/rom-diff-panel.js";
 import { WorkspaceState } from "../src/workspace-state.js";
 import { createExtensionContext } from "./mocks/vscode-harness.js";
 import { createMockWebviewPanel } from "./mocks/webview-mock.js";
@@ -34,6 +36,43 @@ const definition: ROMDefinition = {
 };
 
 describe("ROM comparison commands", () => {
+	it("preserves both infinity signs through the webview's JSON transport", () => {
+		const context = createExtensionContext() as vscode.ExtensionContext;
+		const infinite: ROMDefinition = {
+			...definition,
+			tables: definition.tables.map((table) => ({
+				...table,
+				z: {
+					...table.z,
+					transform: (raw) => (raw === 0 ? Infinity : -Infinity),
+				},
+			})),
+		};
+		const panel = createMockWebviewPanel("Infinite values");
+		vi.spyOn(vscode.window, "createWebviewPanel").mockReturnValue(
+			panel as vscode.WebviewPanel,
+		);
+		const uri = vscode.Uri.file("/ROMs/AFR.bin");
+		showRomDiff(
+			context,
+			captureRomSnapshot(uri, Uint8Array.of(0), infinite, "Base"),
+			captureRomSnapshot(uri, Uint8Array.of(1), infinite, "Target"),
+		);
+		panel.webview._simulateMessage({ type: "selectTable", index: 0 });
+		const serialized = JSON.parse(
+			JSON.stringify(panel.webview._getMessages()[0]),
+		);
+		expect(serialized).toMatchObject({
+			type: "detail",
+			detail: {
+				status: "changed",
+				cellsChanged: 1,
+				base: { values: [["Infinity"]] },
+				target: { values: [["-Infinity"]] },
+			},
+		});
+	});
+
 	afterEach(() => vi.restoreAllMocks());
 	it("uses saved disk bytes and unsaved editor bytes, and serves table details without serializing definitions", async () => {
 		const context = createExtensionContext() as vscode.ExtensionContext;
