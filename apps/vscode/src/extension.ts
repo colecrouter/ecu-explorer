@@ -34,8 +34,10 @@ import {
 	handlePasteSpecialFormula,
 	handleRedo,
 	handleUndo,
+	openTableInCustomEditor,
 	setEditCommandsContext,
 	setGraphCommandsContext,
+	setTableCommandsContext,
 } from "./commands/index.js";
 import { readConfig } from "./config.js";
 import { exportActiveTableCsvFlow } from "./csv/export.js";
@@ -58,7 +60,6 @@ import { selectHardwareCandidateFromSource } from "./hardware-source.js";
 import type { TableEditSession } from "./history/table-edit-session.js";
 import { LiveDataPanelManager } from "./live-data-panel-manager.js";
 import { LoggingManager, openLogsFolder } from "./logging-manager.js";
-import { resolveRomDefinition } from "./rom/definition-resolver.js";
 import type { RomDocument } from "./rom/document.js";
 import {
 	RomEditorProvider,
@@ -66,7 +67,7 @@ import {
 } from "./rom/editor-provider.js";
 import { RomSymbolProvider } from "./rom/symbol-provider.js";
 import { TableFileSystemProvider } from "./table-fs-provider.js";
-import { createTableUri, parseTableUri } from "./table-fs-uri.js";
+import { parseTableUri } from "./table-fs-uri.js";
 import { getThemeColors } from "./theme-colors.js";
 import type { RomTreeItem } from "./tree/rom-tree-item.js";
 import { RomExplorerTreeProvider } from "./tree/rom-tree-provider.js";
@@ -210,97 +211,6 @@ const selectionManager = new SelectionManager();
 
 // Track RomDocument instances by webview panel
 const panelToDocument = new Map<vscode.WebviewPanel, RomDocument>();
-
-/**
- * Open a table in the custom editor
- *
- * Unified entry point for opening tables from various sources:
- * - Tree view item clicks
- * - Command palette
- * - Programmatic calls
- *
- * This function uses VSCode's Custom Editor infrastructure to:
- * 1. Ensure a ROM definition is resolved (from saved state or user prompt)
- * 2. Create a table URI for the specific table
- * 3. Open the table URI with romViewer.tableEditor
- * 4. VSCode automatically handles tab management (focus existing or create new)
- *
- * This function is self-sufficient — it does NOT require the ROM file to be
- * registered as a VSCode custom document (romViewer.editor). Instead, it
- * resolves the definition directly via resolveRomDefinition().
- *
- * @param romUri - URI of the ROM file to open
- * @param tableId - Stable ID of the table to open (required)
- * @param tableName - Optional human-readable table name for presentation
- * @param _options - View column and focus options for the editor
- * @returns Promise that resolves when the custom editor is opened
- */
-async function openTableInCustomEditor(
-	romUri: vscode.Uri,
-	tableId: string,
-	tableName?: string,
-	options?: {
-		viewColumn?: vscode.ViewColumn;
-		preserveFocus?: boolean;
-		preview?: boolean;
-	},
-): Promise<void> {
-	// Check if definition is already saved in workspace state
-	const savedDefUri = workspaceState?.getRomDefinition(romUri.fsPath);
-
-	if (!savedDefUri) {
-		// No saved definition — resolve it now (may prompt user)
-		if (!workspaceState) {
-			throw new Error("Workspace state not initialized");
-		}
-		const romBytes = new Uint8Array(await vscode.workspace.fs.readFile(romUri));
-		const definition = await resolveRomDefinition(
-			romUri,
-			romBytes,
-			registry,
-			workspaceState,
-		);
-		if (!definition) {
-			// User cancelled definition selection
-			return;
-		}
-	}
-
-	// Create table URI
-	const tableUri = createTableUri(romUri.fsPath, tableId, tableName);
-	console.log(
-		"[DEBUG] openTableInCustomEditor - Created URI:",
-		tableUri.toString(),
-	);
-
-	// Open the table with the custom editor
-	// VSCode will automatically focus existing tab if this table is already open
-	console.log(
-		"[DEBUG] openTableInCustomEditor - viewType: romViewer.tableEditor",
-	);
-	const editorOptions = {
-		preview: options?.preview,
-		preserveFocus: options?.preserveFocus,
-	};
-
-	if (options?.viewColumn !== undefined) {
-		await vscode.commands.executeCommand(
-			"vscode.openWith",
-			tableUri,
-			"romViewer.tableEditor",
-			options.viewColumn,
-			editorOptions,
-		);
-		return;
-	}
-
-	await vscode.commands.executeCommand(
-		"vscode.openWith",
-		tableUri,
-		"romViewer.tableEditor",
-		editorOptions,
-	);
-}
 
 // Status bar functions removed - using VSCode's built-in dirty state indicator instead
 
@@ -538,6 +448,7 @@ export async function activate(
 	}));
 
 	workspaceState = new WorkspaceState(ctx.workspaceState);
+	setTableCommandsContext(registry, workspaceState);
 
 	// Initialize DeviceManager and register transport/protocol
 	deviceManager = new DeviceManagerImpl();
@@ -1493,6 +1404,7 @@ export async function activate(
 				await panel.webview.postMessage(result.message);
 			}
 		},
+		persistedWorkspaceState,
 	);
 	editorProvider = newEditorProvider;
 	// Create a separate delegate for table editor registration.

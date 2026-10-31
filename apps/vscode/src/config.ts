@@ -32,8 +32,11 @@ export interface EcuExplorerConfig {
  * Reads all ecuExplorer.* settings from the VSCode workspace configuration
  * and returns them as a typed EcuExplorerConfig object.
  */
-export function readConfig(): EcuExplorerConfig {
-	const config = vscode.workspace.getConfiguration("ecuExplorer");
+export function readConfig(resource?: vscode.Uri): EcuExplorerConfig {
+	const config = vscode.workspace.getConfiguration(
+		"ecuExplorer",
+		resource ?? vscode.workspace.workspaceFolders?.[0]?.uri ?? null,
+	);
 	return {
 		definitions: {
 			paths: config.get<string[]>("definitions.paths", []),

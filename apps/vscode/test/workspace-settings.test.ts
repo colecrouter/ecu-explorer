@@ -431,6 +431,41 @@ describe("Workspace Settings", () => {
 	});
 
 	describe("readConfig()", () => {
+		it("reads folder-level definitions and logs from a saved workspace", () => {
+			const uri = vscode.Uri.file("/ECU-Workspace");
+			const folders = vi
+				.spyOn(vscode.workspace, "workspaceFolders", "get")
+				.mockReturnValue([{ uri, name: "ECU Workspace", index: 0 }]);
+			try {
+				vi.mocked(vscode.workspace.getConfiguration).mockImplementation(
+					(_section, resource) =>
+						resource === uri
+							? createMappedConfigurationMock({
+									"definitions.paths": ["Definitions"],
+									logsFolder: "Logs",
+								})
+							: createDefaultingConfigurationMock(),
+				);
+				const config = readConfig();
+				expect(config.definitions.paths).toEqual(["Definitions"]);
+				expect(config.logsFolder).toBe("Logs");
+			} finally {
+				folders.mockRestore();
+			}
+		});
+
+		it("uses an explicit resource when reading another workspace folder", () => {
+			const uri = vscode.Uri.file("/Other-Workspace/rom.bin");
+			vi.mocked(vscode.workspace.getConfiguration).mockImplementation(
+				(_section, resource) =>
+					resource === uri
+						? createMappedConfigurationMock({
+								"definitions.paths": ["OtherDefinitions"],
+							})
+						: createDefaultingConfigurationMock(),
+			);
+			expect(readConfig(uri).definitions.paths).toEqual(["OtherDefinitions"]);
+		});
 		it("returns correct defaults when no settings are configured", () => {
 			vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
 				createDefaultingConfigurationMock(),
@@ -492,6 +527,7 @@ describe("Workspace Settings", () => {
 
 			expect(vscode.workspace.getConfiguration).toHaveBeenCalledWith(
 				"ecuExplorer",
+				vscode.workspace.workspaceFolders?.[0]?.uri ?? null,
 			);
 		});
 	});

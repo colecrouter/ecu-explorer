@@ -304,3 +304,37 @@ For multi-root workspaces, settings are read from the first workspace folder (`w
 14. Relative paths in `ecuExplorer.definitions.paths` and `ecuExplorer.definitions.ecuflash.paths` are resolved relative to the workspace root, not the extension install directory.
 15. Absolute paths in any path setting are used as-is without modification.
 16. When no workspace folder is open, relative paths in settings are ignored and only absolute paths are used.
+
+
+## Linked definition folders and first-open discovery (2026-10-31)
+
+`ecuExplorer.definitions.paths` is consulted on the first ROM-specific discovery
+call, including when a configured directory is a symbolic link to OneDrive.
+No earlier global discovery call is required to populate the definition cache.
+For example, a workspace can link `Definitions/` to shared ECUFlash metadata
+and set `"ecuExplorer.definitions.paths": ["Definitions"]`.
+
+Include lookup resolves each search root before traversing broader roots.
+Sibling aliases (such as `56890013` referencing
+`56890013 2011 USDM Lancer Evolution X 5MT.xml`) and XML IDs are resolved
+locally without eagerly indexing the entire workspace/home ancestor tree.
+Explicit configured roots precede broader automatic ancestor fallbacks.
+Relative includes, case-insensitive filenames, and recursive include chains
+remain supported.
+
+Regression coverage:
+[`ecuflash-discovery-scope.test.ts`](../packages/definitions/ecuflash/test/ecuflash-discovery-scope.test.ts).
+The linked `ECU-Workspace` calibration was checked through both manual-definition
+and automatic-match CLI ROM loading; each resolved definition `56890313` and
+reported a valid checksum.
+
+Settings reads use the workspace-folder URI (or an explicitly supplied resource),
+so folder-level `.vscode/settings.json` values also apply when opening a saved
+`.code-workspace` file. The MCP server uses the same folder scope.
+
+The ROM editor, table commands, and table filesystem share one `WorkspaceState`
+instance. A definition selected while opening a ROM is immediately available to
+table commands, and table URIs carry that definition identity when reopened.
+Regression coverage includes folder settings and the ROM-to-table flow in
+[`workspace-settings.test.ts`](../apps/vscode/test/workspace-settings.test.ts) and
+[`table-open-definition-identity.test.ts`](../apps/vscode/test/table-open-definition-identity.test.ts).

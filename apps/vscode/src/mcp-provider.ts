@@ -40,7 +40,10 @@ export function registerMcpProvider(ctx: vscode.ExtensionContext): void {
 				};
 
 				// Read definition paths from extension settings
-				const config = vscode.workspace.getConfiguration("ecuExplorer");
+				const config = vscode.workspace.getConfiguration(
+					"ecuExplorer",
+					vscode.workspace.workspaceFolders?.[0]?.uri ?? null,
+				);
 				const definitionPaths: string[] = [
 					...(config.get<string[]>("definitions.paths") ?? []),
 					...(config.get<string[]>("definitions.ecuflash.paths") ?? []),

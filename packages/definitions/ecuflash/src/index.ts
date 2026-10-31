@@ -874,7 +874,6 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 
 	private cachedDefinitionUris: string[] | null = null;
 	private additionalSearchPaths: string[] = [];
-	private includeAliasIndex: Map<string, string> | null = null;
 
 	/**
 	 * Create a new EcuFlashProvider
@@ -890,7 +889,6 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 	 */
 	invalidateCache(): void {
 		this.cachedDefinitionUris = null;
-		this.includeAliasIndex = null;
 	}
 
 	/**
@@ -898,7 +896,6 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 	 */
 	dispose(): void {
 		this.cachedDefinitionUris = null;
-		this.includeAliasIndex = null;
 	}
 
 	async discoverDefinitionUris(romUri?: string): Promise<string[]> {
@@ -974,10 +971,10 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 			}
 		}
 
-		// Also include cached definitions from default paths
-		if (this.cachedDefinitionUris) {
-			allFiles.push(...this.cachedDefinitionUris.map(uriToFsPath));
-		}
+		// Include configured roots on the first ROM open, without requiring a
+		// previous global discovery call to warm the cache.
+		const configuredDefinitions = await this.discoverDefinitionUris();
+		allFiles.push(...configuredDefinitions.map(uriToFsPath));
 
 		// Remove duplicates and convert to URIs
 		const uniqueFiles = [...new Set(allFiles)];
@@ -1102,8 +1099,11 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 		}
 
 		const searchRoots = [
-			...parentDirectories,
-			...this.additionalSearchPaths,
+			parentDirectories[0] ?? path.dirname(rootDefinitionPath),
+			...this.additionalSearchPaths.filter(
+				(root) => !parentDirectories.includes(path.resolve(root)),
+			),
+			...parentDirectories.slice(1),
 			expandWindowsEnv(DEFAULT_WIN_DIR),
 		]
 			.map((p) => path.resolve(p))
@@ -1116,38 +1116,6 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 		const recursiveFileCache = new Map<string, string[]>();
 		const includeXmlIdLookupCache = new Map<string, string | null>();
 		const fileXmlIdCache = new Map<string, string | null>();
-
-		const getIncludeAliasIndex = async (): Promise<Map<string, string>> => {
-			if (this.includeAliasIndex) return this.includeAliasIndex;
-			const index = new Map<string, string>();
-			for (const root of searchRoots) {
-				const files = await recursiveXmlFilesForRoot(root);
-				for (const file of files) {
-					const baseName = path.basename(file, ".xml");
-					const normalizedBase = normalizeLookupToken(baseName);
-					if (normalizedBase && !index.has(normalizedBase)) {
-						index.set(normalizedBase, file);
-					}
-					const dashed = baseName.match(/^(\d{8})\b/);
-					if (dashed) {
-						const shortId = dashed[1];
-						if (!shortId) continue;
-						const normalizedShort = normalizeLookupToken(shortId);
-						if (normalizedShort && !index.has(normalizedShort)) {
-							index.set(normalizedShort, file);
-						}
-					}
-					const fileXmlId = await readRomXmlId(file);
-					if (!fileXmlId) continue;
-					const normalizedXmlId = normalizeLookupToken(fileXmlId);
-					if (normalizedXmlId && !index.has(normalizedXmlId)) {
-						index.set(normalizedXmlId, file);
-					}
-				}
-			}
-			this.includeAliasIndex = index;
-			return index;
-		};
 
 		const includeTokensFrom = (parentRom: Raw): string[] =>
 			asArray((parentRom as Raw).include as string | string[])
@@ -1183,6 +1151,9 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 		): Promise<string> => {
 			const candidates = includePathCandidates(includeToken);
 			const normalizedLookupToken = normalizeLookupToken(includeToken);
+			const lowerBasenames = new Set(
+				candidates.map((candidate) => path.basename(candidate).toLowerCase()),
+			);
 
 			for (const candidate of candidates) {
 				const siblingCandidate = path.resolve(
@@ -1194,62 +1165,46 @@ export class EcuFlashProvider implements ROMDefinitionProvider {
 				}
 			}
 
-			for (const root of searchRoots) {
-				for (const candidate of candidates) {
-					const rootedCandidate = path.resolve(root, candidate);
-					if (await fileExists(rootedCandidate)) {
-						return rootedCandidate;
-					}
-				}
-			}
-
-			const includeAliasIndex = await getIncludeAliasIndex();
-			const aliased = includeAliasIndex.get(normalizedLookupToken);
-			if (aliased && (await fileExists(aliased))) {
-				includeXmlIdLookupCache.set(normalizedLookupToken, aliased);
-				return aliased;
-			}
-
 			if (includeXmlIdLookupCache.has(normalizedLookupToken)) {
 				const cachedPath = includeXmlIdLookupCache.get(normalizedLookupToken);
-				if (cachedPath && (await fileExists(cachedPath))) {
-					return cachedPath;
-				}
-				if (cachedPath === null) {
+				if (cachedPath && (await fileExists(cachedPath))) return cachedPath;
+				if (cachedPath === null)
 					throw formatIncludeResolutionError(
 						includeToken,
 						parentDefinitionPath,
 						searchRoots,
 					);
-				}
 			}
 
-			const lowerBasenames = new Set(
-				candidates.map((c) => path.basename(c).toLowerCase()),
-			);
-
+			// Resolve each root completely before touching broader ancestor trees.
+			// In particular, a sibling xmlid alias must not scan the user's home.
 			for (const root of searchRoots) {
+				for (const candidate of candidates) {
+					const rootedCandidate = path.resolve(root, candidate);
+					if (await fileExists(rootedCandidate)) return rootedCandidate;
+				}
 				const files = await recursiveXmlFilesForRoot(root);
 				for (const file of files) {
-					const base = path.basename(file).toLowerCase();
-					if (lowerBasenames.has(base)) {
+					const baseName = path.basename(file, path.extname(file));
+					const shortId = baseName.match(/^(\d{8})\b/)?.[1];
+					if (
+						lowerBasenames.has(path.basename(file).toLowerCase()) ||
+						normalizeLookupToken(baseName) === normalizedLookupToken ||
+						(shortId != null &&
+							normalizeLookupToken(shortId) === normalizedLookupToken)
+					) {
+						includeXmlIdLookupCache.set(normalizedLookupToken, file);
 						return file;
 					}
 				}
-			}
-
-			for (const root of searchRoots) {
-				const files = await recursiveXmlFilesForRoot(root);
 				for (const file of files) {
-					let fileXmlId: string | null;
-					if (fileXmlIdCache.has(file)) {
-						fileXmlId = fileXmlIdCache.get(file) ?? null;
-					} else {
-						fileXmlId = (await readRomXmlId(file)) ?? null;
-						fileXmlIdCache.set(file, fileXmlId);
-					}
-					if (!fileXmlId) continue;
-					if (normalizeLookupToken(fileXmlId) === normalizedLookupToken) {
+					if (!fileXmlIdCache.has(file))
+						fileXmlIdCache.set(file, (await readRomXmlId(file)) ?? null);
+					const fileXmlId = fileXmlIdCache.get(file);
+					if (
+						fileXmlId &&
+						normalizeLookupToken(fileXmlId) === normalizedLookupToken
+					) {
 						includeXmlIdLookupCache.set(normalizedLookupToken, file);
 						return file;
 					}

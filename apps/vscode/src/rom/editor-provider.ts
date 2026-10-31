@@ -119,8 +119,11 @@ export class RomEditorProvider
 			document: TableDocument,
 			action: TableDocumentEditAction,
 		) => Promise<void> | void,
+		/** Shared definition selections used by ROM, table, and filesystem entry points. */
+		stateManager?: WorkspaceState,
 	) {
-		this.stateManager = new WorkspaceState(context.workspaceState);
+		this.stateManager =
+			stateManager ?? new WorkspaceState(context.workspaceState);
 		this.contextTracker = new OpenContextTracker();
 	}
 

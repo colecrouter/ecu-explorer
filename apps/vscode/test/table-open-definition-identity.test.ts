@@ -56,6 +56,64 @@ describe("table open definition identity", () => {
 		vi.restoreAllMocks();
 	});
 
+	test("selects a definition once when opening a ROM and then its table", async () => {
+		const romUri = vscode.Uri.file("/ECU-Workspace/ROMs/test.bin");
+		const definitionUri = vscode.Uri.file(
+			"/ECU-Workspace/Definitions/modified.xml",
+		);
+		const definition = createDefinition(definitionUri.toString());
+		const provider: DefinitionProvider = {
+			id: "ecuflash",
+			label: "ECUFlash",
+			canParseDefinitionUri: () => true,
+			discoverDefinitionUris: async () => [],
+			peek: async () => definition,
+			parse: async () => definition,
+		};
+		const registry = { list: () => [provider] };
+		// Commands may have read state before the ROM editor saves its selection.
+		expect(workspaceState.getRomDefinition(romUri.fsPath)).toBeUndefined();
+		const editor = new RomEditorProvider(
+			{
+				workspaceState: mockMemento,
+				extensionUri: vscode.Uri.file("/extension"),
+			} as vscode.ExtensionContext,
+			registry,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			workspaceState,
+		);
+		vi.spyOn(vscode.workspace.fs, "readFile").mockResolvedValue(
+			Uint8Array.of(0x56, 0x89, 0x03, 0x13),
+		);
+		const prompt = vi
+			.spyOn(vscode.window, "showOpenDialog")
+			.mockResolvedValue([definitionUri]);
+		const execute = vi
+			.spyOn(vscode.commands, "executeCommand")
+			.mockResolvedValue(undefined);
+		const context = { backupId: undefined, untitledDocumentData: undefined };
+		const token = {} as vscode.CancellationToken;
+		const rom = await editor.openCustomDocument(romUri, context, token);
+		setTableCommandsContext(registry, workspaceState);
+		await openTableInCustomEditor(
+			romUri,
+			"cyl-fuel-trim-2::fuel::0x1000",
+			"Cylinder Fuel Trim #2",
+		);
+		const tableUri = vscode.Uri.parse(String(execute.mock.calls.at(-1)?.[1]));
+		const table = await editor.openCustomDocument(tableUri, context, token);
+		expect(workspaceState.getRomDefinition(romUri.fsPath)).toBe(
+			definitionUri.toString(),
+		);
+		expect(tableUri.query).toContain(definitionUri.toString());
+		if (!("romDocument" in table)) throw new Error("Expected a table document");
+		expect(table.romDocument).toBe(rom);
+		expect(prompt).toHaveBeenCalledTimes(1);
+	});
+
 	test("`openTableInCustomEditor()` includes the saved definition URI and stable table id in the table URI", async () => {
 		const romUri = vscode.Uri.file("/test/rom.hex");
 		workspaceState.saveRomDefinition(
