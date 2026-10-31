@@ -46,7 +46,8 @@ int main(void) {
         uint32_t registers[24], before[24];
         for (int r = 0; r < 24; ++r) registers[r] = word();
         require(registers[21] == entry && registers[14] == 0x8000 &&
-                registers[15] == 0x30400, "invalid entry/return/stack seed");
+                registers[15] >= 0x30000 && registers[15] <= 0x30400 &&
+                (registers[15] & 3U) == 0, "invalid entry/return/stack seed");
         unsigned sizes[3] = {code_size, 4096, 1024};
         uint32_t bases[3] = {0x1000, 0x20000, 0x30000};
         unsigned char code[5117], data[4096], stack[1024];

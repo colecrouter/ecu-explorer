@@ -51,6 +51,16 @@ def corpus(symbols, code):
     request("null-output", output=0)
     add("unmapped-read-control", "evox_crc32", [0xdead0000, 1], status="fault")
     add("instruction-limit-control", "evox_offline_entry", [], status="limit", limit=8)
+    if "evox_ram_entry" in symbols:
+        for variant in range(2):
+            add(f"startup-dirty-bss-{variant}", "evox_ram_entry", [], status="limit", limit=1500)
+            case = cases[-1]
+            case["seed"][15] = SP - 256
+            memory = bytearray(case["data"])
+            memory[:32] = bytes(32)
+            memory[32:36] = b"BOOT"
+            case["expected_memory"][1] = memory.hex()
+            case["park"] = symbols["evox_startup_park"]
     return cases
 
 
@@ -64,8 +74,12 @@ def check(case, row, index):
         raise ValueError(f'{case["name"]}: input registers not established')
     if row["memory"] != case["expected_memory"]:
         raise ValueError(f'{case["name"]}: unexpected memory changes')
-    if row["after"][8:16] != row["before"][8:16]:
+    end = 14 if "park" in case else 16
+    if row["after"][8:end] != row["before"][8:end]:
         raise ValueError(f'{case["name"]}: callee-preserved register changed')
+    if "park" in case:
+        if row["after"][15] != SP or row["after"][21] != case["park"]:
+            raise ValueError("startup did not establish stack and park after C main")
     if case["status"] == "return":
         if row["after"][21] != RETURN or row["after"][0] != case["result"]:
             raise ValueError(f'{case["name"]}: incorrect result/return')

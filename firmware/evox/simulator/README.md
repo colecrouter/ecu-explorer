@@ -42,7 +42,7 @@ Each case deletes default simulator memory and maps only:
 
 - Exact linked code bytes at `0x1000`.
 - 4096 bytes of sentinel-filled data at `0x20000` (odd input pointer).
-- 1024 bytes of sentinel-filled stack at `0x30000`, with aligned SP `0x30400`.
+- 1024 bytes of sentinel-filled stack at `0x30000`, with aligned SP `0x30400` (startup cases deliberately begin at `0x30300`).
 
 Arguments use GNU's r0–r3 ABI. LR points to an unmapped return sentinel `0x8000`;
 execution stops before fetching it. The driver checks single-step stop reasons,
@@ -62,8 +62,16 @@ unexpected output writes. Special registers are snapshotted without claiming
 full interrupt/FPU state equivalence. Current leaf routines use no stack;
 these tests require it to remain unchanged.
 
-Two additional engine controls must stop as expected: an unmapped memory read
+Two engine controls must stop as expected: an unmapped memory read
 faults, and the offline infinite-loop entry exhausts its eight-step budget.
+Two additional startup cases execute `kernel/startup.S` with dirty BSS and an
+incorrect incoming SP. The simulation-only C entry checks BSS then writes a
+marker; the checker requires the new SP, exact cleared region/marker and park PC.
+The startup cases exhaust a finite step budget while parked. Startup is an entry
+boundary, so it does not promise to preserve incoming LR/SP as a C leaf would.
+The production mailbox primitives are linked but not target-executed by this
+corpus. The synthetic startup test main is excluded from the ordinary core build.
+
 Checker failure-injection tests reject changed results, registers, code, data,
 stack, entry seeds, return addresses, fault status and excessive counts. These
 run in normal CI via `npm run firmware:evox:test`; native simulator execution
@@ -79,6 +87,6 @@ including private paths or derived ROM contents.
 ## Limits
 
 This validates finite ordinary-memory executions of the compiled CRC/parser
-functions. It does not validate ECU startup, peripheral behavior, watchdogs,
+functions and startup assembly with a synthetic test main. It does not validate ECU startup, peripheral behavior, watchdogs,
 CAN, flash programming, interrupts, physical RAM allocation or cycle timing.
 The core remains non-uploadable; host behavior and flash capability are unchanged.

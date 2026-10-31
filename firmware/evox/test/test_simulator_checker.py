@@ -21,6 +21,22 @@ class SimulatorChecker(unittest.TestCase):
     def test_valid_snapshot(self):
         check(self.case, self.row, 0)
 
+    def test_startup_requires_owned_stack_and_park(self):
+        case = corpus(dict(evox_crc32=0x1004, evox_parse_read=0x1040,
+                           evox_offline_entry=0x1000, evox_ram_entry=0x1100,
+                           evox_startup_park=0x1120), b"code")[-1]
+        row = dict(id=0, status="limit", steps=case["limit"],
+                   before=case["seed"][:], after=case["seed"][:],
+                   memory=case["expected_memory"][:])
+        row["after"][15] = 0x30400
+        row["after"][21] = case["park"]
+        check(case, row, 0)
+        for register in (15, 21):
+            bad = copy.deepcopy(row)
+            bad["after"][register] ^= 4
+            with self.assertRaises(ValueError):
+                check(case, bad, 0)
+
     def test_rejects_corrupted_observations(self):
         for field in ("result", "register", "code", "data", "stack", "return", "status", "seed", "steps"):
             with self.subTest(field=field):

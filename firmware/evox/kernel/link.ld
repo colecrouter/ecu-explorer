@@ -9,9 +9,12 @@ MEMORY {
 }
 SECTIONS {
     .text : { *(.text*) *(.rodata*) } > CODE
+    .rela.text : { *(.rela.text) }
     .data : { *(.data*) *(.sdata*) } > RAM
     .bss (NOLOAD) : { *(.bss*) *(.sbss*) *(COMMON) } > RAM
     /DISCARD/ : { *(.comment) *(.note*) }
 }
 ASSERT(SIZEOF(.data) == 0, "offline core must not require initialized RAM")
 ASSERT(SIZEOF(.bss) == 0, "offline core must not require BSS initialization")
+
+ASSERT(SIZEOF(.rela.text) == 0, "offline image must not retain relocations")

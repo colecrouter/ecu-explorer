@@ -52,7 +52,7 @@ def execute(args):
     cc1 = Path(run([args.toolchain_bin.resolve() / "m32r-elf-gcc",
                     "-print-prog-name=cc1"]).decode().strip())
     pinned[str(cc1)] = sha(cc1)
-    build(args.toolchain_bin.resolve(), output / "target")
+    build(args.toolchain_bin.resolve(), output / "target", startup_probe=True)
     target_manifest = json.loads((output / "target/manifest.json").read_text())
     for name in ("gcc", "as", "ld", "nm", "objcopy", "objdump", "readelf"):
         path = args.toolchain_bin.resolve() / ("m32r-elf-" + name)
@@ -105,6 +105,7 @@ def execute(args):
                   returned=sum(row["status"] == "return" for row in rows),
                   limit_controls=sum(row["status"] == "limit" for row in rows),
                   fault_controls=sum(row["status"] == "fault" for row in rows),
+                  startup_controls=sum("park" in case for case in cases),
                   max_steps=max(row["steps"] for row in rows), symbols=symbols,
                   target=target_manifest["target"], host_cc_version=run([compiler, "--version"]).decode(),
                   pins=pinned, case_results=[dict(name=case["name"], status=row["status"],

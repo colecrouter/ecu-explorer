@@ -16,7 +16,7 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def build(prefix, output):
+def build(prefix, output, startup_probe=False):
     output.mkdir(parents=True, exist_ok=False)
     commands = []
     tools = {name: prefix / ("m32r-elf-" + name)
@@ -38,13 +38,23 @@ def build(prefix, output):
     for name in ("first", "repeat"):
         work = output / name
         work.mkdir()
-        run("gcc", *FLAGS, "-I", ROOT / "kernel", "-c", ROOT / "kernel/core.c",
-            "-o", work / "core.o")
+        for module in ("core", "can"):
+            run("gcc", *FLAGS, "-I", ROOT / "kernel", "-c", ROOT / "kernel" / (module + ".c"),
+                "-o", work / (module + ".o"))
         run("as", "-m32r", "-EB", ROOT / "kernel/entry.S", "-o", work / "entry.o")
+        extra = []
+        if startup_probe:
+            run("as", "-m32r", "-EB", ROOT / "kernel/startup.S", "-o", work / "startup.o")
+            run("gcc", *FLAGS, "-c", ROOT / "simulator/startup_probe.c",
+                "-o", work / "startup_probe.o")
+            extra = [work / "startup.o", work / "startup_probe.o",
+                     "--defsym=__evox_stack_top=0x30400",
+                     "--defsym=__evox_bss_start=0x20000",
+                     "--defsym=__evox_bss_end=0x20020"]
         elf = work / "core.elf"
         run("ld", "-EB", "--fatal-warnings", "--orphan-handling=error",
             "-T", ROOT / "kernel/link.ld", "-Map", work / "core.map",
-            work / "entry.o", work / "core.o", "-o", elf)
+            work / "entry.o", work / "core.o", work / "can.o", *extra, "-o", elf)
         if run("nm", "-u", elf).strip():
             raise ValueError("unresolved target symbols")
         header = elf.read_bytes()
@@ -60,7 +70,10 @@ def build(prefix, output):
         (work / "disassembly.txt").write_text(run("objdump", "-dr", elf))
         (work / "sections.txt").write_text(run("readelf", "-S", elf))
         stack = []
-        for line in (work / "core.su").read_text().splitlines():
+        stack_reports = (work / "core.su").read_text() + (work / "can.su").read_text()
+        if startup_probe:
+            stack_reports += (work / "startup_probe.su").read_text()
+        for line in stack_reports.splitlines():
             location, size, policy = line.split("\t")
             if policy != "static":
                 raise ValueError("unbounded stack usage")
@@ -72,7 +85,7 @@ def build(prefix, output):
     if results[0] != results[1]:
         raise ValueError("repeat builds differ")
     manifest = dict(schema_version=1, validation="offline static link and repeat build only",
-                    uploadable=False, flags=FLAGS, versions=versions,
+                    uploadable=False, startup_probe=startup_probe, flags=FLAGS, versions=versions,
                     tools={name: sha(path) for name, path in {**tools, "cc1": cc1}.items()},
                     sources={str(path.relative_to(ROOT)): sha(path)
                              for directory in ("kernel", "tools", "test")

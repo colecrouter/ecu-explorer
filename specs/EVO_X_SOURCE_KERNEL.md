@@ -141,3 +141,22 @@ An audited uploadable startup layout remains pending; the current entry is a
 synthetic infinite-loop fixture, not ECU initialization. The next unit is to
 establish startup state, RAM ownership and CAN peripheral requirements before
 implementing the read-only agent. No hardware evidence is claimed.
+
+## Startup/CAN progress (2026-10-31)
+
+The [platform audit](../firmware/evox/platform/STARTUP_CAN.md) identifies the
+inherited stack/CAN environment and traces the external `0x808640` timer/port
+helper to copied factory code. Its likely watchdog role remains an inference;
+RAM allocation and entry-mode/interrupt contracts remain open.
+
+Original bounded CAN0 slot primitives now compile with the core. Sanitized host
+transcripts cover busy/pending TX, ID encoding, RX races, malformed DLC and
+lost/remote frames, preserving caller output on failure. The 808-byte target
+links twice identically without libc/runtime helpers. These tests do not model
+peripherals; compiled mailbox callback behavior has not been executed in the
+simulator. The existing 580-case simulator corpus is rerun against the combined
+image to retain the CRC/parser evidence. Source startup assembly now establishes a linker-supplied stack, clears BSS,
+calls C and parks. Two simulator cases check dirty-BSS initialization, replacing
+an incorrect incoming SP, a C-entry marker and the final park PC. The test main
+is synthetic and excluded from ordinary builds. No uploadable entry or live
+MMIO is wired into the app; actual RAM/CPU-mode/IRQ assumptions remain open.

@@ -41,7 +41,13 @@ Toolchain acquisition and CI provisioning remain follow-up work.
   Failed parsing preserves the output region; it never reads ECU memory.
 - Every other command, including erase/program commands, is rejected.
 
-These functions do not implement authentication, command dispatch, transport or
+The [startup/CAN audit](platform/STARTUP_CAN.md) now records the inherited
+stack, copied factory helper and RAM ownership requirements. Original bounded
+CAN0 mailbox functions are also included: callback-based frame queueing and
+race-checked reception, with host register-access transcript tests. There is
+no live MMIO backend or controller setup yet.
+
+The CRC/parser functions do not implement authentication, command dispatch, transport or
 ROM access. Successful parsing is not authorization to perform a read.
 
 The host harness checks the standard `123456789` CRC vector, empty CRC,
@@ -58,15 +64,19 @@ constraint, not proof of a compatible captured-loader image.
 ## Current evidence and next step
 
 On 2026-10-31 the host sanitizer harness passed. Two M32R links produced identical
-184-byte images, with no undefined symbols and zero compiler-reported stack
-bytes for each current leaf. Image SHA-256:
-`3bb1f58c1497ea4b58cd3ef2295669274a775b59b7562f46b96cf46b3f2b4b64`.
+184-byte core images. With the CAN primitives, two builds produce matching
+808-byte images with no undefined symbols. CRC/parser stack reports remain
+zero; send/receive report 16/52 bytes, excluding callback/caller obligations.
+Image SHA-256:
+`a1c4a472bc5cdf4310100504376a5d7a894f072dc18f1d436d3f7b9712d88d80`.
 
 [GNU M32R simulator execution](simulator/README.md) now passes 578 returning
-calls plus unmapped-memory fault and step-limit controls. Results, output writes,
+calls, two dirty-BSS startup cases, and unmapped-memory fault/step-limit controls. Results, output writes,
 callee-preserved registers and all mapped memory are checked against independent
 contracts; see the [receipt](simulator/validation.json).
 
-The next unit is an audited startup/RAM layout and peripheral investigation for
-a read-only agent. The current synthetic entry remains non-uploadable. No ECU
+The source startup establishes stack/BSS and calls C under a synthetic profile;
+its test main is excluded from the ordinary build. The next unit is to close
+the real startup profile, helper adapter and RAM
+ownership requirements, then add ISO-TP and a live backend for a read-only agent. The current synthetic entry remains non-uploadable. No ECU
 operations have been performed.
