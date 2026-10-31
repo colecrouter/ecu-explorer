@@ -1200,6 +1200,7 @@ export {
 	SID_SECURITY_ACCESS,
 };
 
+export { getEvoXBootstrap } from "./evox-bootstrap.js";
 export type { EvoXKernelArtifacts } from "./evox-kernel.js";
 export {
 	computeKernelSecurityKey,

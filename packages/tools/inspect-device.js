@@ -21,6 +21,7 @@ import {
 } from "../device/dist/index.js";
 import { MitsubishiBootloaderProtocol } from "../device/protocols/mitsubishi-bootloader/dist/index.js";
 import {
+	getEvoXBootstrap,
 	MODE23_PID_DESCRIPTORS,
 	Mut3Protocol,
 	validateEvoXKernelArtifacts,
@@ -1266,10 +1267,8 @@ async function readRomDevice(opts) {
 
 		let protocols = resolveProtocols(opts.protocol);
 		if (opts.bootstrap || opts.kernel) {
-			if (!opts.bootstrap || !opts.kernel)
-				throw new Error(
-					"Provide both --bootstrap and --kernel encoded wire files",
-				);
+			if (!opts.kernel)
+				throw new Error("Provide the --kernel encoded wire file");
 			if (opts.dryRun)
 				throw new Error(
 					"The Evo X kernel read path does not support --dry-run",
@@ -1280,7 +1279,7 @@ async function readRomDevice(opts) {
 			)
 				throw new Error("Kernel files require --protocol mut3");
 			const [bootstrap, kernel] = await Promise.all([
-				readFile(opts.bootstrap),
+				opts.bootstrap ? readFile(opts.bootstrap) : getEvoXBootstrap(),
 				readFile(opts.kernel),
 			]);
 			protocols = [
@@ -1756,8 +1755,8 @@ prog
  * @returns {Promise<void>}
  */
 async function writeRomDevice(opts) {
-	if (!opts.rom || (!opts.resumeKernel && (!opts.bootstrap || !opts.kernel)))
-		throw new Error("write-rom requires --rom, --bootstrap and --kernel files");
+	if (!opts.rom || (!opts.resumeKernel && !opts.kernel))
+		throw new Error("write-rom requires --rom and --kernel files");
 	if (
 		opts.protocol &&
 		!resolveProtocols(opts.protocol).every(
@@ -1772,17 +1771,17 @@ async function writeRomDevice(opts) {
 	const protocol = new Mut3Protocol({
 		resumeKernel: opts.resumeKernel ?? false,
 		loadKernelArtifacts: async () => {
-			if (!opts.bootstrap || !opts.kernel) return undefined;
+			if (!opts.kernel) return undefined;
 			const [bootstrap, kernel] = await Promise.all([
-				readFile(opts.bootstrap),
+				opts.bootstrap ? readFile(opts.bootstrap) : getEvoXBootstrap(),
 				readFile(opts.kernel),
 			]);
 			return { bootstrap, kernel };
 		},
 	});
-	if (!opts.resumeKernel && opts.bootstrap && opts.kernel) {
+	if (!opts.resumeKernel && opts.kernel) {
 		const [bootstrap, kernel] = await Promise.all([
-			readFile(opts.bootstrap),
+			opts.bootstrap ? readFile(opts.bootstrap) : getEvoXBootstrap(),
 			readFile(opts.kernel),
 		]);
 		await validateEvoXKernelArtifacts({ bootstrap, kernel });
@@ -1836,7 +1835,10 @@ prog
 	)
 	.describe("Flash an Evo X ROM or validate staging with --dry-run")
 	.option("--rom", "Complete 1 MiB ROM image with valid mitsucan checksum")
-	.option("--bootstrap", "Encoded 208-byte Evo X V1.09 bootstrap wire file")
+	.option(
+		"--bootstrap",
+		"Optional bootstrap override (defaults to bundled Evo X V1.09 loader)",
+	)
 	.option("--kernel", "Encoded 5117-byte Evo X V1.09 kernel upload wire file")
 	.option(
 		"--dry-run",
@@ -1856,7 +1858,10 @@ prog
 	.describe("Test ROM-read path (with optional dry-run)")
 	.option("--dry-run", "Perform dry run without full ROM read", false)
 	.option("--out", "Write ROM bytes to file path after successful read")
-	.option("--bootstrap", "Encoded 208-byte Evo X V1.09 bootstrap wire file")
+	.option(
+		"--bootstrap",
+		"Optional bootstrap override (defaults to bundled Evo X V1.09 loader)",
+	)
 	.option("--kernel", "Encoded 5117-byte Evo X V1.09 kernel upload wire file")
 	.action((opts) => {
 		readRomDevice({

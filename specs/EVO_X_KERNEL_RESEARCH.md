@@ -11,6 +11,23 @@ The software workflow for [issue #5](https://github.com/colecrouter/ecu-explorer
 is implemented; hardware validation remains in [issue #3](https://github.com/colecrouter/ecu-explorer/issues/3),
 and other flashing variants remain in [issue #10](https://github.com/colecrouter/ecu-explorer/issues/10).
 
+## Bundled bootstrap (2026-10-31)
+
+The captured 208-byte encoded bootstrap is now bundled in
+`packages/device/protocols/mut3/src/evox-bootstrap.ts`, with its original
+SHA-256 validation retained. Each caller receives an independent copy.
+The 5,117-byte kernel is still external and must match the captured V1.09 hash.
+This is the captured loader, not a newly authored replacement.
+
+Set only `ecuExplorer.evoX.kernelPath` in VS Code, or pass `--kernel` to the
+CLI. `bootstrapPath` / `--bootstrap` remain optional overrides and are validated
+against the same captured hash. A bootstrap override without a kernel is rejected.
+Existing examples supplying both files remain valid. Earlier statements below
+that neither artifact is bundled describe the original implementation.
+
+See [source-kernel reuse investigation](EVO_X_SOURCE_KERNEL.md) for the remaining
+work toward a source-built kernel. No hardware validation is implied by bundling.
+
 ## Application implementation (2026-10-13)
 
 Related unresolved GitHub work: [#5 ROM flash/readback](https://github.com/colecrouter/ecu-explorer/issues/5),

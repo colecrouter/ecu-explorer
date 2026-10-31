@@ -5,12 +5,13 @@ import type {
 	RomProgress,
 	WriteOptions,
 } from "@ecu-explorer/device";
+import { getEvoXBootstrap } from "./evox-bootstrap.js";
 import { computeFlashSecurityKey } from "./security.js";
 
-/** Encoded wire images recovered from EcuFlash V1.09 uploads; never bundled with the app. */
+/** Encoded wire images for the captured EcuFlash V1.09 upload profile. */
 export interface EvoXKernelArtifacts {
-	/** 208 bytes, format-01 encoded bootstrap (without the 0x36 service byte). */
-	bootstrap: Uint8Array;
+	/** Optional 208-byte format-01 bootstrap override; defaults to the bundled capture. */
+	bootstrap?: Uint8Array;
 	/** 5117 encoded bytes, retaining all 21 original upload payloads in order. */
 	kernel: Uint8Array;
 }
@@ -89,7 +90,7 @@ export async function validateEvoXKernelArtifacts(
 	for (const [name, image, length, digest] of [
 		[
 			"bootstrap",
-			artifacts.bootstrap,
+			artifacts.bootstrap ?? getEvoXBootstrap(),
 			208,
 			"8d53b034b6ec0a88311e6c55dd037475933c4572b1406b88ae815e9b1db09fc9",
 		],
@@ -135,7 +136,7 @@ export class EvoXKernelSession {
 	): Promise<EvoXKernelSession> {
 		// Copy caller-owned arrays so their contents cannot change after integrity checks.
 		const images = {
-			bootstrap: new Uint8Array(artifacts.bootstrap),
+			bootstrap: new Uint8Array(artifacts.bootstrap ?? getEvoXBootstrap()),
 			kernel: new Uint8Array(artifacts.kernel),
 		};
 		await validateEvoXKernelArtifacts(images);

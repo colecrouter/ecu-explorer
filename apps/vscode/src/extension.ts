@@ -555,15 +555,17 @@ export async function activate(
 				const bootstrapPath = config.get<string>("bootstrapPath", "");
 				const kernelPath = config.get<string>("kernelPath", "");
 				if (!bootstrapPath && !kernelPath) return undefined;
-				if (!bootstrapPath || !kernelPath)
+				if (!kernelPath)
 					throw new Error(
-						"Set both Evo X bootstrapPath and kernelPath to the captured encoded wire files",
+						"Set Evo X kernelPath to the captured encoded kernel file",
 					);
 				const [bootstrap, kernel] = await Promise.all([
-					vscode.workspace.fs.readFile(vscode.Uri.file(bootstrapPath)),
+					bootstrapPath
+						? vscode.workspace.fs.readFile(vscode.Uri.file(bootstrapPath))
+						: undefined,
 					vscode.workspace.fs.readFile(vscode.Uri.file(kernelPath)),
 				]);
-				return { bootstrap, kernel };
+				return bootstrap ? { bootstrap, kernel } : { kernel };
 			},
 		}),
 	);

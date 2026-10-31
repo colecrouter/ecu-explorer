@@ -6,7 +6,7 @@ const hex = (value: string) =>
 	Uint8Array.from(value.match(/../g) ?? [], (byte) =>
 		Number.parseInt(byte, 16),
 	);
-export const artifacts: EvoXKernelArtifacts = {
+export const artifacts: Required<EvoXKernelArtifacts> = {
 	bootstrap: new Uint8Array(208),
 	kernel: new Uint8Array(5117),
 };

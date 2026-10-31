@@ -367,7 +367,7 @@
 					"type": "string",
 					"default": "",
 					"scope": "machine",
-					"description": "Absolute path to the 208-byte encoded Evo X V1.09 bootstrap wire file. Set with kernelPath to use kernel upload for ROM reads and writes."
+					"description": "Optional absolute path to a 208-byte encoded Evo X V1.09 bootstrap override. Leave empty to use the bundled loader."
 				},
 				"ecuExplorer.evoX.kernelPath": {
 					"type": "string",
