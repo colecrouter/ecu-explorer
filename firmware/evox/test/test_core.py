@@ -9,6 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CoreContracts(unittest.TestCase):
+    def test_isotp_contracts(self):
+        self.compile_contract("isotp")
+
     def test_can_contracts(self):
         self.compile_contract("can")
 

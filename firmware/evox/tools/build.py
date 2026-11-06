@@ -38,7 +38,7 @@ def build(prefix, output, startup_probe=False):
     for name in ("first", "repeat"):
         work = output / name
         work.mkdir()
-        for module in ("core", "can"):
+        for module in ("core", "can", "isotp"):
             run("gcc", *FLAGS, "-I", ROOT / "kernel", "-c", ROOT / "kernel" / (module + ".c"),
                 "-o", work / (module + ".o"))
         run("as", "-m32r", "-EB", ROOT / "kernel/entry.S", "-o", work / "entry.o")
@@ -47,14 +47,16 @@ def build(prefix, output, startup_probe=False):
             run("as", "-m32r", "-EB", ROOT / "kernel/startup.S", "-o", work / "startup.o")
             run("gcc", *FLAGS, "-c", ROOT / "simulator/startup_probe.c",
                 "-o", work / "startup_probe.o")
-            extra = [work / "startup.o", work / "startup_probe.o",
+            run("gcc", *FLAGS, "-c", ROOT / "simulator/isotp_probe.c",
+                "-o", work / "isotp_probe.o")
+            extra = [work / "startup.o", work / "startup_probe.o", work / "isotp_probe.o",
                      "--defsym=__evox_stack_top=0x30400",
                      "--defsym=__evox_bss_start=0x20000",
                      "--defsym=__evox_bss_end=0x20020"]
         elf = work / "core.elf"
         run("ld", "-EB", "--fatal-warnings", "--orphan-handling=error",
             "-T", ROOT / "kernel/link.ld", "-Map", work / "core.map",
-            work / "entry.o", work / "core.o", work / "can.o", *extra, "-o", elf)
+            work / "entry.o", work / "core.o", work / "can.o", work / "isotp.o", *extra, "-o", elf)
         if run("nm", "-u", elf).strip():
             raise ValueError("unresolved target symbols")
         header = elf.read_bytes()
@@ -70,9 +72,9 @@ def build(prefix, output, startup_probe=False):
         (work / "disassembly.txt").write_text(run("objdump", "-dr", elf))
         (work / "sections.txt").write_text(run("readelf", "-S", elf))
         stack = []
-        stack_reports = (work / "core.su").read_text() + (work / "can.su").read_text()
+        stack_reports = "".join((work / (module + ".su")).read_text() for module in ("core", "can", "isotp"))
         if startup_probe:
-            stack_reports += (work / "startup_probe.su").read_text()
+            stack_reports += (work / "startup_probe.su").read_text() + (work / "isotp_probe.su").read_text()
         for line in stack_reports.splitlines():
             location, size, policy = line.split("\t")
             if policy != "static":

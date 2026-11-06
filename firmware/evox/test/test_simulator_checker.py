@@ -37,6 +37,22 @@ class SimulatorChecker(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check(case, bad, 0)
 
+    def test_mutable_context_keeps_surrounding_guards(self):
+        case = copy.deepcopy(self.case)
+        case["mutable"] = [(1, 256, 1356), (2, 768, 1024)]
+        row = copy.deepcopy(self.row)
+        data = bytearray.fromhex(row["memory"][1])
+        data[256] ^= 1
+        row["memory"][1] = data.hex()
+        check(case, row, 0)
+        for segment, offset in ((0, 0), (1, 255), (1, 1356), (2, 767)):
+            bad = copy.deepcopy(row)
+            data = bytearray.fromhex(bad["memory"][segment])
+            data[offset] ^= 1
+            bad["memory"][segment] = data.hex()
+            with self.assertRaises(ValueError):
+                check(case, bad, 0)
+
     def test_rejects_corrupted_observations(self):
         for field in ("result", "register", "code", "data", "stack", "return", "status", "seed", "steps"):
             with self.subTest(field=field):

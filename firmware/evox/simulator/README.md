@@ -84,9 +84,20 @@ packet and snapshot hashes are checked and retained. The receipt in
 [validation.json](validation.json) summarizes the accepted local run without
 including private paths or derived ROM contents.
 
+## ISO-TP probes (2026-11-05)
+
+Three additional simulation-only probes execute the compiled ISO-TP module:
+public captured-version TX, maximum-size RX with sequence wrap, and block-size-one
+TX with 100-microsecond separation. The context may change within the data arena
+at offsets 256–1355, and stack bytes may change within the top 256 bytes. Result,
+callee-preserved registers, code and all surrounding memory guards remain checked.
+Internal C contracts check frames and published payloads; there is no assertion
+of exact context/padding/stack bytes within those permitted ranges. These probes
+are excluded from the ordinary build. See [ISO-TP evidence](../platform/ISOTP.md).
+
 ## Limits
 
 This validates finite ordinary-memory executions of the compiled CRC/parser
-functions and startup assembly with a synthetic test main. It does not validate ECU startup, peripheral behavior, watchdogs,
+functions, ISO-TP contracts, and startup assembly with synthetic test entries. It does not validate ECU startup, peripheral behavior, watchdogs,
 CAN, flash programming, interrupts, physical RAM allocation or cycle timing.
 The core remains non-uploadable; host behavior and flash capability are unchanged.

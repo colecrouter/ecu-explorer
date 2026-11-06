@@ -160,3 +160,15 @@ calls C and parks. Two simulator cases check dirty-BSS initialization, replacing
 an incorrect incoming SP, a C-entry marker and the final park PC. The test main
 is synthetic and excluded from ordinary builds. No uploadable entry or live
 MMIO is wired into the app; actual RAM/CPU-mode/IRQ assumptions remain open.
+
+## ISO-TP progress (2026-11-05)
+
+The [ISO-TP transport](../firmware/evox/platform/ISOTP.md) now supports Classic
+CAN normal addressing on `7e0/7e8`, half duplex and 1–1,032-byte PDUs. It provides
+framing/reassembly, flow control, modulo-16 sequencing, bounded WAIT handling,
+peer block size/STmin, fixed deadlines and explicit CAN-completion acknowledgement.
+Host tests cover every supported PDU length, the public captured version
+exchange, malformed/interrupted transfers and pacing/time wrap. Three native
+M32R probes cover the captured TX, max-size RX and paced block-size-one TX.
+The expanded ordinary image is 2,404 bytes. The dispatcher, live completion-aware
+CAN adapter, RAM reservation and time-base/startup profile remain pending.

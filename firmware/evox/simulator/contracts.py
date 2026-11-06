@@ -61,6 +61,10 @@ def corpus(symbols, code):
             memory[32:36] = b"BOOT"
             case["expected_memory"][1] = memory.hex()
             case["park"] = symbols["evox_startup_park"]
+    if "evox_isotp_probe" in symbols:
+        for scenario in range(3):
+            add(f"isotp-probe-{scenario}", "evox_isotp_probe", [scenario, DATA + 256], expected=1)
+            cases[-1]["mutable"] = [(1, 256, 1356), (2, 768, 1024)]
     return cases
 
 
@@ -72,8 +76,17 @@ def check(case, row, index):
         raise ValueError(f'{case["name"]}: invalid instruction count')
     if row["before"][:16] != case["seed"][:16] or row["before"][21] != case["entry"]:
         raise ValueError(f'{case["name"]}: input registers not established')
-    if row["memory"] != case["expected_memory"]:
-        raise ValueError(f'{case["name"]}: unexpected memory changes')
+    if len(row["memory"]) != len(case["expected_memory"]):
+        raise ValueError("missing memory snapshots")
+    for segment, (actual, expected) in enumerate(zip(row["memory"], case["expected_memory"])):
+        got, wanted = bytearray.fromhex(actual), bytearray.fromhex(expected)
+        if len(got) != len(wanted):
+            raise ValueError("incorrect snapshot size")
+        for index_segment, begin, end in case.get("mutable", []):
+            if segment == index_segment:
+                got[begin:end] = wanted[begin:end]
+        if got != wanted:
+            raise ValueError(f'{case["name"]}: unexpected memory changes')
     end = 14 if "park" in case else 16
     if row["after"][8:end] != row["before"][8:end]:
         raise ValueError(f'{case["name"]}: callee-preserved register changed')

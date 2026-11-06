@@ -129,8 +129,9 @@ Next implementation units:
    ownership; add a dedicated startup/linker layout under that explicit profile.
 2. Audit timer/port servicing sufficiently to retain a validated helper adapter
    or replace it. Do not classify unidentified RAM or peripherals as disposable.
-3. Add ISO-TP assembly/segmentation, flow-control, sequence/error handling and
-   deadlines on top of the bounded frame API, with capture-backed transcripts.
+3. Connect the [implemented ISO-TP layer](ISOTP.md) to the read-only dispatcher.
+   Framing, flow control, sequence/error handling and deadlines have offline
+   host and target-probe evidence; the live adapter remains pending.
 4. Supply the volatile MMIO backend, verify inherited CAN configuration and add
    transmit completion/error handling before wiring any startup loop.
 5. Validate startup and CAN on the designated bench separately from host and

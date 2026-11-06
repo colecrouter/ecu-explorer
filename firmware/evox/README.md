@@ -63,20 +63,22 @@ constraint, not proof of a compatible captured-loader image.
 
 ## Current evidence and next step
 
-On 2026-10-31 the host sanitizer harness passed. Two M32R links produced identical
-184-byte core images. With the CAN primitives, two builds produce matching
-808-byte images with no undefined symbols. CRC/parser stack reports remain
-zero; send/receive report 16/52 bytes, excluding callback/caller obligations.
-Image SHA-256:
-`a1c4a472bc5cdf4310100504376a5d7a894f072dc18f1d436d3f7b9712d88d80`.
+The [ISO-TP layer](platform/ISOTP.md) now adds bounded framing/reassembly,
+flow control, sequence checks and timeouts over the CAN frame API. Host tests
+cover all 1–1,032-byte PDU lengths and a frozen captured version exchange.
 
-[GNU M32R simulator execution](simulator/README.md) now passes 578 returning
-calls, two dirty-BSS startup cases, and unmapped-memory fault/step-limit controls. Results, output writes,
-callee-preserved registers and all mapped memory are checked against independent
-contracts; see the [receipt](simulator/validation.json).
+Two ordinary M32R links produce identical 2,404-byte images with no undefined
+symbols or initialized data/BSS. CRC/parser and CAN evidence is retained in the
+expanded image. Target stack reports remain bounded; callback/caller obligations
+are separate from per-function reports.
+
+[GNU M32R simulator execution](simulator/README.md) includes the prior 582 cases
+and three compiled ISO-TP probes. Its [receipt](simulator/validation.json) records
+source/tool/image hashes and the finite execution boundary. ISO-TP context and
+a bounded stack window are mutable, with code and surrounding guards checked.
 
 The source startup establishes stack/BSS and calls C under a synthetic profile;
 its test main is excluded from the ordinary build. The next unit is to close
 the real startup profile, helper adapter and RAM
-ownership requirements, then add ISO-TP and a live backend for a read-only agent. The current synthetic entry remains non-uploadable. No ECU
+ownership requirements, then connect the dispatcher and a live backend for a read-only agent. The current synthetic entry remains non-uploadable. No ECU
 operations have been performed.
