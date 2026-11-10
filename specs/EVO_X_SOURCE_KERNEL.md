@@ -216,3 +216,14 @@ counter wrap boundaries. The body uses no stack, preserves r8–r15 and updates
 one output bit and two halfwords when due. Electrical watchdog identity,
 state initialization, timer calibration and competing-writer exclusion remain
 unresolved; no hardware profile or adapter is enabled. Related: #3, #10.
+
+### Factory entry audit (2026-11-10)
+
+[FACTORY_ENTRY.md](../firmware/evox/platform/FACTORY_ENTRY.md) traces the factory
+copy/setup path, descriptor-based deadline/counter handoff and conditional call
+into the captured bootstrap. 72 passing GNU instruction cases plus one bounded
+flash-not-ready control use inert SFR storage. Timer setup derives BCLK/80
+(4 microseconds only if BCLK is 20 MHz); P61 data/direction writes are located.
+Inherited flash-control writes precede bootstrap entry, so source startup still
+needs a flash-state audit. Hardware timing, ownership and wiring remain open.
+Related: #3, #10.

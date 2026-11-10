@@ -104,10 +104,9 @@ steps are not hardware cycles or a worst-case execution-time measurement.
 ## What remains before admission
 
 1. Verify the copied helper bytes and inherited deadline/counter on the actual
-   handoff path. Literal-address searches found the helper's RAM-state accesses
-   and descriptor values, but do not establish all computed-pointer writers or
-   state initialization. Neither captured upload stage initializes these two
-   halfwords in its inspected body.
+   handoff path. The subsequent [factory-entry audit](FACTORY_ENTRY.md) traces
+   descriptor-based initialization and the conditional path to the bootstrap;
+   full computed-pointer writer coverage and physical entry state remain open.
 2. Identify port/pin direction, multiplexing, physical wiring and external
    watchdog requirements. Timed GPIO servicing supports the watchdog hypothesis;
    the routine itself cannot establish it.
@@ -117,7 +116,7 @@ steps are not hardware cycles or a worst-case execution-time measurement.
 4. Exclude competing RAM/port writers, DMA and exceptions; verify an adapter and
    its scheduling in the complete operating build before bench validation.
 
-The next useful offline investigation is tracing the factory download-entry
-path that copies this helper and establishes its timer, port and state. Bench
-work then needs a logic-analyzer trace of the output and an independent timer
+The [factory-entry investigation](FACTORY_ENTRY.md) now establishes the bounded
+copy/setup/state bridge. The next offline gap is inherited flash-control state.
+Bench work also needs a logic-analyzer trace of the output and an independent timer
 reference; CAN captures alone cannot prove those electrical timing contracts.

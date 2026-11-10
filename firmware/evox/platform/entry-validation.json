@@ -1,0 +1,33 @@
+{
+	"cases": 73,
+	"engine": "GNU GDB 16.3 M32R simulator",
+	"model": "m32r/d",
+	"rom_sha256": "409e23912db9e445a72f6f7aff25c393549cc07eb0a649cf663fcbf07fda59af",
+	"artifacts": {
+		"runner.c": "1ac181b751c961b941acd7dc6c37f23987c7c8308d888bfa21af6824e83b0f76",
+		"runner": "616a282df5ff756b21dba700211dbc038ed44c750fd021eabffab8fad6ca27f0",
+		"probe.py": "7f6dd53d361dc29dedef6a217edd8a6da716e44ebc8ea260445ca2ce8c4ad58c",
+		"input.packet": "5a520f14c58656f3ba69de33b28464565d894ebfe042c4206b37fde9a630301e",
+		"snapshots.jsonl": "d5ab96f5123b9348463beea58a19683412036ab2fabaac51137874fadf8859a8"
+	},
+	"limitations": "Unmodified captured ROM plus bootstrap in inert synthetic ROM/RAM/SFR storage. Selected entry slices and conditional bootstrap-boundary path; no real peripherals or hardware timing. Flash-ready status is seeded, not emulated.",
+	"date": "2026-11-10",
+	"validation": "finite original-instruction execution in inert memory; no ECU hardware",
+	"passing_cases": 72,
+	"limit_controls": 1,
+	"families": [
+		"bootstrap-boundary",
+		"common-clock",
+		"copy",
+		"flash-not-ready-control",
+		"full-timer-port",
+		"general-init",
+		"handoff-state",
+		"initial-deadline",
+		"loop-deadlines",
+		"timer-port"
+	],
+	"max_steps": 26290,
+	"bootstrap_sha256": "6f93d303a13138ea267519a14428f91821e6ed65e49f9423397bb15990f44092",
+	"postconditions": "Selected register/memory postconditions for entry slices; copy family also compares all ROM/SFR/RAM except copied regions and bounded stack scratch."
+}
