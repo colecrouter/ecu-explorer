@@ -24,4 +24,13 @@ int evox_can_try_send(const struct evox_can_io *io, const struct evox_can_frame 
  * Output is unchanged unless 1 is returned; the caller retries after a discard.
  */
 int evox_can_try_receive(const struct evox_can_io *io, struct evox_can_frame *frame);
+/* Owned in-flight slot only: 1 consumes completion once, 0 remains pending,
+ * -1 invalid IO. An idle/aborted slot without completion does not imply success;
+ * the adapter's deadline bounds that case. */
+int evox_can_finish_send(const struct evox_can_io *io);
+/* Recovery only: request TX abort and disable RX; return 0 while either slot
+ * is active, 1 after clearing TX/stale RX and rearming RX, -1 invalid IO.
+ * Repeated calls are bounded; preserve the existing slot filters/configuration.
+ */
+int evox_can_reset_slots(const struct evox_can_io *io);
 #endif

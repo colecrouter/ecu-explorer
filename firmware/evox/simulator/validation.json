@@ -3,34 +3,41 @@
 	"validation": "finite compiled M32R execution; no ECU hardware",
 	"engine": "GNU GDB 16.3 M32R simulator",
 	"model": "m32r/d",
-	"cases": 585,
-	"returned": 581,
+	"cases": 594,
+	"returned": 590,
 	"limit_controls": 3,
 	"fault_controls": 1,
 	"startup_controls": 2,
-	"max_steps": 77860,
+	"max_steps": 84116,
 	"symbols": {
 		"evox_offline_entry": 4096,
 		"evox_crc32": 4100,
 		"evox_parse_read": 4164,
-		"evox_can_try_send": 4280,
-		"evox_can_try_receive": 4540,
-		"evox_isotp_init": 4992,
-		"evox_isotp_tick": 5040,
-		"evox_isotp_send": 5116,
-		"evox_isotp_release": 5212,
-		"evox_isotp_poll": 5240,
-		"evox_isotp_sent": 5616,
-		"evox_isotp_frame": 5808,
-		"evox_ram_entry": 6500,
-		"evox_startup_park": 6532,
-		"evox_agent_main": 6536,
-		"evox_isotp_probe": 6584
+		"evox_can_try_send": 4312,
+		"evox_can_try_receive": 4572,
+		"evox_can_finish_send": 4936,
+		"evox_can_reset_slots": 5020,
+		"evox_isotp_init": 5256,
+		"evox_isotp_tick": 5304,
+		"evox_isotp_send": 5380,
+		"evox_isotp_release": 5476,
+		"evox_isotp_poll": 5504,
+		"evox_isotp_sent": 5880,
+		"evox_isotp_frame": 6072,
+		"evox_dispatch": 6764,
+		"evox_agent_init": 7288,
+		"evox_agent_recover": 7320,
+		"evox_agent_step": 7396,
+		"evox_test_rom_read": 7768,
+		"evox_ram_entry": 7788,
+		"evox_startup_park": 7820,
+		"evox_agent_main": 7824,
+		"evox_isotp_probe": 7872
 	},
 	"target": {
-		"elf_sha256": "9f008b57a333f127db0de33cad135f6b499df2d01cf00ac1a3760ff8a38717b8",
-		"binary_sha256": "2d5dfe4b7894cadb3708f289feca98dadd2dfcc03414d3ad53727085f7794d77",
-		"code_bytes": 3556,
+		"elf_sha256": "8c780a57404a86c96ab1373efdf156a40857b0383a694a10323840fe816179b5",
+		"binary_sha256": "2b291700567dbac36d7183679b09ecde4ee0d48fe0dc95f70b3e2acf2ff9c1f9",
+		"code_bytes": 4884,
 		"stack": [
 			{
 				"function": "evox_crc32",
@@ -41,12 +48,24 @@
 				"bytes": 0
 			},
 			{
+				"function": "valid_io",
+				"bytes": 0
+			},
+			{
 				"function": "evox_can_try_send",
 				"bytes": 16
 			},
 			{
 				"function": "evox_can_try_receive",
 				"bytes": 52
+			},
+			{
+				"function": "evox_can_finish_send",
+				"bytes": 8
+			},
+			{
+				"function": "evox_can_reset_slots",
+				"bytes": 12
 			},
 			{
 				"function": "prepare",
@@ -83,6 +102,22 @@
 			{
 				"function": "evox_isotp_frame",
 				"bytes": 20
+			},
+			{
+				"function": "evox_dispatch",
+				"bytes": 28
+			},
+			{
+				"function": "evox_agent_init",
+				"bytes": 8
+			},
+			{
+				"function": "evox_agent_recover",
+				"bytes": 16
+			},
+			{
+				"function": "evox_agent_step",
+				"bytes": 32
 			},
 			{
 				"function": "evox_agent_main",
@@ -90,16 +125,17 @@
 			},
 			{
 				"function": "evox_isotp_probe",
-				"bytes": 40
+				"bytes": 28
 			}
 		]
 	},
-	"date": "2026-11-05",
+	"date": "2026-11-10",
 	"isotp_probes": 3,
+	"dispatcher_cases": 9,
 	"ordinary_target": {
-		"elf_sha256": "4b6093315ab326c27d15d32999193f4e69bfb204d9d13f7ce078807567dfab28",
-		"binary_sha256": "171a7bcc38f1c8e5fc7226a743261beefe26f1f47b1bb3751a535d3ca9b7ad31",
-		"code_bytes": 2404,
+		"elf_sha256": "759a387f029eecd24a9845df0d6c6bb5e99b7275c1716c9d9eda1e8176fc9469",
+		"binary_sha256": "55b3c52420d57c9fde0d814133dabcc755aef736e7a8f065f2699fa84f1d8952",
+		"code_bytes": 3712,
 		"stack": [
 			{
 				"function": "evox_crc32",
@@ -110,12 +146,24 @@
 				"bytes": 0
 			},
 			{
+				"function": "valid_io",
+				"bytes": 0
+			},
+			{
 				"function": "evox_can_try_send",
 				"bytes": 16
 			},
 			{
 				"function": "evox_can_try_receive",
 				"bytes": 52
+			},
+			{
+				"function": "evox_can_finish_send",
+				"bytes": 8
+			},
+			{
+				"function": "evox_can_reset_slots",
+				"bytes": 12
 			},
 			{
 				"function": "prepare",
@@ -152,39 +200,63 @@
 			{
 				"function": "evox_isotp_frame",
 				"bytes": 20
+			},
+			{
+				"function": "evox_dispatch",
+				"bytes": 28
+			},
+			{
+				"function": "evox_agent_init",
+				"bytes": 8
+			},
+			{
+				"function": "evox_agent_recover",
+				"bytes": 16
+			},
+			{
+				"function": "evox_agent_step",
+				"bytes": 32
 			}
 		]
 	},
 	"source_sha256": {
-		"kernel/can.c": "455880e7837478ba5ec958b48459785729f778a2a76e61fb943c8760f93d08cd",
-		"kernel/can.h": "40f0f81a4924d959e5b52c382e7555cc422e60a9341f05148920bb6bb3102102",
+		"kernel/agent.c": "3b7c1e41b8a6605a471527c1acab7dad1204aa2a097d454bbcf8455068d4c6d4",
+		"kernel/agent.h": "714eaeed8cee9f946f5e68bad1076344f349e68a72568c3a14b0cb8da8b49d7e",
+		"kernel/can.c": "3de520fab4b11034230032b4bcc70036b3e11da1386eb8f829de9663eeebd09c",
+		"kernel/can.h": "6fc2f85a7a921075ed805540b9cfff7903b3082bf8f1281d82b2d532c500d0be",
 		"kernel/core.c": "b8ca2ae4c4280948abe1fdce8c6f8102d51c87938d8dec4942bfef1a4928cc4f",
 		"kernel/core.h": "60627f99b9de1005005d264a4357be665e183bb58297ccacab76048fe3669f04",
+		"kernel/dispatch.c": "54387ae096ca289102032bab98597d549a2c7f47c23add76019aebe7be0443c3",
+		"kernel/dispatch.h": "26150b0803cb62a06eab0552dde8ad82f6da49a4def9f25391506b609e1b457e",
 		"kernel/entry.S": "55cf4fed935be6c5a2af94d22e6e363cc32529a25d097201ae96ac77276fb296",
 		"kernel/isotp.c": "43f78ac858d81ba52e2f760a91f6eb518d50bfb38edf4df89e4f180f4e07eeeb",
 		"kernel/isotp.h": "cd7c92051d0a977a33659c747b69cb705c60e5e16935bb58f9ee2bffa454747f",
 		"kernel/link.ld": "a4b377c722a95066e6652841ab81dd48d6dec1a03c384c727bb571fe552bd452",
 		"kernel/startup.S": "b9eab9ed8f84891b5a7917918bc7328086cc251984ef5fa28fec1f2c261ca59f",
-		"tools/build.py": "c80be875c0b88f34449a53adffd0f99a380bdb9c02d11e20f82465c52f40b369",
-		"test/can.c": "0c183d1411031ca282bd39119dc18dcbbfb7a0406af30896d8b2219a81ea2c86",
+		"tools/build.py": "7b14564f2234c2c36c8b682ebe0a4ff1237e9ddae3005645e07e3ac33572ee38",
+		"test/agent.c": "c6c6ada9832c1964954d794afa197f18a4e9254be6d5668ac17601d28716ddcd",
+		"test/agent_io.h": "8d70ffeb09b2d5a9e498d8999294799fab08bb1b9237e602aa53ff261acf3a47",
+		"test/can.c": "e27e2ee005616990676dee883d0ead7638234b2eec323267daa59a59d8e12601",
 		"test/core.c": "9897cde8394d87fd5d32a036875e3c3fceb7adc120fbc5ea6d97b5193b564191",
+		"test/dispatch.c": "6e32342536ae78c0ba2f5d00a1063197be0c2810d6585af54bf8e9df42a0d207",
 		"test/isotp-version.h": "b6559e8069f815a3015871c4291efdb011f8402d4609b8b9950b34fcfabafa43",
 		"test/isotp.c": "0fd5c6ca1ae578d9586ae84e4bdc8854e5cc7135efa991af201e7943f051c62a",
-		"test/test_core.py": "4401c3d83db048bb5d20f5cdcb573ed9ddd3f6b8de31fd3bd612a4a014525613",
-		"test/test_simulator_checker.py": "2a06d72fbe9c7d870f3a27e3e26015e6e50e46a8171b05afc385ecca89bb5e95",
-		"simulator/README.md": "ca7754145d59148646156435bbd09626d012444259ff2783da0cfd541eb19732",
-		"simulator/contracts.py": "19e34a3090930726d72d21ad1ceddef14429888fa632d140322f7bcf690b1845",
+		"test/test_core.py": "addfb08b955bce8b3c732d535651006cfafc146dfc0cfe8d953127fd82040a00",
+		"test/test_simulator_checker.py": "69f667ab6ea22c6b996e90df6b6dc14e7773347b93754067d5a6a1b94b006129",
+		"simulator/README.md": "9666f02e53da7670ee4e262b768eb973f894f21dc35ecfba026c268df3c42fb2",
+		"simulator/contracts.py": "b72a5e56d4e2c0e71c12ca87c926437f0824eeaba911fe52469438008239067e",
+		"simulator/dispatch_probe.S": "dcc365dc0fa21b15be0721f3717168f60d4a9d284b2699f195ad33eaf5358385",
 		"simulator/engine-lock.json": "59cd1f7d28a9d3b949ed7a8fafa1f39f4a4f5f79425213e527ab4aeb0610d7e6",
-		"simulator/isotp_probe.c": "d89b8bf82f215a174e98c7b12c69fb46ce5326f7d00c4ce09333c41717d1d646",
+		"simulator/isotp_probe.c": "ff176046263bd80d839df1391eceda2c6a34daecfb7127502779d9cf38e1cef7",
 		"simulator/run.py": "4a92491c8194e15645076cce38fc54b0b11bc6d854ad4533c635d1cbdbfd47f4",
 		"simulator/runner.c": "caa62d4324493d61c3dc1325c9c860315ac92359b05850c4e883c68ce4dca41e",
 		"simulator/startup_probe.c": "50e0803585af2cb5b277b21a4d27198aec6ecbf5d6710e582128eeb7c6e4bc10"
 	},
 	"artifact_sha256": {
-		"validation.json": "c610e96ff7a674c7d894b01196a262765f5c83dc35545f5ffee6ae2d2d6b9d9b",
-		"input.packet": "ea0529d98ee1eedfd2e7bb28d26a9be8ac3611ed5eab6f9350fbb5b6de924dff",
-		"snapshots.jsonl": "118b89e1ddcf7d14bb74c8648c270199aa6148cefe07a1f243ffe14bc1df143e",
-		"runner": "c0ed1e61e1d30252bb2223c45103120e8f3194a84ab2262b72e1298e8b1a2871"
+		"validation.json": "fd115ea440837aabbcf0d96282c85a9a7d0f02df223950fe1355c969f1b66fc8",
+		"input.packet": "08c0ef3c43960c14c48ced0c9cd4c99b08cec97466b4ccc8fcdffbd701ffbf78",
+		"snapshots.jsonl": "9b3b61870e8a8c0fe218fb59ef3e16e9541c7330670d476bf0c1389ea84ceb8b",
+		"runner": "bb7f49e5745f1d2d4ad61fac2c453a4a7eac283bf3c2a85abc5e63d094c45db8"
 	},
-	"limitations": "Finite GNU execution of CRC/parser, synthetic startup and three ISO-TP probes; ISO-TP context and bounded stack are mutable with surrounding guards checked. CAN mailboxes are statically linked and host-transcript-tested, not target-executed. No real ECU startup environment, CAN peripherals, MMIO, interrupts or hardware execution."
+	"limitations": "Finite GNU execution of CRC/parser, synthetic startup, three ISO-TP probes and nine dispatcher cases. Bounded stack/context/scratch-frame allowances are mutable with surrounding guards checked. CAN completion/recovery and the integrated service adapter are linked and host-tested with manually injected register events, not target-executed with peripherals. No physical ECU startup, ROM/MMIO backend, time base, interrupts or hardware execution."
 }

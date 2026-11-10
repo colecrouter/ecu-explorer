@@ -9,6 +9,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CoreContracts(unittest.TestCase):
+    def test_agent_contracts(self):
+        self.compile_contract("agent", ("core", "can", "isotp", "dispatch", "agent"))
+
+    def test_dispatch_contracts(self):
+        self.compile_contract("dispatch", ("core", "dispatch"))
+
     def test_isotp_contracts(self):
         self.compile_contract("isotp")
 
@@ -18,14 +24,15 @@ class CoreContracts(unittest.TestCase):
     def test_host_contracts(self):
         self.compile_contract("core")
 
-    def compile_contract(self, name):
+    def compile_contract(self, name, modules=None):
         with tempfile.TemporaryDirectory(prefix="evox-core-") as directory:
             binary = Path(directory) / "contracts"
             subprocess.run([
                 os.environ.get("CC", "cc"), "-std=c11", "-Wall", "-Wextra",
                 "-Wconversion", "-Wshadow", "-Werror", "-pedantic",
                 "-fsanitize=address,undefined", "-I", str(ROOT / "kernel"),
-                str(ROOT / "kernel" / (name + ".c")), str(ROOT / "test" / (name + ".c")),
+                *[str(ROOT / "kernel" / (module + ".c")) for module in (modules or (name,))],
+                str(ROOT / "test" / (name + ".c")),
                 "-o", str(binary),
             ], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)

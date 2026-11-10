@@ -39,7 +39,8 @@ Toolchain acquisition and CI provisioning remain follow-up work.
 - Pure parsing of the existing seven-byte command `03`: four-byte big-endian ROM
   address and two-byte length. Only 1–1024 bytes wholly inside 1 MiB are admitted.
   Failed parsing preserves the output region; it never reads ECU memory.
-- Every other command, including erase/program commands, is rejected.
+- The pure parser handles command `03` only. The integrated dispatcher below
+  adds read-only version/size/CRC operations and rejects programming commands.
 
 The [startup/CAN audit](platform/STARTUP_CAN.md) now records the inherited
 stack, copied factory helper and RAM ownership requirements. Original bounded
@@ -47,8 +48,11 @@ CAN0 mailbox functions are also included: callback-based frame queueing and
 race-checked reception, with host register-access transcript tests. There is
 no live MMIO backend or controller setup yet.
 
-The CRC/parser functions do not implement authentication, command dispatch, transport or
-ROM access. Successful parsing is not authorization to perform a read.
+The [read-only dispatcher and CAN adapter](platform/READ_ONLY_AGENT.md) now
+connect ISO-TP to validated ROM callbacks and mailbox completion. They implement
+a distinct source-kernel version, bounded read/CRC and version/size queries,
+latched transport faults and explicit idle-confirmed recovery. No destructive
+command backend exists. Physical ROM/MMIO/clock backends remain pending.
 
 The host harness checks the standard `123456789` CRC vector, empty CRC,
 truncation, oversized/zero requests, null parser inputs, all command bytes,
@@ -67,18 +71,19 @@ The [ISO-TP layer](platform/ISOTP.md) now adds bounded framing/reassembly,
 flow control, sequence checks and timeouts over the CAN frame API. Host tests
 cover all 1–1,032-byte PDU lengths and a frozen captured version exchange.
 
-Two ordinary M32R links produce identical 2,404-byte images with no undefined
+Two ordinary M32R links produce identical 3,712-byte images with no undefined
 symbols or initialized data/BSS. CRC/parser and CAN evidence is retained in the
 expanded image. Target stack reports remain bounded; callback/caller obligations
 are separate from per-function reports.
 
-[GNU M32R simulator execution](simulator/README.md) includes the prior 582 cases
-and three compiled ISO-TP probes. Its [receipt](simulator/validation.json) records
+[GNU M32R simulator execution](simulator/README.md) includes the prior 585 cases
+and nine compiled dispatcher cases. Its [receipt](simulator/validation.json) records
 source/tool/image hashes and the finite execution boundary. ISO-TP context and
 a bounded stack window are mutable, with code and surrounding guards checked.
 
 The source startup establishes stack/BSS and calls C under a synthetic profile;
 its test main is excluded from the ordinary build. The next unit is to close
 the real startup profile, helper adapter and RAM
-ownership requirements, then connect the dispatcher and a live backend for a read-only agent. The current synthetic entry remains non-uploadable. No ECU
+ownership requirements, then supply the physical backends and admit a distinct
+read-only host profile. The current synthetic entry remains non-uploadable. No ECU
 operations have been performed.

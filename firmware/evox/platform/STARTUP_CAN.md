@@ -129,10 +129,11 @@ Next implementation units:
    ownership; add a dedicated startup/linker layout under that explicit profile.
 2. Audit timer/port servicing sufficiently to retain a validated helper adapter
    or replace it. Do not classify unidentified RAM or peripherals as disposable.
-3. Connect the [implemented ISO-TP layer](ISOTP.md) to the read-only dispatcher.
-   Framing, flow control, sequence/error handling and deadlines have offline
-   host and target-probe evidence; the live adapter remains pending.
-4. Supply the volatile MMIO backend, verify inherited CAN configuration and add
-   transmit completion/error handling before wiring any startup loop.
+3. The [read-only dispatcher and service adapter](READ_ONLY_AGENT.md) are now
+   connected to ISO-TP, with host integration and dispatcher target evidence.
+   The physical backend and startup profile remain pending.
+4. Supply the volatile MMIO backend and verify inherited CAN configuration
+   before wiring a startup loop. Bounded completion/abort primitives now have
+   host contracts; physical timing/bus-off behavior remains unverified.
 5. Validate startup and CAN on the designated bench separately from host and
    instruction simulation. Existing host profile remains unchanged.

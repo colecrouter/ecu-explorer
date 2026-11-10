@@ -29,6 +29,29 @@ static void run_tx(const struct access *steps, size_t count, int expected) {
     assert(t.cursor == t.size);
 }
 int main(void) {
+    static const struct access pending_tx[] = {{0x801051, 0x80, 0}};
+    struct transcript completion = {pending_tx, 1, 0};
+    const struct evox_can_io owner = {&completion, read_byte, write_byte};
+    assert(evox_can_finish_send(&owner) == 0 && completion.cursor == 1);
+    static const struct access active_tx[] = {{0x801051, 0x83, 0}};
+    completion = (struct transcript){active_tx, 1, 0};
+    assert(evox_can_finish_send(&owner) == 0 && completion.cursor == 1);
+    static const struct access done_tx[] = {{0x801051, 1, 0}, {0x801051, 0, 1}};
+    completion = (struct transcript){done_tx, 2, 0};
+    assert(evox_can_finish_send(&owner) == 1 && completion.cursor == 2);
+    static const struct access aborting[] = {
+        {0x801051,0x0f,1}, {0x801050,0,1}, {0x801051,2,0}, {0x801050,0,0}
+    };
+    completion = (struct transcript){aborting, 4, 0};
+    assert(evox_can_reset_slots(&owner) == 0 && completion.cursor == 4);
+    static const struct access idle_slots[] = {
+        {0x801051,0x0f,1}, {0x801050,0,1}, {0x801051,0,0}, {0x801050,0,0},
+        {0x801051,0,1}, {0x801050,0x40,1}
+    };
+    completion = (struct transcript){idle_slots, 6, 0};
+    assert(evox_can_reset_slots(&owner) == 1 && completion.cursor == 6);
+    assert(evox_can_finish_send(NULL) == -1 && evox_can_reset_slots(NULL) == -1);
+
     static const struct access busy[] = {{0x801051, 0x80, 0}};
     run_tx(busy, 1, 0); /* Pending request, even before hardware accepts it. */
     static const struct access active[] = {{0x801051, 0x02, 0}};

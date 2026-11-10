@@ -172,3 +172,19 @@ exchange, malformed/interrupted transfers and pacing/time wrap. Three native
 M32R probes cover the captured TX, max-size RX and paced block-size-one TX.
 The expanded ordinary image is 2,404 bytes. The dispatcher, live completion-aware
 CAN adapter, RAM reservation and time-base/startup profile remain pending.
+
+## Read-only service integration (2026-11-10)
+
+The [dispatcher and completion-aware CAN adapter](../firmware/evox/platform/READ_ONLY_AGENT.md)
+now connect complete ISO-TP requests to bounded ROM callbacks and stable replies.
+The distinct `ECU Explorer M32186 Read Kernel V0.1` identity supports version,
+communication-size, 1–1,024-byte reads and similarly bounded CRCs. Programming,
+reset and authentication commands are unsupported; no programming backend exists.
+A separate host profile is still required. Explicit recovery waits for both
+mailboxes to become idle before clearing stale traffic and reopening processing.
+
+Host integration covers maximum reads, stale/early completion, backpressure,
+races, timeout, backend errors and busy recovery. Nine additional M32R dispatcher
+cases supplement the transport/startup corpus. The ordinary repeat build is
+3,712 bytes. The integrated adapter is linked/host-tested; its physical backends,
+RAM reservation, clock/helper contracts and startup loop are still pending.

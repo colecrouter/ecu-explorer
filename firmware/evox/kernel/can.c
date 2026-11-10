@@ -70,3 +70,22 @@ int evox_can_try_receive(const struct evox_can_io *io, struct evox_can_frame *fr
         frame->data[i] = candidate.data[i];
     return 1;
 }
+
+int evox_can_finish_send(const struct evox_can_io *io) {
+    if (!valid_io(io)) return -1;
+    uint8_t status = io->read8(io->context, TX_CONTROL);
+    if ((status & ACTIVE) != 0 || (status & FINISHED) == 0) return 0;
+    io->write8(io->context, TX_CONTROL, 0);
+    return 1;
+}
+int evox_can_reset_slots(const struct evox_can_io *io) {
+    if (!valid_io(io)) return -1;
+    io->write8(io->context, TX_CONTROL, 0x0f);
+    io->write8(io->context, RX_CONTROL, 0);
+    uint8_t tx = io->read8(io->context, TX_CONTROL);
+    uint8_t rx = io->read8(io->context, RX_CONTROL);
+    if (((tx | rx) & ACTIVE) != 0) return 0;
+    io->write8(io->context, TX_CONTROL, 0);
+    io->write8(io->context, RX_CONTROL, RX_REQUEST);
+    return 1;
+}

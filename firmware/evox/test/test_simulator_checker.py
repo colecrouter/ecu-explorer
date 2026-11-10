@@ -39,13 +39,14 @@ class SimulatorChecker(unittest.TestCase):
 
     def test_mutable_context_keeps_surrounding_guards(self):
         case = copy.deepcopy(self.case)
-        case["mutable"] = [(1, 256, 1356), (2, 768, 1024)]
+        case["mutable"] = [(1, 256, 1356), (1, 1408, 1420), (2, 768, 1024)]
         row = copy.deepcopy(self.row)
         data = bytearray.fromhex(row["memory"][1])
         data[256] ^= 1
+        data[1408] ^= 1
         row["memory"][1] = data.hex()
         check(case, row, 0)
-        for segment, offset in ((0, 0), (1, 255), (1, 1356), (2, 767)):
+        for segment, offset in ((0, 0), (1, 255), (1, 1356), (1, 1407), (1, 1420), (2, 767)):
             bad = copy.deepcopy(row)
             data = bytearray.fromhex(bad["memory"][segment])
             data[offset] ^= 1

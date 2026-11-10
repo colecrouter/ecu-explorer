@@ -63,8 +63,41 @@ def corpus(symbols, code):
             case["park"] = symbols["evox_startup_park"]
     if "evox_isotp_probe" in symbols:
         for scenario in range(3):
-            add(f"isotp-probe-{scenario}", "evox_isotp_probe", [scenario, DATA + 256], expected=1)
-            cases[-1]["mutable"] = [(1, 256, 1356), (2, 768, 1024)]
+            add(f"isotp-probe-{scenario}", "evox_isotp_probe", [scenario, DATA + 256, DATA + 1408], expected=1)
+            cases[-1]["mutable"] = [(1, 256, 1356), (1, 1408, 1420), (2, 768, 1024)]
+    if "evox_test_rom_read" in symbols:
+        version = b"\x81ECU Explorer M32186 Read Kernel V0.1\0"
+        vectors = [
+            ("version", b"\x01", version, 1025, None),
+            ("size", b"\x05", bytes.fromhex("8500000408"), 1025, None),
+            ("last-byte", bytes.fromhex("03000fffff0001"), bytes.fromhex("83ff"), 1025, None),
+            ("max-read", bytes.fromhex("03000ffc000400"), b"\x83" + bytes(range(256)) * 4, 1025, None),
+            ("bounds", bytes.fromhex("03ffffffff0001"), b"\xf1", 1025, None),
+            ("unsupported", b"\x20", b"\xf0", 1025, None),
+            ("capacity", bytes.fromhex("03000000000009"), b"", 5, None),
+            ("no-backend", bytes.fromhex("03000000000009"), b"\xf2", 1025, 0),
+        ]
+        scratch = bytes(range(256)) * 4
+        crc = struct.pack(">I", binascii.crc32(scratch) & 0xffffffff)
+        vectors.append(("crc", bytes.fromhex("020000000000000400"),
+                        b"\x82" + crc + scratch[4:], 1025, None))
+        for name, request, output, capacity, callback in vectors:
+            result = 5 if name == "crc" else len(output)
+            add(f"dispatch-{name}", "evox_dispatch", [DATA + 1, len(request), OUTPUT, capacity],
+                request, result)
+            case = cases[-1]
+            memory = bytearray(case["data"])
+            pointer = symbols["evox_test_rom_read"] if callback is None else callback
+            memory[128:136] = struct.pack(">II", 0, pointer)
+            case["data"] = bytes(memory)
+            memory[OUTPUT - DATA:OUTPUT - DATA + len(output)] = output
+            case["expected_memory"][1] = memory.hex()
+            stack = bytearray(case["stack"])
+            stack[1008:1012] = struct.pack(">I", DATA + 128)
+            case["stack"] = bytes(stack)
+            case["expected_memory"][2] = stack.hex()
+            case["seed"][15] = SP - 16
+            case["mutable"] = [(2, 752, 1008)]
     return cases
 
 

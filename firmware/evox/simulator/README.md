@@ -89,15 +89,33 @@ including private paths or derived ROM contents.
 Three additional simulation-only probes execute the compiled ISO-TP module:
 public captured-version TX, maximum-size RX with sequence wrap, and block-size-one
 TX with 100-microsecond separation. The context may change within the data arena
-at offsets 256–1355, and stack bytes may change within the top 256 bytes. Result,
+at offsets 256–1355, with a caller-owned CAN frame at offsets 1408–1419, and stack bytes may change within the top 256 bytes. Result,
 callee-preserved registers, code and all surrounding memory guards remain checked.
 Internal C contracts check frames and published payloads; there is no assertion
 of exact context/padding/stack bytes within those permitted ranges. These probes
 are excluded from the ordinary build. See [ISO-TP evidence](../platform/ISOTP.md).
 
+## Dispatcher execution (2026-11-10)
+
+Nine compiled dispatcher cases add a synthetic ROM callback in
+`dispatch_probe.S`: version/size, last-byte and maximum reads, CRC, invalid
+bounds, unsupported commands, missing backend and insufficient capacity.
+The descriptor pointer is passed in the GNU fifth-argument stack slot at the
+incoming SP; its bytes remain checked. Stack writes are allowed only within
+256 bytes below that SP. Responses and CRC scratch bytes are checked exactly,
+as are input/descriptor memory, code and all other data guards. The callback
+is test-only, returns a byte ramp, and has no hardware or mutable global state.
+The service adapter is host-tested and linked, not target-executed with a
+peripheral backend. See [integration evidence](../platform/READ_ONLY_AGENT.md).
+
+The ISO-TP probe now receives its scratch CAN frame as a third argument in the
+mapped data arena rather than on its own stack. The combined build retains the
+256-byte conservative sum-of-function-frame budget without increasing it.
+Backend/caller obligations outside these fixtures are still separate gates.
+
 ## Limits
 
 This validates finite ordinary-memory executions of the compiled CRC/parser
-functions, ISO-TP contracts, and startup assembly with synthetic test entries. It does not validate ECU startup, peripheral behavior, watchdogs,
+functions, ISO-TP/dispatcher contracts, and startup assembly with synthetic test entries. It does not validate ECU startup, peripheral behavior, watchdogs,
 CAN, flash programming, interrupts, physical RAM allocation or cycle timing.
 The core remains non-uploadable; host behavior and flash capability are unchanged.

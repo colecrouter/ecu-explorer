@@ -90,6 +90,7 @@ Build and execute through the existing `firmware:evox:test`,
 probes are excluded from the ordinary firmware build. No ECU upload, hardware
 CAN timing, watchdog servicing or real RAM allocation is validated here.
 
-Next: connect the read-only dispatcher and a completion-aware CAN adapter under
-the explicit startup/RAM/time-base requirements. The application still uses the
+The [read-only dispatcher and completion-aware adapter](READ_ONLY_AGENT.md) are
+now connected and host-tested. Physical backends and a host profile remain
+pending under the explicit startup/RAM/time-base requirements. The application still uses the
 captured external kernel profile until that platform work is validated.

@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+MODULES = ("core", "can", "isotp", "dispatch", "agent")
 FLAGS = ["-std=c11", "-Os", "-m32r", "-Wa,-EB", "-mmodel=large", "-msdata=none",
          "-ffreestanding", "-fno-builtin", "-fno-common", "-fno-pic", "-fno-ident",
          "-fstack-usage", "-Wall", "-Wextra", "-Wconversion", "-Wshadow", "-Werror"]
@@ -38,7 +39,7 @@ def build(prefix, output, startup_probe=False):
     for name in ("first", "repeat"):
         work = output / name
         work.mkdir()
-        for module in ("core", "can", "isotp"):
+        for module in MODULES:
             run("gcc", *FLAGS, "-I", ROOT / "kernel", "-c", ROOT / "kernel" / (module + ".c"),
                 "-o", work / (module + ".o"))
         run("as", "-m32r", "-EB", ROOT / "kernel/entry.S", "-o", work / "entry.o")
@@ -49,14 +50,15 @@ def build(prefix, output, startup_probe=False):
                 "-o", work / "startup_probe.o")
             run("gcc", *FLAGS, "-c", ROOT / "simulator/isotp_probe.c",
                 "-o", work / "isotp_probe.o")
-            extra = [work / "startup.o", work / "startup_probe.o", work / "isotp_probe.o",
+            run("as", "-m32r", "-EB", ROOT / "simulator/dispatch_probe.S", "-o", work / "dispatch_probe.o")
+            extra = [work / "dispatch_probe.o", work / "startup.o", work / "startup_probe.o", work / "isotp_probe.o",
                      "--defsym=__evox_stack_top=0x30400",
                      "--defsym=__evox_bss_start=0x20000",
                      "--defsym=__evox_bss_end=0x20020"]
         elf = work / "core.elf"
         run("ld", "-EB", "--fatal-warnings", "--orphan-handling=error",
             "-T", ROOT / "kernel/link.ld", "-Map", work / "core.map",
-            work / "entry.o", work / "core.o", work / "can.o", work / "isotp.o", *extra, "-o", elf)
+            work / "entry.o", *[work / (module + ".o") for module in MODULES], *extra, "-o", elf)
         if run("nm", "-u", elf).strip():
             raise ValueError("unresolved target symbols")
         header = elf.read_bytes()
@@ -72,7 +74,7 @@ def build(prefix, output, startup_probe=False):
         (work / "disassembly.txt").write_text(run("objdump", "-dr", elf))
         (work / "sections.txt").write_text(run("readelf", "-S", elf))
         stack = []
-        stack_reports = "".join((work / (module + ".su")).read_text() for module in ("core", "can", "isotp"))
+        stack_reports = "".join((work / (module + ".su")).read_text() for module in MODULES)
         if startup_probe:
             stack_reports += (work / "startup_probe.su").read_text() + (work / "isotp_probe.su").read_text()
         for line in stack_reports.splitlines():
