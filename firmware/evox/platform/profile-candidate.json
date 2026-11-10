@@ -1,0 +1,29 @@
+{
+	"schema_version": 1,
+	"target": "M32186F8",
+	"admitted": false,
+	"purpose": "Unadmitted layout/calibration template; not consumed by the runtime",
+	"entry": "0x80b000",
+	"code_limit_exclusive": "0x80c3fd",
+	"state": ["0x80c400", "0x80d000"],
+	"stack": ["0x80d000", "0x80d400"],
+	"preserve_factory_region": ["0x808000", "0x808804"],
+	"psw_required_clear": "0x000000c0",
+	"timer": {
+		"counter": "0x8003d0",
+		"width_bits": 16,
+		"direction": "up",
+		"control": "0x8003cb",
+		"tick_numerator_us": null,
+		"tick_denominator": null,
+		"max_delta_ticks": null,
+		"configuration_snapshot": null
+	},
+	"missing_evidence": [
+		"Physical part and normal ROM/RAM mapping",
+		"Calibrated tick ratio and bounded sampling cadence",
+		"CAN/timer/upstream-clock configuration snapshot and fixed clock source",
+		"Exclusive RAM/slot ownership including DMA and nonmaskable exceptions",
+		"Retained factory helper identity, watchdog contract and operating main"
+	]
+}

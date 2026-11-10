@@ -107,7 +107,8 @@ Run the existing firmware test/build/simulate npm scripts. The ordinary image
 includes dispatcher/adapter code; simulation-only callbacks/probes are excluded.
 The current build still has a synthetic parking entry, not a production C main.
 
-Next: establish physical RAM/time-base/helper contracts, provide the volatile
-MMIO and ROM backends, and admit a distinct read-only upload/attach profile.
+The [physical callbacks, time-base guards and candidate layout](PHYSICAL_BACKENDS.md)
+are now implemented. Next: admit the physical RAM/calibration/helper contracts,
+wire the operating main and add a distinct read-only upload/attach profile.
 Hardware scheduling, watchdog timing and actual ECU behavior need bench evidence.
 No ECU operation or direct physical-memory access was performed by this work.

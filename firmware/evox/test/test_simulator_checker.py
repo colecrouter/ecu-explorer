@@ -24,7 +24,8 @@ class SimulatorChecker(unittest.TestCase):
     def test_startup_requires_owned_stack_and_park(self):
         case = corpus(dict(evox_crc32=0x1004, evox_parse_read=0x1040,
                            evox_offline_entry=0x1000, evox_ram_entry=0x1100,
-                           evox_startup_park=0x1120), b"code")[-1]
+                           evox_startup_park=0x1120, evox_startup_rejected=0x1124), b"code")
+        case = next(item for item in case if item["name"] == "startup-dirty-bss-1")
         row = dict(id=0, status="limit", steps=case["limit"],
                    before=case["seed"][:], after=case["seed"][:],
                    memory=case["expected_memory"][:])

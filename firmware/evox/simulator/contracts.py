@@ -61,6 +61,15 @@ def corpus(symbols, code):
             memory[32:36] = b"BOOT"
             case["expected_memory"][1] = memory.hex()
             case["park"] = symbols["evox_startup_park"]
+    if "evox_ram_entry" in symbols:
+        for psw in (0x40, 0x80):
+            add(f"startup-reject-psw-{psw}", "evox_ram_entry", [], status="limit", limit=40)
+            case = cases[-1]
+            case["seed"][15] = SP - 256
+            case["seed"][16] = psw
+            case["park"] = symbols["evox_startup_rejected"]
+            case["expected_sp"] = SP - 256
+            case["preserve_link"] = True
     if "evox_isotp_probe" in symbols:
         for scenario in range(3):
             add(f"isotp-probe-{scenario}", "evox_isotp_probe", [scenario, DATA + 256, DATA + 1408], expected=1)
@@ -124,10 +133,12 @@ def check(case, row, index):
     if row["after"][8:end] != row["before"][8:end]:
         raise ValueError(f'{case["name"]}: callee-preserved register changed')
     if "park" in case:
-        if row["after"][15] != SP or row["after"][21] != case["park"]:
+        if row["after"][15] != case.get("expected_sp", SP) or row["after"][21] != case["park"]:
             raise ValueError("startup did not establish stack and park after C main")
+    if case.get("preserve_link") and row["after"][14] != row["before"][14]:
+        raise ValueError("rejected startup changed its incoming link")
     if case["status"] == "return":
-        if row["after"][21] != RETURN or row["after"][0] != case["result"]:
+        if row["after"][21] != RETURN or (not case.get("void_return") and row["after"][0] != case["result"]):
             raise ValueError(f'{case["name"]}: incorrect result/return')
     elif case["status"] == "limit" and row["steps"] != case["limit"]:
         raise ValueError("instruction-limit control did not exhaust its budget")

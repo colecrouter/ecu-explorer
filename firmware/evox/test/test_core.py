@@ -9,6 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CoreContracts(unittest.TestCase):
+    def test_platform_contracts(self):
+        self.compile_contract("platform", ("../platform/platform",))
+
     def test_agent_contracts(self):
         self.compile_contract("agent", ("core", "can", "isotp", "dispatch", "agent"))
 

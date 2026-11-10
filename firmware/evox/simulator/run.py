@@ -13,6 +13,8 @@ from contracts import check, corpus
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from build import build, sha
+from build_platform import build as build_platform
+from platform_contracts import corpus as platform_corpus
 
 
 def execute(args):
@@ -28,7 +30,7 @@ def execute(args):
                 raise ValueError(f"simulator pin mismatch: {path}")
             pinned[str(path)] = digest
     # Also bind all implementation inputs before compiling anything.
-    for directory in ("kernel", "tools", "test", "simulator"):
+    for directory in ("kernel", "platform", "tools", "test", "simulator"):
         for path in sorted((ROOT / directory).glob("*")):
             if path.is_file() and path.name != "validation.json":
                 pinned[str(path)] = sha(path)
@@ -52,7 +54,10 @@ def execute(args):
     cc1 = Path(run([args.toolchain_bin.resolve() / "m32r-elf-gcc",
                     "-print-prog-name=cc1"]).decode().strip())
     pinned[str(cc1)] = sha(cc1)
-    build(args.toolchain_bin.resolve(), output / "target", startup_probe=True)
+    if args.platform:
+        build_platform(args.toolchain_bin.resolve(), output / "target", probe=True)
+    else:
+        build(args.toolchain_bin.resolve(), output / "target", startup_probe=True)
     target_manifest = json.loads((output / "target/manifest.json").read_text())
     for name in ("gcc", "as", "ld", "nm", "objcopy", "objdump", "readelf"):
         path = args.toolchain_bin.resolve() / ("m32r-elf-" + name)
@@ -64,7 +69,7 @@ def execute(args):
     symbols = {}
     for line in run([args.toolchain_bin.resolve() / "m32r-elf-nm", "-n", elf]).decode().splitlines():
         fields = line.split()
-        if len(fields) == 3 and fields[1] == "T":
+        if len(fields) == 3 and fields[1] in (("T", "t") if args.platform else ("T",)):
             symbols[fields[2]] = int(fields[0], 16)
     runner = output / "runner"
     link = [compiler, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
@@ -80,7 +85,7 @@ def execute(args):
     link.extend(["-lm", "-o", runner])
     run(link)
     pinned[str(runner)] = sha(runner)
-    cases = corpus(symbols, binary.read_bytes())
+    cases = (platform_corpus if args.platform else corpus)(symbols, binary.read_bytes())
     packet = bytearray(struct.pack(">I", len(cases)))
     for case in cases:
         packet.extend(struct.pack(">III", case["entry"], len(case["code"]), case["limit"]))
@@ -121,6 +126,7 @@ if __name__ == "__main__":
     parser.add_argument("--gdb-source", type=Path, required=True)
     parser.add_argument("--gdb-build", type=Path, required=True)
     parser.add_argument("--library-dir", type=Path)
+    parser.add_argument("--platform", action="store_true", help="Execute isolated physical-backend library contracts")
     parser.add_argument("--host-cc", default=os.environ.get("CC", "cc"))
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()

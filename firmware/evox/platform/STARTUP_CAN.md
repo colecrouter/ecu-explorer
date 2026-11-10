@@ -75,8 +75,9 @@ or reset path before it is admitted to the host uploader.
 
 `kernel/startup.S` establishes SP from a linker symbol before using the stack,
 clears a byte-addressed linker BSS range, calls `evox_agent_main`, and parks on
-return. It deliberately requires a known inherited CPU mode and interrupt
-exclusion; it does not change those control registers or touch peripherals.
+return. It now rejects PSW SM/IE before SP/BSS writes, requiring the inherited
+interrupt-stack mode and IRQ exclusion. It does not change those control
+registers or touch peripherals.
 The linker must supply exclusive BSS/stack ranges. Initialized data is currently
 prohibited, and unresolved relocations/symbols are rejected.
 
@@ -92,8 +93,8 @@ main and startup entry. No production C agent main exists yet.
 `kernel/can.c` implements byte-access callbacks for slots 0 (receive) and 1
 (transmit), matching the captured slot use. The caller must establish exclusive
 ownership, interrupt exclusion, standard data-frame format, filters, pins,
-bitrate/clock and operating mode. No direct MMIO backend or live entry invokes
-these functions yet.
+bitrate/clock and operating mode. Guarded physical callbacks now exist in the [platform library](PHYSICAL_BACKENDS.md);
+no admitted profile or operating entry invokes them yet.
 
 Address constants: control bytes `0x801050/51`; slot bases `0x801100/110`;
 DLC at slot+5; payload at slot+6. Standard ID bytes encode `id >> 6` and
@@ -125,15 +126,16 @@ stack behavior still need target execution evidence.
 
 Next implementation units:
 
-1. Establish a loader-entry profile for CPU mode, interrupt exclusion and RAM
-   ownership; add a dedicated startup/linker layout under that explicit profile.
+1. Admit the [candidate linker/calibration profile](PHYSICAL_BACKENDS.md) using
+   physical part, RAM ownership, clock and watchdog evidence. Entry guards and
+   a real-address link-only layout are implemented; ownership remains unknown.
 2. Audit timer/port servicing sufficiently to retain a validated helper adapter
    or replace it. Do not classify unidentified RAM or peripherals as disposable.
 3. The [read-only dispatcher and service adapter](READ_ONLY_AGENT.md) are now
    connected to ISO-TP, with host integration and dispatcher target evidence.
    The physical backend and startup profile remain pending.
-4. Supply the volatile MMIO backend and verify inherited CAN configuration
-   before wiring a startup loop. Bounded completion/abort primitives now have
+4. The guarded physical backend and configuration checks now exist. Admit
+   their calibration/configuration snapshot before wiring a startup loop. Bounded completion/abort primitives now have
    host contracts; physical timing/bus-off behavior remains unverified.
 5. Validate startup and CAN on the designated bench separately from host and
    instruction simulation. Existing host profile remains unchanged.

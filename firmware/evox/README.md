@@ -52,7 +52,9 @@ The [read-only dispatcher and CAN adapter](platform/READ_ONLY_AGENT.md) now
 connect ISO-TP to validated ROM callbacks and mailbox completion. They implement
 a distinct source-kernel version, bounded read/CRC and version/size queries,
 latched transport faults and explicit idle-confirmed recovery. No destructive
-command backend exists. Physical ROM/MMIO/clock backends remain pending.
+command backend exists. [Physical backends and profile guards](platform/PHYSICAL_BACKENDS.md) now provide
+bounded ROM/CAN access, rational timer conversion, configuration checks and
+entry-state rejection. No calibrated/admitted production profile is supplied.
 
 The host harness checks the standard `123456789` CRC vector, empty CRC,
 truncation, oversized/zero requests, null parser inputs, all command bytes,
@@ -76,14 +78,15 @@ symbols or initialized data/BSS. CRC/parser and CAN evidence is retained in the
 expanded image. Target stack reports remain bounded; callback/caller obligations
 are separate from per-function reports.
 
-[GNU M32R simulator execution](simulator/README.md) includes the prior 585 cases
-and nine compiled dispatcher cases. Its [receipt](simulator/validation.json) records
+[GNU M32R simulator execution](simulator/README.md) includes the prior 594 cases
+and two CPU-entry rejection cases. A separate `--platform` run exercises the
+physical-backend library on synthetic memory. Its [receipt](simulator/validation.json) records
 source/tool/image hashes and the finite execution boundary. ISO-TP context and
 a bounded stack window are mutable, with code and surrounding guards checked.
 
 The source startup establishes stack/BSS and calls C under a synthetic profile;
 its test main is excluded from the ordinary build. The next unit is to close
-the real startup profile, helper adapter and RAM
-ownership requirements, then supply the physical backends and admit a distinct
-read-only host profile. The current synthetic entry remains non-uploadable. No ECU
+an admitted physical startup/calibration profile, helper adapter and RAM
+ownership evidence, then wire the operating main and a distinct read-only host
+profile. The current synthetic entry remains non-uploadable. No ECU
 operations have been performed.

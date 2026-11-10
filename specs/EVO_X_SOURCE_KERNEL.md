@@ -188,3 +188,20 @@ races, timeout, backend errors and busy recovery. Nine additional M32R dispatche
 cases supplement the transport/startup corpus. The ordinary repeat build is
 3,712 bytes. The integrated adapter is linked/host-tested; its physical backends,
 RAM reservation, clock/helper contracts and startup loop are still pending.
+
+## Physical backend/profile progress (2026-11-10)
+
+[Physical backends and admission contracts](../firmware/evox/platform/PHYSICAL_BACKENDS.md)
+now provide address/width-restricted CAN callbacks, bounded ROM reads (including
+address zero via assembly), configuration snapshots and calibrated rational
+TMS1-to-microsecond conversion. Unknown calibration has no default. Entry rejects
+PSW SM/IE before changing SP/BSS, with native rejection cases.
+
+A separate small-model backend build and real-address link fixture enforce the
+captured loader span, state/stack ranges and preserved factory region. The
+large-model combined candidate exceeded the span by 151 bytes; constrained small
+model fits without relaxing size or stack checks. The ordinary large-model
+core profile is retained. The candidate is unadmitted and exports no wire image.
+Native backend tests exercise synthetic mapped memory and clock/profile logic;
+host access shims cover denied accesses and address zero. No admitted physical
+profile, verified RAM ownership, measured time base or operating main is provided.

@@ -9,7 +9,7 @@ MEMORY {
 }
 SECTIONS {
     .text : { *(.text*) *(.rodata*) } > CODE
-    .rela.text : { *(.rela.text) }
+    .rela.text : { *(.rela.text*) }
     .data : { *(.data*) *(.sdata*) } > RAM
     .bss (NOLOAD) : { *(.bss*) *(.sbss*) *(COMMON) } > RAM
     /DISCARD/ : { *(.comment) *(.note*) }

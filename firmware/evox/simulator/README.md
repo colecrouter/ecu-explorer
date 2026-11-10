@@ -113,6 +113,25 @@ mapped data arena rather than on its own stack. The combined build retains the
 256-byte conservative sum-of-function-frame budget without increasing it.
 Backend/caller obligations outside these fixtures are still separate gates.
 
+## Platform profile (2026-11-10)
+
+Use the same command with `--platform` for the isolated small-model physical
+backend library. It runs unsigned high-bit byte/halfword loads, a byte store,
+PSW reads, profile rejection, fractional and wrapping clocks, guarded ROM reads
+and an unadmitted open. Only synthetic memory is mapped; physical SFRs and ROM
+address zero are not modeled. Host shims separately test the address-zero call
+without C null-pointer access and the allowlisted physical access paths.
+
+The backend fixture checks its target ABI layout using emitted constants. Store
+has a void return, so its memory/return-PC/register contract is checked without
+inventing an r0 result. Actual CAN/timer effects are not emulated. The platform
+build also repeats a real-address link-only layout check; that ELF has a test
+main and is not the image executed by this runner. See
+[physical platform evidence](../platform/PHYSICAL_BACKENDS.md).
+
+The core profile now has two additional startup cases: PSW IE and SM are rejected
+before SP/BSS writes, preserving the incoming stack/link and dirty memory.
+
 ## Limits
 
 This validates finite ordinary-memory executions of the compiled CRC/parser
