@@ -227,3 +227,13 @@ flash-not-ready control use inert SFR storage. Timer setup derives BCLK/80
 Inherited flash-control writes precede bootstrap entry, so source startup still
 needs a flash-state audit. Hardware timing, ownership and wiring remain open.
 Related: #3, #10.
+
+### Flash handoff audit (2026-11-10)
+
+[FLASH_HANDOFF.md](../firmware/evox/platform/FLASH_HANDOFF.md) establishes the
+captured entry order and unconditional FCNT1 byte-clear operation. 120 passing
+GNU cases cover the leaf, wrapper and startup prefix with inert flash register
+seeds. The manual's readiness/mode/settling requirements are separate from this
+instruction proof; FMOD access-ready is distinguished from FSTAT busy/ready.
+A guarded source flash-state admission contract is the next implementation unit.
+No flash-control writes are enabled in the source platform. Related: #3, #10.

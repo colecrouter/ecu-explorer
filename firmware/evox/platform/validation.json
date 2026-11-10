@@ -233,13 +233,15 @@
 		"kernel/isotp.h": "cd7c92051d0a977a33659c747b69cb705c60e5e16935bb58f9ee2bffa454747f",
 		"kernel/link.ld": "f2200b17c001c1a3b7a821444c73ec459d86e93367c3ea3eeb7a94f9940f3c8d",
 		"kernel/startup.S": "de79149e6cd80b494b4a744a34062bf482ab239991619019455eb09aef2f1123",
-		"platform/FACTORY_ENTRY.md": "8b54750f5814cda4ec31299c53cbf033a3d021ad66c18cfac09bbeabda9c1b08",
+		"platform/FACTORY_ENTRY.md": "6516c5465b35964427f0aaad87aef34d9e2734defdfe152fd6338bcafe05345d",
 		"platform/FACTORY_HELPER.md": "2dd416cb882015400a8088c553b1db2819f0bd0d6624f64fc9ad189e5dd804d6",
+		"platform/FLASH_HANDOFF.md": "14910942909b6dbbaddf34e862f5eedd9039e4f236dd9efe518dd647110a9c7a",
 		"platform/ISOTP.md": "f8b1277bcd937cf02b03f3766a4d075c5cf9ece28f02f5e3f0281c421bb54650",
 		"platform/PHYSICAL_BACKENDS.md": "c0e15daba1b30610659746e002b60d34c0980e8d8080dc6439c56af4dac7a405",
 		"platform/READ_ONLY_AGENT.md": "9c119dcb180b3cd28419ed1351699779bda791612bedb25d8c296434ccc61981",
 		"platform/STARTUP_CAN.md": "8f0358f3c6228f868f23e57daeba28c8fc8509fdef9d771c773ef5ad31afa287",
 		"platform/entry-validation.json": "96f54fbac8354fc060241b983eb1e79b577d8a62dafa8e69970586c75247f415",
+		"platform/flash-validation.json": "6eea6a248b74afcd506daa5fc039279b0fe756fb257db22c5dbc68d3e21244e3",
 		"platform/helper-validation.json": "b4a2aea15963e7f539171eff46493585ddd3dbbbfd99e41a06550fb975b2702b",
 		"platform/physical.S": "9344ae39ebf3802b4581a8ccb35df3893ad3c79ead57f6914189e84ddc7a37d4",
 		"platform/platform.c": "742c3dd90077c938ce60af021a0344b0f6abaa537a7750f1036f25ca6aa811fe",
@@ -271,7 +273,7 @@
 		"simulator/startup_probe.c": "50e0803585af2cb5b277b21a4d27198aec6ecbf5d6710e582128eeb7c6e4bc10"
 	},
 	"artifact_sha256": {
-		"validation.json": "8f426a48551788103207cb353ef8041d215c0564ff48805a73a7dc964c93d834",
+		"validation.json": "4be017c3188a1f188bbb96ad9d1286b1a397c1ff5545f47c10dbf27c591e36d8",
 		"input.packet": "b229a899bf0a7aab45c1da30d9f1c7ac94c6964c3fa2d7d25dd3d450b63c346d",
 		"snapshots.jsonl": "7022f4c65b29d7eaf11d1855f81a4a667fe78960c1a5bcfbf6ae942d7121f231",
 		"runner": "bb7f49e5745f1d2d4ad61fac2c453a4a7eac283bf3c2a85abc5e63d094c45db8"

@@ -1,0 +1,30 @@
+{
+	"cases": 120,
+	"engine": "GNU GDB 16.3 M32R simulator",
+	"model": "m32r/d",
+	"rom_sha256": "409e23912db9e445a72f6f7aff25c393549cc07eb0a649cf663fcbf07fda59af",
+	"kernel_sha256": "3304fe85517918e2e8ab6a04bf2d702e8b394caf4afd22e90b4c95d86a5bfe00",
+	"artifacts": {
+		"runner.c": "837b60ecf3b91c62759332d134737475d6e765676953ea17a4c17a6617eb3635",
+		"runner": "7f73196d465bfa5d89085925b4ba92acd2d17c882ff897212fc27d99d1e2012a",
+		"probe.py": "83ab49074401bd0b7d1afe7e0b997bea20ff42c2d7681d9aae96121a9eb95bd4",
+		"input.packet": "4ccb846c2bc3f9c7dee50af07c846bc319ca7e55875dca6bc4987b941ac29478",
+		"snapshots.jsonl": "247e12496d7fa2761ce408f598f660eb76c84b5b7dbb89ca9e753aa9a1144ef6"
+	},
+	"limitations": "Original instructions in inert synthetic ROM/RAM/SFR storage; not flash emulation. Arbitrary register seeds demonstrate absence of checks, not valid silicon states. No timing, reset side effects, command-mode or electrical evidence.",
+	"date": "2026-11-10",
+	"validation": "finite captured-kernel instruction execution; no ECU hardware",
+	"families": ["leaf", "wrapper", "startup"],
+	"steps": {
+		"leaf": [4],
+		"wrapper": [8],
+		"startup": [47]
+	},
+	"inputs": {
+		"fcnt1": [0, 1, 16, 17, 255],
+		"mode_status_reset": [[17, 128, 0], [16, 0, 0], [0, 128, 1], [0, 0, 1]],
+		"psw": [0, 64]
+	},
+	"leaf_sha256": "ae367cd0ba8d3091e56583493f053a273bbdea2d0b7838a8e8ed83b1d1d050c3",
+	"wrapper_sha256": "0fe6df4a14462446fd17272977e626317e39ab0bbe46a379ad03825a52570d3c"
+}

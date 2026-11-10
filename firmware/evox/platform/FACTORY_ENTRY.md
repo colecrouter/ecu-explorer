@@ -113,7 +113,7 @@ that boundary. The SP result is relative to that synthetic slice's initial SP;
 it is not a measurement of the complete diagnostic call stack.
 
 Before reaching the placeholder, copied code writes `0x8001e2 = 0x10`, writes
-`0x8001e3` first zero then one, pulses `0x8001e5`, and polls flash status.
+`0x8001e3` first zero then one, pulses `0x8001e5`, and polls FMOD access-ready status.
 Therefore an uploaded read-only agent cannot assume that inherited flash
 control is already in its required nonprogramming state. The captured kernel's
 entry-side disable routine must be audited before equivalent source startup
@@ -131,15 +131,16 @@ register/memory postconditions. Copy cases additionally compare the full ROM,
 SFR storage and RAM, allowing only the copied ranges and bounded stack scratch.
 The longest case takes 26,290 simulator steps; steps are not hardware cycles.
 
-A separate negative control leaves flash-ready status unset and reaches the
+A separate negative control leaves FMOD access-ready status unset and reaches the
 1,000-step cap in the copied status poll before entering the bootstrap. This
 exposes an inherited peripheral dependency; it is not a simulated watchdog
 reset or proof of hardware liveness. Full peripheral behavior is outside scope.
 
 Remaining admission work is now narrower:
 
-1. Audit the captured kernel's flash-disable/startup path and implement equivalent
-   read-only entry handling only after its required state is understood.
+1. The [flash-disable audit](FLASH_HANDOFF.md) now establishes the captured
+   byte-clear operation and its inherited prerequisites. Implement a guarded
+   source flash-state admission contract before enabling read-only entry.
 2. Confirm physical BCLK and fixed clock behavior, then calibrate the time base.
 3. Verify RAM/helper identity, P61 wiring and configuration, and competing
    writers/DMA/NMI on the actual handoff path.
