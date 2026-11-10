@@ -60,13 +60,36 @@ def corpus(symbols, code):
     # Enable the callback only in this controlled mapped arena; profile admission
     # itself is exercised separately. No physical SFR address is mapped/executed.
     state = bytearray(24); state[20] = 1
-    pattern = 0x5a if len(cases) % 2 == 0 else 0xa5
-    add("rom-byte-backend", "read_rom", [DATA + 256, DATA + 512, OUTPUT, 9], 1,
-        patches={256: state}, expected={OUTPUT - DATA: bytes([pattern]) * 9})
     disabled = bytearray(state); disabled[20] = 0; disabled[21] = 1
     add("rom-backend-reject-wrap", "read_rom", [DATA + 256, 0xffffffff, OUTPUT, 2], 0,
         patches={256: state}, expected={256: disabled})
     profile = bytearray(valid_profile); profile[18] = 0
     add("unadmitted-open-no-mmio", "evox_platform_open", [DATA + 256, DATA + 512], 0,
         patches={512: profile}, expected={276: b"\x00\x01"})
+    for name, snapshot, result in (
+        ("normal", bytes([0, 0x11, 0x80, 0]), 1),
+        ("entry", bytes([0x10, 0x11, 0x80, 0]), 0),
+        ("virtual", bytes([1, 0x11, 0x80, 0]), 0),
+        ("busy", bytes([0, 0x11, 0, 0]), 0),
+        ("unavailable", bytes([0, 1, 0x80, 0]), 0),
+        ("reset", bytes([0, 0x11, 0x80, 1]), 0),
+    ):
+        add("flash-predicate-" + name, "evox_flash_normal", [DATA + 256], result, patches={256: snapshot})
+    gate = struct.pack(">3H3B", 65535, 2, 100, 4, 1, 0)
+    add("flash-init", "evox_flash_init", [DATA + 256, 2, 100, 4], 1,
+        expected={256: struct.pack(">3H3B", 0, 2, 100, 4, 1, 0)}, stack_arg=1)
+    add("flash-invalid-init", "evox_flash_init", [DATA + 256, 0, 100, 4], 0,
+        expected={264: b"\x03"}, stack_arg=1)
+    for name, stage, now, snapshot, remaining, result, changes in (
+        ("clear", 0, 65535, bytes([0x10, 0x11, 0x80, 0]), 4, 2, {264: b"\x01"}),
+        ("wait-wrap", 1, 0, bytes([0, 0x11, 0x80, 0]), 4, 0, {262: b"\x03"}),
+        ("ready-wrap", 1, 1, bytes([0, 0x11, 0x80, 0]), 4, 1, {264: b"\x02"}),
+        ("budget", 1, 65535, bytes([0, 0x11, 0x80, 0]), 1, 0xffffffff, {262: b"\x00", 264: b"\x03"}),
+        ("gap", 1, 100, bytes([0, 0x11, 0x80, 0]), 4, 0xffffffff, {264: b"\x03"}),
+        ("readback", 1, 1, bytes([0x10, 0x11, 0x80, 0]), 4, 0xffffffff, {264: b"\x03"}),
+        ("latched", 3, 1, bytes([0, 0x11, 0x80, 0]), 4, 0xffffffff, {}),
+    ):
+        initial = bytearray(gate); initial[6] = remaining; initial[8] = stage
+        add("flash-step-" + name, "evox_flash_step", [DATA + 256, DATA + 512, now], result,
+            patches={256: initial, 512: snapshot}, expected=changes)
     return cases

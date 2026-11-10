@@ -2,10 +2,12 @@
 #ifndef EVOX_PLATFORM_H
 #define EVOX_PLATFORM_H
 #include "../kernel/can.h"
+#include "flash.h"
 #include "../kernel/dispatch.h"
 /* Immutable, externally admitted calibration/configuration. No production
  * profile is supplied. Admission includes RAM ownership, fixed upstream clock,
- * DMA/NMI exclusion, helper preservation and validated sampling cadence.
+ * DMA/NMI exclusion, helper preservation, settled normal flash/read-array
+ * state and validated sampling cadence.
  */
 struct evox_platform_profile {
     uint16_t tick_numerator_us, tick_denominator, max_delta_ticks;
@@ -38,11 +40,13 @@ int evox_clock_init(struct evox_clock *clock, uint16_t first,
  */
 int evox_clock_advance(struct evox_clock *clock, uint16_t raw, uint32_t *now);
 /* Open performs read-only physical snapshot checks. An unadmitted profile causes
- * no physical access. Profile storage must remain immutable/alive until closed. */
+ * no physical access. Flash normal/readiness/reset checks are mandatory.
+ * Profile storage must remain immutable/alive until closed. */
 int evox_platform_open(struct evox_platform *platform, const struct evox_platform_profile *profile);
 int evox_platform_now(struct evox_platform *platform, uint32_t *now);
 /* Bind guarded physical callbacks only after open. Invalid accesses latch a
  * platform fault and disable further physical accesses. Call now/check fault
- * before servicing the agent. No CPU/peripheral configuration is changed. */
+ * before servicing the agent. Bind and each ROM batch recheck flash and PSW.
+ * No CPU/peripheral configuration is changed. */
 int evox_platform_bind(struct evox_platform *platform, struct evox_can_io *can, struct evox_rom_io *rom);
 #endif

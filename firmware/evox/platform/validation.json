@@ -3,35 +3,39 @@
 	"validation": "finite compiled M32R execution; no ECU hardware",
 	"engine": "GNU GDB 16.3 M32R simulator",
 	"model": "m32r/d",
-	"cases": 19,
-	"returned": 19,
+	"cases": 33,
+	"returned": 33,
 	"limit_controls": 0,
 	"fault_controls": 0,
 	"startup_controls": 0,
-	"max_steps": 132,
+	"max_steps": 112,
 	"symbols": {
 		"evox_offline_entry": 4096,
 		"calibrated": 4100,
 		"snapshot": 4196,
-		"read_rom": 4360,
-		"read_can": 4488,
-		"write_can": 4580,
-		"evox_platform_validate": 4668,
-		"evox_clock_init": 4824,
-		"evox_clock_advance": 4932,
-		"evox_platform_open": 5032,
-		"evox_platform_now": 5164,
-		"evox_platform_bind": 5292,
-		"evox_physical_load8": 5356,
-		"evox_physical_load16": 5360,
-		"evox_physical_store8": 5364,
-		"evox_physical_psw": 5368,
-		"evox_platform_layout": 5372
+		"flash_normal": 4360,
+		"read_can": 4428,
+		"read_rom": 4520,
+		"write_can": 4676,
+		"evox_platform_validate": 4764,
+		"evox_clock_init": 4920,
+		"evox_clock_advance": 5028,
+		"evox_platform_open": 5128,
+		"evox_platform_now": 5268,
+		"evox_platform_bind": 5404,
+		"evox_physical_load8": 5520,
+		"evox_physical_load16": 5524,
+		"evox_physical_store8": 5528,
+		"evox_physical_psw": 5532,
+		"evox_flash_normal": 5536,
+		"evox_flash_init": 5584,
+		"evox_flash_step": 5684,
+		"evox_platform_layout": 5888
 	},
 	"target": {
-		"elf_sha256": "3a7d97149feba5d185441bcab3223ca76a62593c1127e7886ff3ca02f0317e32",
-		"binary_sha256": "8645d4b513e15a82ee43f98342fefcb0c9db637789eaa8f1828b124c83164988",
-		"code_bytes": 1300,
+		"elf_sha256": "181eb15a188a08e307b30adcd2e333096f9997f3756f05b040e0723e2bb16091",
+		"binary_sha256": "4c821a1a460950efac0758cd8ce574e7e45b976318f9ac62ea8382e9afea5175",
+		"code_bytes": 1816,
 		"stack": [
 			{
 				"function": "calibrated",
@@ -42,12 +46,16 @@
 				"bytes": 16
 			},
 			{
-				"function": "read_rom",
-				"bytes": 20
+				"function": "flash_normal",
+				"bytes": 8
 			},
 			{
 				"function": "read_can",
 				"bytes": 4
+			},
+			{
+				"function": "read_rom",
+				"bytes": 24
 			},
 			{
 				"function": "write_can",
@@ -75,13 +83,26 @@
 			},
 			{
 				"function": "evox_platform_bind",
+				"bytes": 16
+			},
+			{
+				"function": "evox_flash_normal",
 				"bytes": 0
+			},
+			{
+				"function": "evox_flash_init",
+				"bytes": 0
+			},
+			{
+				"function": "evox_flash_step",
+				"bytes": 20
 			}
 		],
 		"layout": {
-			"elf_sha256": "bb424301256d2b975ef1774f4860275fea8f90dbf994026fbee863adac00040d",
+			"elf_sha256": "f7891a5f0c17a7fbc8de1b7f46506db5499dfbf017f967b1689759ca72bbf06e",
 			"uploadable": false,
-			"code_bytes": 4836,
+			"unreferenced_transition_planner_omitted": true,
+			"code_bytes": 5048,
 			"bss_start": 8438784,
 			"bss_end": 8440928,
 			"stack_bottom": 8441856,
@@ -176,12 +197,16 @@
 					"bytes": 16
 				},
 				{
-					"function": "read_rom",
-					"bytes": 20
+					"function": "flash_normal",
+					"bytes": 8
 				},
 				{
 					"function": "read_can",
 					"bytes": 4
+				},
+				{
+					"function": "read_rom",
+					"bytes": 24
 				},
 				{
 					"function": "write_can",
@@ -209,7 +234,19 @@
 				},
 				{
 					"function": "evox_platform_bind",
+					"bytes": 16
+				},
+				{
+					"function": "evox_flash_normal",
 					"bytes": 0
+				},
+				{
+					"function": "evox_flash_init",
+					"bytes": 0
+				},
+				{
+					"function": "evox_flash_step",
+					"bytes": 20
 				},
 				{
 					"function": "evox_agent_main",
@@ -235,48 +272,52 @@
 		"kernel/startup.S": "de79149e6cd80b494b4a744a34062bf482ab239991619019455eb09aef2f1123",
 		"platform/FACTORY_ENTRY.md": "6516c5465b35964427f0aaad87aef34d9e2734defdfe152fd6338bcafe05345d",
 		"platform/FACTORY_HELPER.md": "2dd416cb882015400a8088c553b1db2819f0bd0d6624f64fc9ad189e5dd804d6",
-		"platform/FLASH_HANDOFF.md": "14910942909b6dbbaddf34e862f5eedd9039e4f236dd9efe518dd647110a9c7a",
+		"platform/FLASH_ADMISSION.md": "0c093ea1b1a8ec704dbd67e4e1523445a7b04aac8cad2fbc7a1b7e463bfba1f6",
+		"platform/FLASH_HANDOFF.md": "971ba6e85bbb50d5aad79e472e4430710c64ddfdfa04105a86704a40904a35f1",
 		"platform/ISOTP.md": "f8b1277bcd937cf02b03f3766a4d075c5cf9ece28f02f5e3f0281c421bb54650",
-		"platform/PHYSICAL_BACKENDS.md": "c0e15daba1b30610659746e002b60d34c0980e8d8080dc6439c56af4dac7a405",
+		"platform/PHYSICAL_BACKENDS.md": "e3e54e3a3c2cc388e4088bedd6e63dd9ad9ba37b80bbbdcf829f3daedf1fd9b6",
 		"platform/READ_ONLY_AGENT.md": "9c119dcb180b3cd28419ed1351699779bda791612bedb25d8c296434ccc61981",
 		"platform/STARTUP_CAN.md": "8f0358f3c6228f868f23e57daeba28c8fc8509fdef9d771c773ef5ad31afa287",
 		"platform/entry-validation.json": "96f54fbac8354fc060241b983eb1e79b577d8a62dafa8e69970586c75247f415",
 		"platform/flash-validation.json": "6eea6a248b74afcd506daa5fc039279b0fe756fb257db22c5dbc68d3e21244e3",
+		"platform/flash.c": "327f6f38d7631802762dad58f9fd7e8f4d6e55e7140dddff4cd0fe10dd1e3ee6",
+		"platform/flash.h": "1a4195691e76a2e44b7632c5991a7c9236d382868fdfab09143b32fdd99db613",
 		"platform/helper-validation.json": "b4a2aea15963e7f539171eff46493585ddd3dbbbfd99e41a06550fb975b2702b",
 		"platform/physical.S": "9344ae39ebf3802b4581a8ccb35df3893ad3c79ead57f6914189e84ddc7a37d4",
-		"platform/platform.c": "742c3dd90077c938ce60af021a0344b0f6abaa537a7750f1036f25ca6aa811fe",
-		"platform/platform.h": "0f40ef5aa9f96c4b2d145d9b179c8ec2cc488b41307739c9bb09534f9954baa6",
+		"platform/platform.c": "495884c6235551ec77a9d9bccbf40092b09ac2b0019726ae0fdae8c3a3da9f2c",
+		"platform/platform.h": "372c9f6de6ce76f66945b1d05eed7fb9f6cd04240408384d4aa5636fd9839d7b",
 		"platform/profile-candidate.json": "448b47a3b76aa69c0937cc19048b5d09a3bc8b52b97ace7b78de167bdf691f97",
-		"platform/ram-candidate.ld": "47abe907bcf0590c99bc852386298246bd9ca0602244d1cae31d0e9144b8f4fd",
+		"platform/ram-candidate.ld": "c728cda5d82b89474c26cda4b69fa95d13ec94688892d9f5e738a32fc32530e4",
 		"tools/build.py": "7b14564f2234c2c36c8b682ebe0a4ff1237e9ddae3005645e07e3ac33572ee38",
-		"tools/build_platform.py": "a48a32269172525709627bc215eb9c9105e8576cf919b7ee31039bb13a4a851b",
+		"tools/build_platform.py": "39a0ef7e006d2da56a94435b4256fead872c8e3e9820033850ee27685b327d3a",
 		"test/agent.c": "c6c6ada9832c1964954d794afa197f18a4e9254be6d5668ac17601d28716ddcd",
 		"test/agent_io.h": "8d70ffeb09b2d5a9e498d8999294799fab08bb1b9237e602aa53ff261acf3a47",
 		"test/can.c": "e27e2ee005616990676dee883d0ead7638234b2eec323267daa59a59d8e12601",
 		"test/core.c": "9897cde8394d87fd5d32a036875e3c3fceb7adc120fbc5ea6d97b5193b564191",
 		"test/dispatch.c": "6e32342536ae78c0ba2f5d00a1063197be0c2810d6585af54bf8e9df42a0d207",
+		"test/flash.c": "789eabdecc0834e6a7a3ae8dc3a2f837e31bd69e51ead99fc9547ffd8265e14f",
 		"test/isotp-version.h": "b6559e8069f815a3015871c4291efdb011f8402d4609b8b9950b34fcfabafa43",
 		"test/isotp.c": "0fd5c6ca1ae578d9586ae84e4bdc8854e5cc7135efa991af201e7943f051c62a",
-		"test/platform.c": "80a3790c0a7a3948d0c52d1049d1ffa94896f374ea05fbcaf6896fc56c37eb20",
-		"test/test_core.py": "4593f118578b569c861ce1fc74195493f5b6cd169cb1f02060445b70d1c945e5",
+		"test/platform.c": "b9819d4452650ad988f96c40d941fb790d3c982431cb88ce09b869169f908c79",
+		"test/test_core.py": "6067e165e89d4be6c42b9fa72790b7d20f4f8a36ca56ff3ad7deb302450a0347",
 		"test/test_simulator_checker.py": "bf274b027080b53d6b37ad300fc455dff3f15c3a2df15d69e34bda91147e6b0c",
-		"simulator/README.md": "6aa6695b4e6c939d170d900c2c4d8b2ce105d34ef265f30b9b4ee811ad305af4",
+		"simulator/README.md": "387e6d6cea47f88110f81ef70ac98ea1345e397b8607396adc35e07588d445a6",
 		"simulator/contracts.py": "6acf66d7fb7ba5a63d2d6b7291b1f4c71358d657c5bd535aef868ab140d9edc2",
 		"simulator/dispatch_probe.S": "dcc365dc0fa21b15be0721f3717168f60d4a9d284b2699f195ad33eaf5358385",
 		"simulator/engine-lock.json": "59cd1f7d28a9d3b949ed7a8fafa1f39f4a4f5f79425213e527ab4aeb0610d7e6",
 		"simulator/isotp_probe.c": "ff176046263bd80d839df1391eceda2c6a34daecfb7127502779d9cf38e1cef7",
 		"simulator/layout_probe.c": "9a5ea0e0145c4d2ca66194d82e0118c6fc8904e9bc3c17cfa9d98bd9bccb00db",
-		"simulator/platform_contracts.py": "b56d4ddc444dfda53cb04bffb90e63e7cf25a03dd8f984655fe3d9bc10b7e163",
-		"simulator/platform_layout.c": "f5f4404e8f48db9773acfdf636718172ce2439ed1fe51bfcf320a4a5dd7ef6d4",
+		"simulator/platform_contracts.py": "68e642468a3883628bc577b62b6b80eb89f48f3715c454751043bc7b6f1cb8f9",
+		"simulator/platform_layout.c": "bcd1689b68f98f1a92f41caf645827b33a99d58a6c4d34074e356d6b318422a7",
 		"simulator/run.py": "eb2cf9ec2fd339d587a1580657733ba53e35e04b9e45aefbbc2a035fae9d6f48",
 		"simulator/runner.c": "caa62d4324493d61c3dc1325c9c860315ac92359b05850c4e883c68ce4dca41e",
 		"simulator/startup_probe.c": "50e0803585af2cb5b277b21a4d27198aec6ecbf5d6710e582128eeb7c6e4bc10"
 	},
 	"artifact_sha256": {
-		"validation.json": "4be017c3188a1f188bbb96ad9d1286b1a397c1ff5545f47c10dbf27c591e36d8",
-		"input.packet": "b229a899bf0a7aab45c1da30d9f1c7ac94c6964c3fa2d7d25dd3d450b63c346d",
-		"snapshots.jsonl": "7022f4c65b29d7eaf11d1855f81a4a667fe78960c1a5bcfbf6ae942d7121f231",
+		"validation.json": "c9b2c41ccd34748c68b7b0d6c8d0cb0aec1242538aafe4652308e3957bb6ae88",
+		"input.packet": "a00edc5e3e144a3b6f3e5edb7eeac58ec45e02efe06afeb673329d801c585275",
+		"snapshots.jsonl": "8a58a646a1033ab90413cd889315700db52ca072db5c15afd4b09e3dcb3a9eb0",
 		"runner": "bb7f49e5745f1d2d4ad61fac2c453a4a7eac283bf3c2a85abc5e63d094c45db8"
 	},
-	"limitations": "Finite compiled execution in synthetic RAM; no ECU hardware or SFR emulation. Host shims exercise MMIO contracts. Candidate layout is link-only, has no operating main, and does not establish RAM ownership, timer calibration, sampling cadence or helper/watchdog integration. Hardware profile remains unadmitted."
+	"limitations": "Finite compiled execution in synthetic RAM; no SFR emulation or ECU hardware. Physical flash admission and positive ROM reads are host-shim tested. Native platform evidence covers pure flash predicates/planner, not physical transitions. Candidate layout is link-only with uncalled transition planner omitted, no operating main or admitted hardware profile. RAM ownership, calibration, sampling cadence and helper/watchdog integration remain external requirements."
 }

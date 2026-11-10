@@ -237,3 +237,15 @@ seeds. The manual's readiness/mode/settling requirements are separate from this
 instruction proof; FMOD access-ready is distinguished from FSTAT busy/ready.
 A guarded source flash-state admission contract is the next implementation unit.
 No flash-control writes are enabled in the source platform. Related: #3, #10.
+
+### Source flash admission (2026-11-10)
+
+[FLASH_ADMISSION.md](../firmware/evox/platform/FLASH_ADMISSION.md) documents
+mandatory normal/readiness/reset checks in physical open/bind/time/ROM paths,
+plus a pure bounded transition planner. Host contracts reject unqualified exit,
+virtual mapping, busy/reset/unavailable states, failed postconditions, excessive
+tick gaps and stalled clocks; compiled native cases cover predicates and planner
+steps. No flash-control writer is exposed. The link fixture omits the uncalled
+planner using section collection; the isolated library retains and executes it.
+The complete operating entry still needs budget and hardware admission work.
+Related: #3, #10.

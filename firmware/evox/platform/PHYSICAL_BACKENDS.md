@@ -31,7 +31,13 @@ five upstream timer-clock registers, CAN control/configuration/prescaler/clock,
 standard-frame selection for slots 0/1 and the inherited `7e0` receive ID.
 CAN must be out of reset, BasicCAN and loopback modes; the admitted snapshot
 must match. The profile remains caller-owned and immutable for its lifetime.
-No CPU, clock, pin, filter, flash or watchdog configuration is written by open.
+Open also requires normal flash mode, access-ready and program/erase-ready
+status, and reset deasserted. Bind, each time sample and each valid ROM batch
+recheck flash state; bind/ROM also recheck PSW. Rejection disables the platform
+without modifying callback descriptors or ROM output. These are non-atomic
+samples: exclusive ownership and settled read-array history remain external
+profile obligations. No CPU, clock, pin, filter, flash or watchdog configuration
+is written by open. See [flash admission](FLASH_ADMISSION.md).
 
 `admitted` is a caller attestation of external evidence, not discovery of part
 identity, RAM ownership, clock rate, absence of DMA/NMI interference, or electrical
@@ -113,6 +119,7 @@ Host sanitizer tests use physical-access shims and exercise zero/end-of-ROM,
 no-access rejection, write allowlists, PSW/configuration rejection, timer gaps,
 fractional carry and wrap. Native backend cases execute load/store/PSW
 instructions on mapped synthetic memory, calibration validation, rational clock
-updates and guarded ROM callbacks. They do not map or emulate real peripherals.
+updates and ROM-range rejection and pure flash gate transitions. Positive ROM reads with
+flash checks run under host shims. Native cases do not map or emulate real peripherals.
 The existing core simulator also checks rejection before SP/BSS writes for both
 IE-enabled and user-stack-mode entries. Receipts identify both build profiles.

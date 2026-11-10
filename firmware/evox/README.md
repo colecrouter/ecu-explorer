@@ -90,3 +90,7 @@ an admitted physical startup/calibration profile, helper adapter and RAM
 ownership evidence, then wire the operating main and a distinct read-only host
 profile. The current synthetic entry remains non-uploadable. No ECU
 operations have been performed.
+
+The [flash-state admission gate](platform/FLASH_ADMISSION.md) checks normal-read
+state before physical ROM batches and includes a bounded pure transition planner.
+No flash-control writer, operating main or hardware profile is enabled.

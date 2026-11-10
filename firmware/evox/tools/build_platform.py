@@ -54,10 +54,11 @@ def build(prefix, output, probe=False):
         work = output / label
         work.mkdir()
         run("gcc", *FLAGS, "-c", ROOT / "platform/platform.c", "-o", work / "platform.o")
+        run("gcc", *FLAGS, "-ffunction-sections", "-c", ROOT / "platform/flash.c", "-o", work / "flash.o")
         run("as", "-m32r", "-EB", ROOT / "platform/physical.S", "-o", work / "physical.o")
         run("as", "-m32r", "-EB", ROOT / "kernel/entry.S", "-o", work / "entry.o")
-        library_objects = [work / "entry.o", work / "platform.o", work / "physical.o"]
-        library_reports = [work / "platform.su"]
+        library_objects = [work / "entry.o", work / "platform.o", work / "physical.o", work / "flash.o"]
+        library_reports = [work / "platform.su", work / "flash.su"]
         if probe:
             run("gcc", *FLAGS, "-c", ROOT / "simulator/platform_layout.c", "-o", work / "probe.o")
             library_objects.append(work / "probe.o")
@@ -77,17 +78,22 @@ def build(prefix, output, probe=False):
         run("as", "-m32r", "-EB", ROOT / "kernel/startup.S", "-o", work / "startup.o")
         run("gcc", *FLAGS, "-c", ROOT / "simulator/layout_probe.c", "-o", work / "layout_probe.o")
         layout = work / "layout-probe.elf"
-        run("ld", "-EB", "--fatal-warnings", "--orphan-handling=error", "-T", ROOT / "platform/ram-candidate.ld",
+        run("ld", "-EB", "--fatal-warnings", "--gc-sections", "--orphan-handling=error", "-T", ROOT / "platform/ram-candidate.ld",
             "-Map", work / "layout.map", work / "startup.o", work / "layout_probe.o", work / "platform.o",
-            work / "physical.o", *[work / (name + ".o") for name in MODULES], "-o", layout)
+            work / "physical.o", work / "flash.o", *[work / (name + ".o") for name in MODULES], "-o", layout)
         inspect(layout, 0x80b000)
         addresses = symbols(layout)
         if max(addresses[name] for name in ("__evox_code_end", "__evox_bss_end", "__evox_stack_top")) >= 0x1000000:
             raise ValueError("small-model candidate exceeds 24-bit placement")
-        layout_reports = stack_bytes([work / (name + ".su") for name in (*MODULES, "platform", "layout_probe")])
+        if "evox_flash_init" in addresses or "evox_flash_step" in addresses:
+            raise ValueError("link-only fixture unexpectedly invokes transition planner")
+        if "evox_flash_normal" not in addresses or "evox_agent_step" not in addresses:
+            raise ValueError("candidate admission/service code was removed")
+        layout_reports = stack_bytes([work / (name + ".su") for name in (*MODULES, "platform", "flash", "layout_probe")])
         if sum(r["bytes"] for r in layout_reports) > 1024: raise ValueError("candidate stack reservation exceeded")
         runs.append(dict(elf_sha256=sha(library), binary_sha256=sha(binary), code_bytes=binary.stat().st_size,
                          stack=reports, layout=dict(elf_sha256=sha(layout), uploadable=False,
+                         unreferenced_transition_planner_omitted=True,
                          code_bytes=addresses["__evox_code_end"] - 0x80b000,
                          bss_start=addresses["__evox_bss_start"], bss_end=addresses["__evox_bss_end"],
                          stack_bottom=addresses["__evox_stack_bottom"], stack_top=addresses["__evox_stack_top"],

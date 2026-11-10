@@ -117,8 +117,10 @@ Backend/caller obligations outside these fixtures are still separate gates.
 
 Use the same command with `--platform` for the isolated small-model physical
 backend library. It runs unsigned high-bit byte/halfword loads, a byte store,
-PSW reads, profile rejection, fractional and wrapping clocks, guarded ROM reads
-and an unadmitted open. Only synthetic memory is mapped; physical SFRs and ROM
+PSW reads, profile rejection, fractional and wrapping clocks, invalid ROM-range
+rejection, an unadmitted open and pure flash-admission/transition contracts.
+Positive physical ROM reads are now host-shim-only because the callback
+requires actual SFR reads; the native runner does not bypass that admission. Only synthetic memory is mapped; physical SFRs and ROM
 address zero are not modeled. Host shims separately test the address-zero call
 without C null-pointer access and the allowlisted physical access paths.
 

@@ -38,6 +38,7 @@ int main(void) {
     uint32_t now = 123;
     assert(evox_platform_bind(&p, 0, 0) == 0); /* Set state before other bind calls below. */
     registers[0x3cb] = 1; registers[0x1100] = 0x1f; registers[0x1101] = 0x20;
+    registers[0x1e0] = 0x11; registers[0x1e1] = 0x80;
     profile.admitted = 0;
     assert(!evox_platform_open(&p, &profile) && loads == 0 && stores == 0);
     profile.admitted = 1;
@@ -85,6 +86,32 @@ int main(void) {
     assert(evox_platform_open(&p, &profile));
     timer(106); /* More than 100 ticks since last open sample 5. */
     assert(!evox_platform_now(&p, &now) && now == 456 && p.fault);
+    assert(evox_platform_open(&p, &profile));
+    registers[0x1e2] = 0x10;
+    assert(!evox_platform_open(&p, &profile) && p.fault && stores == 1);
+    registers[0x1e2] = 0;
+    assert(evox_platform_open(&p, &profile));
+    registers[0x1e0] = 0;
+    struct evox_can_io saved_can = can;
+    struct evox_rom_io saved_rom = rom;
+    assert(!evox_platform_bind(&p, &can, &rom) && p.fault);
+    assert(memcmp(&can, &saved_can, sizeof(can)) == 0);
+    assert(memcmp(&rom, &saved_rom, sizeof(rom)) == 0);
+    registers[0x1e0] = 0x11;
+    assert(evox_platform_open(&p, &profile));
+    assert(evox_platform_bind(&p, &can, &rom));
+    memset(bytes, 0xcc, sizeof(bytes));
+    registers[0x1e1] = 0; /* Busy after binding: no ROM loads/output changes. */
+    prior = loads;
+    assert(!rom.read(rom.context, 0, bytes, 9) && loads == prior + 4 && p.fault);
+    for (uint32_t i = 0; i < sizeof(bytes); ++i) assert(bytes[i] == 0xcc);
+    prior = loads;
+    assert(!rom.read(rom.context, 0, bytes, 9) && loads == prior);
+    registers[0x1e1] = 0x80;
+    assert(evox_platform_open(&p, &profile));
+    registers[0x1e5] = 1;
+    assert(!evox_platform_now(&p, &now) && p.fault && now == 456);
+    registers[0x1e5] = 0;
     struct evox_clock clock;
     assert(evox_clock_init(&clock, 0, 4, 5, 100));
     for (uint16_t raw = 1; raw <= 5; ++raw) {

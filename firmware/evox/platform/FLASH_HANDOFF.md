@@ -88,8 +88,9 @@ A read-only startup must not invoke the enable path simply to mimic the capture.
 Keep the CAN and ROM callbacks' existing flash-write denial. Any future exit
 from inherited flash mode belongs to a separate, narrowly scoped startup
 operation, gated by an admitted hardware profile, CPU state and owned RAM.
-The current platform library does not inspect these flash registers; successful
-`evox_platform_open` is therefore not flash-state admission.
+The subsequent [source admission implementation](FLASH_ADMISSION.md) now checks
+normal mode/readiness/reset in open, bind, time samples and ROM batches. Its
+checks do not establish physical transition history or hardware readiness.
 
 Proposed admission behavior, not implemented hardware code:
 
@@ -128,7 +129,7 @@ remain unchanged; real controller auto-clearing is deliberately not simulated.
 These checks prove bounded instruction effects, not a safe busy-state exit or
 an eight-clock hardware settling interval.
 
-The next implementation unit is a source flash-state admission contract with
-host transcripts for rejection, bounded transition and postcondition failure.
-The operating entry should invoke it before binding ROM access. Physical
+The [source flash-state admission contract](FLASH_ADMISSION.md) is now implemented
+and host/native tested. Wiring an admitted startup owner to its transition
+actions and fitting the complete operating entry remain pending. Physical
 readiness remains separate from that source/test work.

@@ -9,7 +9,7 @@ MEMORY {
     STACK (rw) : ORIGIN = 0x80d000, LENGTH = 1024
 }
 SECTIONS {
-    .text : { KEEP(*(.text.evox_entry)) *(.text*) *(.rodata*) } > CODE
+    .text : { KEEP(*(.text.evox_entry)) KEEP(*(.text)) *(.text*) *(.rodata*) } > CODE
     __evox_code_end = .;
     .rela.text : { *(.rela.text*) }
     .data : { *(.data*) *(.sdata*) } > STATE

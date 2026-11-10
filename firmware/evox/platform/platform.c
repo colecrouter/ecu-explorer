@@ -55,6 +55,15 @@ static void snapshot(struct evox_platform_snapshot *s) {
     s->rx_id0 = evox_physical_load8(0x801100);
     s->rx_id1 = evox_physical_load8(0x801101);
 }
+/* Read-only admission. No inherited E/W mode is repaired automatically. */
+static int flash_normal(void) {
+    struct evox_flash_snapshot s;
+    s.control = evox_physical_load8(0x8001e2);
+    s.mode = evox_physical_load8(0x8001e0);
+    s.status = evox_physical_load8(0x8001e1);
+    s.reset = evox_physical_load8(0x8001e5);
+    return evox_flash_normal(&s);
+}
 static int disable(struct evox_platform *p) {
     p->fault = 1; p->enabled = 0; return 0;
 }
@@ -63,7 +72,7 @@ int evox_platform_open(struct evox_platform *p, const struct evox_platform_profi
     if (!calibrated(profile) || (evox_physical_psw() & 0xc0U) != 0) return 0;
     struct evox_platform_snapshot observed;
     snapshot(&observed);
-    if (!evox_platform_validate(profile, &observed)) return 0;
+    if (!evox_platform_validate(profile, &observed) || !flash_normal()) return 0;
     p->profile = profile;
     if (!evox_clock_init(&p->clock, evox_physical_load16(0x8003d0),
         profile->tick_numerator_us, profile->tick_denominator, profile->max_delta_ticks)) return 0;
@@ -75,7 +84,7 @@ int evox_platform_now(struct evox_platform *p, uint32_t *now) {
     if ((evox_physical_psw() & 0xc0U) != 0) return disable(p);
     struct evox_platform_snapshot observed;
     snapshot(&observed);
-    if (!evox_platform_validate(p->profile, &observed) ||
+    if (!evox_platform_validate(p->profile, &observed) || !flash_normal() ||
         !evox_clock_advance(&p->clock, evox_physical_load16(0x8003d0), now)) return disable(p);
     return 1;
 }
@@ -98,11 +107,13 @@ static int read_rom(void *context, uint32_t address, uint8_t *output, uint16_t l
     if (!p->enabled || p->fault) return 0;
     if (output == 0 || length == 0 || length > 1024 || address >= 0x100000 ||
         length > 0x100000U - address) return disable(p);
+    if ((evox_physical_psw() & 0xc0U) != 0 || !flash_normal()) return disable(p);
     for (uint32_t i = 0; i < length; ++i) output[i] = evox_physical_load8(address + i);
     return 1;
 }
 int evox_platform_bind(struct evox_platform *p, struct evox_can_io *can, struct evox_rom_io *rom) {
     if (!p->enabled || p->fault || can == 0 || rom == 0) return 0;
+    if ((evox_physical_psw() & 0xc0U) != 0 || !flash_normal()) return disable(p);
     can->context = p; can->read8 = read_can; can->write8 = write_can;
     rom->context = p; rom->read = read_rom;
     return 1;
