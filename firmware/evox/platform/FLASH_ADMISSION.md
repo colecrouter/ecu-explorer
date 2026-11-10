@@ -3,7 +3,9 @@
 Implemented 2026-11-10 for #3 and #10. Original source in `flash.c/h` supplies
 normal-read validation and a bounded transition planner. `platform.c` uses the
 normal-read predicate before exposing physical ROM access. No production profile,
-flash-control writer, operating main or ECU execution is enabled.
+hardware profile or ECU execution is enabled. The subsequent
+[operating entry](OPERATING_ENTRY.md) wires a conditional FCNT1 clear owner
+under a zero/unadmitted profile.
 
 ## Physical gate
 
@@ -29,7 +31,7 @@ not claim protection against a concurrent controller-mode change.
 
 `evox_flash_init` and `evox_flash_step` operate only on caller-owned structures.
 They have no IO callbacks, physical addresses or hardware effects. An admitted
-startup owner, still pending, must supply CPU/configuration checks, calibrated
+startup owner must supply CPU/configuration checks, calibrated
 16-bit time, snapshots and any permitted physical action.
 
 Initialization validates a settling interval of at least one tick, a maximum
@@ -77,8 +79,12 @@ service adapter remain linked and the uncalled planner is absent. The loader
 limit is unchanged. Stack accounting conservatively includes even the omitted
 planner's reported frames.
 
-This is not a size proof for a future operating main that invokes the planner:
+This legacy fixture is not a size proof for an operating main that invokes the planner:
 linking every new function initially exceeded the captured span by 183 bytes.
 The complete startup owner, helper adapter and operating loop still need code
 budget work before any uploadable candidate can be produced. Existing host
 uploader capability and admission remain unchanged.
+
+A separate [LTO operating profile](OPERATING_ENTRY.md) now links the complete
+reachable startup/service graph with the planner. Its exact zero-profile entry
+has native fail-closed evidence; admitted-path behavior remains host-tested.

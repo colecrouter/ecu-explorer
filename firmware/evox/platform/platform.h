@@ -42,6 +42,11 @@ int evox_clock_advance(struct evox_clock *clock, uint16_t raw, uint32_t *now);
 /* Open performs read-only physical snapshot checks. An unadmitted profile causes
  * no physical access. Flash normal/readiness/reset checks are mandatory.
  * Profile storage must remain immutable/alive until closed. */
+/* Internal startup sampling: validate admitted CPU/CAN/timer configuration,
+ * then read flash state and timer without requiring normal flash or enabling IO.
+ * All output storage must be valid. Rejection may leave partial snapshot output. */
+int evox_platform_observe(const struct evox_platform_profile *profile,
+                         struct evox_flash_snapshot *flash, uint16_t *raw);
 int evox_platform_open(struct evox_platform *platform, const struct evox_platform_profile *profile);
 int evox_platform_now(struct evox_platform *platform, uint32_t *now);
 /* Bind guarded physical callbacks only after open. Invalid accesses latch a

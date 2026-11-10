@@ -87,10 +87,12 @@ a bounded stack window are mutable, with code and surrounding guards checked.
 The source startup establishes stack/BSS and calls C under a synthetic profile;
 its test main is excluded from the ordinary build. The next unit is to close
 an admitted physical startup/calibration profile, helper adapter and RAM
-ownership evidence, then wire the operating main and a distinct read-only host
+ownership evidence, then qualify the operating entry and add a distinct read-only host
 profile. The current synthetic entry remains non-uploadable. No ECU
 operations have been performed.
 
 The [flash-state admission gate](platform/FLASH_ADMISSION.md) checks normal-read
 state before physical ROM batches and includes a bounded pure transition planner.
-No flash-control writer, operating main or hardware profile is enabled.
+The [unadmitted operating entry](platform/OPERATING_ENTRY.md) now wires the
+startup owner, helper and service loop. Its zero profile rejects before IO; no
+hardware profile or uploader capability is enabled.

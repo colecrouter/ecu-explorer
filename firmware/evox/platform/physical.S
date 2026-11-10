@@ -22,3 +22,12 @@ evox_physical_store8:
 evox_physical_psw:
     mvfc r0,psw
     jmp lr
+    .section .text.evox_helper,"ax"
+    .align 2
+    .global evox_physical_helper
+evox_physical_helper:
+    push lr
+    ld24 r0,#0x808640
+    jl r0
+    pop lr
+    jmp lr

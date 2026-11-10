@@ -89,7 +89,8 @@ main that checks 32 bytes of BSS before writing a marker. Two dirty patterns
 and a deliberately incorrect incoming SP exercise the real assembled startup;
 the checker requires cleared BSS, the marker, the new SP, unchanged surrounding
 memory/stack, and the final park PC. The ordinary core build excludes this test
-main and startup entry. No production C agent main exists yet.
+main and startup entry. The [operating C main](OPERATING_ENTRY.md) now exists under a separate
+LTO/zero-profile build; it is not a production-admitted image.
 
 ## Original CAN0 mailbox primitives
 

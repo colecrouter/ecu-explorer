@@ -53,7 +53,7 @@ def build(prefix, output, probe=False):
     for label in ("first", "repeat"):
         work = output / label
         work.mkdir()
-        run("gcc", *FLAGS, "-c", ROOT / "platform/platform.c", "-o", work / "platform.o")
+        run("gcc", *FLAGS, "-ffunction-sections", "-c", ROOT / "platform/platform.c", "-o", work / "platform.o")
         run("gcc", *FLAGS, "-ffunction-sections", "-c", ROOT / "platform/flash.c", "-o", work / "flash.o")
         run("as", "-m32r", "-EB", ROOT / "platform/physical.S", "-o", work / "physical.o")
         run("as", "-m32r", "-EB", ROOT / "kernel/entry.S", "-o", work / "entry.o")
@@ -79,6 +79,9 @@ def build(prefix, output, probe=False):
         run("gcc", *FLAGS, "-c", ROOT / "simulator/layout_probe.c", "-o", work / "layout_probe.o")
         layout = work / "layout-probe.elf"
         run("ld", "-EB", "--fatal-warnings", "--gc-sections", "--orphan-handling=error", "-T", ROOT / "platform/ram-candidate.ld",
+            *["--undefined=" + name for name in (
+                "evox_platform_open", "evox_platform_now", "evox_platform_bind",
+                "evox_platform_validate", "evox_clock_init", "evox_clock_advance")],
             "-Map", work / "layout.map", work / "startup.o", work / "layout_probe.o", work / "platform.o",
             work / "physical.o", work / "flash.o", *[work / (name + ".o") for name in MODULES], "-o", layout)
         inspect(layout, 0x80b000)

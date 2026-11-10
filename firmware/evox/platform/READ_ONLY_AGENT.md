@@ -109,6 +109,7 @@ The current build still has a synthetic parking entry, not a production C main.
 
 The [physical callbacks, time-base guards and candidate layout](PHYSICAL_BACKENDS.md)
 are now implemented. Next: admit the physical RAM/calibration/helper contracts,
-wire the operating main and add a distinct read-only upload/attach profile.
+qualify the [operating entry](OPERATING_ENTRY.md) and add a distinct read-only
+upload/attach profile.
 Hardware scheduling, watchdog timing and actual ECU behavior need bench evidence.
 No ECU operation or direct physical-memory access was performed by this work.

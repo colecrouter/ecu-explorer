@@ -31,6 +31,17 @@ static void print_hex(const unsigned char *bytes, unsigned size) {
     for (unsigned i = 0; i < size; ++i) printf("%02x", bytes[i]);
     putchar('"');
 }
+#ifdef EVOX_OPERATING_PROFILE
+#define CODE_BASE 0x80b000U
+#define DATA_BASE 0x80c400U
+#define DATA_SIZE 3072U
+#define STACK_BASE 0x80d000U
+#else
+#define CODE_BASE 0x1000U
+#define DATA_BASE 0x20000U
+#define DATA_SIZE 4096U
+#define STACK_BASE 0x30000U
+#endif
 int main(void) {
     char *options[] = {"evox-core-simulator", "--architecture=m32r", "--model", "m32r/d", NULL};
     default_callback.init(&default_callback);
@@ -40,17 +51,17 @@ int main(void) {
     require(count > 0 && count <= 10000, "invalid case count");
     for (uint32_t c = 0; c < count; ++c) {
         uint32_t entry = word(), code_size = word(), limit = word();
-        require(code_size > 0 && code_size <= 5117 && entry >= 0x1000 &&
-                entry < 0x1000 + code_size && limit > 0 && limit <= 200000,
+        require(code_size > 0 && code_size <= 5117 && entry >= CODE_BASE &&
+                entry < CODE_BASE + code_size && limit > 0 && limit <= 200000,
                 "invalid execution bounds");
         uint32_t registers[24], before[24];
         for (int r = 0; r < 24; ++r) registers[r] = word();
         require(registers[21] == entry && registers[14] == 0x8000 &&
-                registers[15] >= 0x30000 && registers[15] <= 0x30400 &&
+                registers[15] >= STACK_BASE && registers[15] <= STACK_BASE + 1024U &&
                 (registers[15] & 3U) == 0, "invalid entry/return/stack seed");
-        unsigned sizes[3] = {code_size, 4096, 1024};
-        uint32_t bases[3] = {0x1000, 0x20000, 0x30000};
-        unsigned char code[5117], data[4096], stack[1024];
+        unsigned sizes[3] = {code_size, DATA_SIZE, 1024};
+        uint32_t bases[3] = {CODE_BASE, DATA_BASE, STACK_BASE};
+        unsigned char code[5117], data[DATA_SIZE], stack[1024];
         unsigned char *segments[3] = {code, data, stack};
         sim_do_command(sd, "memory-delete all");
         for (unsigned s = 0; s < 3; ++s) {
@@ -69,7 +80,7 @@ int main(void) {
         while (steps < limit) {
             uint32_t pc = fetch(sd, 21);
             if (pc == 0x8000) { status = "return"; break; }
-            if (pc < 0x1000 || pc >= 0x1000 + code_size) { status = "escape"; break; }
+            if (pc < CODE_BASE || pc >= CODE_BASE + code_size) { status = "escape"; break; }
             sim_resume(sd, 1, 0);
             ++steps;
             enum sim_stop reason;

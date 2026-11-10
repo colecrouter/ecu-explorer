@@ -56,13 +56,26 @@ static void snapshot(struct evox_platform_snapshot *s) {
     s->rx_id1 = evox_physical_load8(0x801101);
 }
 /* Read-only admission. No inherited E/W mode is repaired automatically. */
+static void flash_snapshot(struct evox_flash_snapshot *s) {
+    s->control = evox_physical_load8(0x8001e2);
+    s->mode = evox_physical_load8(0x8001e0);
+    s->status = evox_physical_load8(0x8001e1);
+    s->reset = evox_physical_load8(0x8001e5);
+}
 static int flash_normal(void) {
     struct evox_flash_snapshot s;
-    s.control = evox_physical_load8(0x8001e2);
-    s.mode = evox_physical_load8(0x8001e0);
-    s.status = evox_physical_load8(0x8001e1);
-    s.reset = evox_physical_load8(0x8001e5);
+    flash_snapshot(&s);
     return evox_flash_normal(&s);
+}
+int evox_platform_observe(const struct evox_platform_profile *profile,
+                         struct evox_flash_snapshot *flash, uint16_t *raw) {
+    if (!calibrated(profile) || (evox_physical_psw() & 0xc0U) != 0) return 0;
+    struct evox_platform_snapshot observed;
+    snapshot(&observed);
+    if (!evox_platform_validate(profile, &observed)) return 0;
+    flash_snapshot(flash);
+    *raw = evox_physical_load16(0x8003d0);
+    return 1;
 }
 static int disable(struct evox_platform *p) {
     p->fault = 1; p->enabled = 0; return 0;

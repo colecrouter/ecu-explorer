@@ -130,6 +130,7 @@ These checks prove bounded instruction effects, not a safe busy-state exit or
 an eight-clock hardware settling interval.
 
 The [source flash-state admission contract](FLASH_ADMISSION.md) is now implemented
-and host/native tested. Wiring an admitted startup owner to its transition
-actions and fitting the complete operating entry remain pending. Physical
+and host/native tested. The [unadmitted operating entry](OPERATING_ENTRY.md) now connects the
+startup owner and service loop within the loader budget. Physical admission and
+optimized-image admitted-path execution remain pending. Physical
 readiness remains separate from that source/test work.

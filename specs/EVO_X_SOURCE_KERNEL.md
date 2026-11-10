@@ -249,3 +249,14 @@ steps. No flash-control writer is exposed. The link fixture omits the uncalled
 planner using section collection; the isolated library retains and executes it.
 The complete operating entry still needs budget and hardware admission work.
 Related: #3, #10.
+
+### Operating entry and LTO size proof (2026-11-10)
+
+[OPERATING_ENTRY.md](../firmware/evox/platform/OPERATING_ENTRY.md) documents the
+bounded flash startup owner, idle-confirmed CAN arming, helper wrapper and service
+loop. A separate repeat-built GCC LTO profile links the full reachable graph
+within the existing loader span; no planner omission substitutes for this proof.
+The linked profile is zero/unadmitted. Four exact-image native startup cases
+prove rejection/park and memory guards; admitted read/transition/fault flows run
+under host shims. Optimized admitted-path and hardware qualification remain
+pending. No uploader capability or ECU execution is enabled. Refs #3, #10.

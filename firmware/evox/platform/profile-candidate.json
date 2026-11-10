@@ -24,6 +24,6 @@
 		"Calibrated tick ratio and bounded sampling cadence",
 		"CAN/timer/upstream-clock configuration snapshot and fixed clock source",
 		"Exclusive RAM/slot ownership including DMA and nonmaskable exceptions",
-		"Retained factory helper identity, watchdog contract and operating main"
+		"Physical retained-helper identity, watchdog/fault policy and optimized admitted-path qualification"
 	]
 }

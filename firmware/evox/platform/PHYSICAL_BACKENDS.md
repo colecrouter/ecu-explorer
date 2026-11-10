@@ -84,8 +84,9 @@ factory/IRQ/DMA users must still be excluded by the admitted profile.
 A link-only fixture reserves the real C agent/platform state and supplies a test
 main; it is not the operating agent main. The build exports an ELF/map for this
 layout proof, **no candidate wire image or binary**, and marks it unadmitted.
-The actual startup loop, calibrated profile, helper service and host admission
-are still pending.
+A separate [operating-entry profile](OPERATING_ENTRY.md) now links startup,
+helper service and the protocol loop using LTO. Its configuration remains zero
+and unadmitted; calibration, physical ownership and host admission are pending.
 
 ## Build models and reproduction
 

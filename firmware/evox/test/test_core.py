@@ -9,6 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CoreContracts(unittest.TestCase):
+    def test_runtime_contracts(self):
+        self.compile_contract("runtime", ("core", "can", "isotp", "dispatch", "agent", "../platform/platform", "../platform/flash", "../platform/runtime"))
+
     def test_flash_contracts(self):
         self.compile_contract("flash", ("../platform/flash",))
 

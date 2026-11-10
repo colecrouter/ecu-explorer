@@ -1,0 +1,219 @@
+{
+	"schema_version": 1,
+	"validation": "finite compiled M32R execution; no ECU hardware",
+	"engine": "GNU GDB 16.3 M32R simulator",
+	"model": "m32r/d",
+	"cases": 4,
+	"returned": 0,
+	"limit_controls": 4,
+	"fault_controls": 0,
+	"startup_controls": 4,
+	"max_steps": 20000,
+	"symbols": {
+		"evox_ram_entry": 8433664,
+		"evox_startup_park": 8433708,
+		"evox_startup_rejected": 8433712,
+		"evox_physical_load8": 8433716,
+		"evox_physical_load16": 8433720,
+		"evox_physical_store8": 8433724,
+		"evox_physical_psw": 8433728,
+		"calibrated": 8433732,
+		"evox_platform_validate": 8433828,
+		"ready": 8433980,
+		"abort_transfer.constprop.0": 8434020,
+		"evox_isotp_tick.constprop.0": 8434072,
+		"prepare.constprop.0": 8434148,
+		"flash_snapshot": 8434188,
+		"flash_normal": 8434252,
+		"read_can": 8434300,
+		"snapshot": 8434392,
+		"read_rom": 8434556,
+		"write_can": 8434712,
+		"evox_agent_main": 8434800,
+		"evox_physical_helper": 8438408,
+		"evox_runtime_layout": 8438424,
+		"version.0": 8438444,
+		"evox_runtime_profile": 8438484,
+		"__evox_code_end": 8438512
+	},
+	"target": {
+		"elf_sha256": "5d327e5f31a51e7407e4d75c268eb130c3b2b0b8c475300b0a3572fa43b51f1c",
+		"text_sha256": "d764cbdd0181e502c4127ddf29693a74ad8f78cebf738feb73508d242401e499",
+		"code_bytes": 4848,
+		"symbols": {
+			"evox_ram_entry": 8433664,
+			"evox_startup_park": 8433708,
+			"evox_startup_rejected": 8433712,
+			"evox_physical_load8": 8433716,
+			"evox_physical_load16": 8433720,
+			"evox_physical_store8": 8433724,
+			"evox_physical_psw": 8433728,
+			"calibrated": 8433732,
+			"evox_platform_validate": 8433828,
+			"ready": 8433980,
+			"abort_transfer.constprop.0": 8434020,
+			"evox_isotp_tick.constprop.0": 8434072,
+			"prepare.constprop.0": 8434148,
+			"flash_snapshot": 8434188,
+			"flash_normal": 8434252,
+			"read_can": 8434300,
+			"snapshot": 8434392,
+			"read_rom": 8434556,
+			"write_can": 8434712,
+			"evox_agent_main": 8434800,
+			"evox_physical_helper": 8438408,
+			"evox_runtime_layout": 8438424,
+			"version.0": 8438444,
+			"evox_runtime_profile": 8438484,
+			"__evox_code_end": 8438512,
+			"__evox_bss_start": 8438784,
+			"runtime": 8438784,
+			"__evox_bss_end": 8440968,
+			"__evox_stack_bottom": 8441856,
+			"__evox_stack_top": 8442880
+		},
+		"runtime_layout": [2184, 2180, 2119, 2141, 2140],
+		"stack": [
+			{
+				"function": "calibrated",
+				"bytes": 0
+			},
+			{
+				"function": "evox_platform_validate",
+				"bytes": 12
+			},
+			{
+				"function": "ready",
+				"bytes": 0
+			},
+			{
+				"function": "abort_transfer.constprop",
+				"bytes": 0
+			},
+			{
+				"function": "evox_isotp_tick.constprop",
+				"bytes": 4
+			},
+			{
+				"function": "prepare.constprop",
+				"bytes": 0
+			},
+			{
+				"function": "flash_snapshot",
+				"bytes": 8
+			},
+			{
+				"function": "flash_normal",
+				"bytes": 8
+			},
+			{
+				"function": "read_can",
+				"bytes": 4
+			},
+			{
+				"function": "snapshot",
+				"bytes": 16
+			},
+			{
+				"function": "read_rom",
+				"bytes": 24
+			},
+			{
+				"function": "write_can",
+				"bytes": 4
+			},
+			{
+				"function": "evox_agent_main",
+				"bytes": 72
+			}
+		],
+		"asm_stack_bytes": 4
+	},
+	"date": "2026-11-10",
+	"source_sha256": {
+		"kernel/agent.c": "3b7c1e41b8a6605a471527c1acab7dad1204aa2a097d454bbcf8455068d4c6d4",
+		"kernel/agent.h": "714eaeed8cee9f946f5e68bad1076344f349e68a72568c3a14b0cb8da8b49d7e",
+		"kernel/can.c": "3de520fab4b11034230032b4bcc70036b3e11da1386eb8f829de9663eeebd09c",
+		"kernel/can.h": "6fc2f85a7a921075ed805540b9cfff7903b3082bf8f1281d82b2d532c500d0be",
+		"kernel/core.c": "b8ca2ae4c4280948abe1fdce8c6f8102d51c87938d8dec4942bfef1a4928cc4f",
+		"kernel/core.h": "60627f99b9de1005005d264a4357be665e183bb58297ccacab76048fe3669f04",
+		"kernel/dispatch.c": "54387ae096ca289102032bab98597d549a2c7f47c23add76019aebe7be0443c3",
+		"kernel/dispatch.h": "26150b0803cb62a06eab0552dde8ad82f6da49a4def9f25391506b609e1b457e",
+		"kernel/entry.S": "55cf4fed935be6c5a2af94d22e6e363cc32529a25d097201ae96ac77276fb296",
+		"kernel/isotp.c": "43f78ac858d81ba52e2f760a91f6eb518d50bfb38edf4df89e4f180f4e07eeeb",
+		"kernel/isotp.h": "cd7c92051d0a977a33659c747b69cb705c60e5e16935bb58f9ee2bffa454747f",
+		"kernel/link.ld": "f2200b17c001c1a3b7a821444c73ec459d86e93367c3ea3eeb7a94f9940f3c8d",
+		"kernel/startup.S": "de79149e6cd80b494b4a744a34062bf482ab239991619019455eb09aef2f1123",
+		"platform/FACTORY_ENTRY.md": "6516c5465b35964427f0aaad87aef34d9e2734defdfe152fd6338bcafe05345d",
+		"platform/FACTORY_HELPER.md": "2dd416cb882015400a8088c553b1db2819f0bd0d6624f64fc9ad189e5dd804d6",
+		"platform/FLASH_ADMISSION.md": "1f27c4f3006116906146d3150266b9041f8e03d1f40fd06221b3be161def66cb",
+		"platform/FLASH_HANDOFF.md": "eabd73c693423e80a3573c40a5f1167a37c8b093ee5ac263f253149714e4dfc7",
+		"platform/ISOTP.md": "f8b1277bcd937cf02b03f3766a4d075c5cf9ece28f02f5e3f0281c421bb54650",
+		"platform/OPERATING_ENTRY.md": "4bbb5ace0d5fb62167e23c454a16bf2bacdacd2654afdf71b6211d79297125ef",
+		"platform/PHYSICAL_BACKENDS.md": "3ff15b57c8cd9fe8f85e59dd2ceed1670eb257d21df279e7350c608d0cc1d1b1",
+		"platform/READ_ONLY_AGENT.md": "32687a6ad9ed979835ce9e959263a3a74117ac8aa71c1b091a0651ae8e04d719",
+		"platform/STARTUP_CAN.md": "3ac15343359b43f4fefe0d7ae720f0ea233541ec8a8e6e341ac9e87cec16533a",
+		"platform/entry-validation.json": "96f54fbac8354fc060241b983eb1e79b577d8a62dafa8e69970586c75247f415",
+		"platform/flash-validation.json": "6eea6a248b74afcd506daa5fc039279b0fe756fb257db22c5dbc68d3e21244e3",
+		"platform/flash.c": "327f6f38d7631802762dad58f9fd7e8f4d6e55e7140dddff4cd0fe10dd1e3ee6",
+		"platform/flash.h": "1a4195691e76a2e44b7632c5991a7c9236d382868fdfab09143b32fdd99db613",
+		"platform/helper-validation.json": "b4a2aea15963e7f539171eff46493585ddd3dbbbfd99e41a06550fb975b2702b",
+		"platform/main.c": "1f28ba5617df070e94e2473263d784ed76b10ba1a13fba24e36742619b01f419",
+		"platform/physical.S": "23cd7c09565136e297cf8a92011b898cf753f214f0002ca33ad42c3ae660ce97",
+		"platform/platform.c": "dc5e608862da7ca7e970e69c28f09680e382df51d75a8a85c53482d9c8bd99e9",
+		"platform/platform.h": "868d17dd0ab5bf48b2c48c9192be42085398c9b4691722ded0f9f3bf14801378",
+		"platform/profile-candidate.json": "beab6f912e69a385c8ffa1e06c497b0eb0d46ddbd768f2894fc4fbc3bd0059ea",
+		"platform/ram-candidate.ld": "c728cda5d82b89474c26cda4b69fa95d13ec94688892d9f5e738a32fc32530e4",
+		"platform/runtime.c": "ec8ed2efb811a0c8bcba12f15a8edadd6792f1925a2abe5f5ceaf3bd395439a0",
+		"platform/runtime.h": "cce1159e9a1dfb5837f0e74595e61d7c3354539934e403fe924d3e4bfe9044a2",
+		"tools/build.py": "7b14564f2234c2c36c8b682ebe0a4ff1237e9ddae3005645e07e3ac33572ee38",
+		"tools/build_operating.py": "f67b534f5454113d0f30db6874f8e8a8de195150213eedb87542d7d64df3a3cc",
+		"tools/build_platform.py": "2cfb189f57466bb943e6e6b65e33b3bbde126b1c703411777020387bf1b05c3c",
+		"test/agent.c": "c6c6ada9832c1964954d794afa197f18a4e9254be6d5668ac17601d28716ddcd",
+		"test/agent_io.h": "8d70ffeb09b2d5a9e498d8999294799fab08bb1b9237e602aa53ff261acf3a47",
+		"test/can.c": "e27e2ee005616990676dee883d0ead7638234b2eec323267daa59a59d8e12601",
+		"test/core.c": "9897cde8394d87fd5d32a036875e3c3fceb7adc120fbc5ea6d97b5193b564191",
+		"test/dispatch.c": "6e32342536ae78c0ba2f5d00a1063197be0c2810d6585af54bf8e9df42a0d207",
+		"test/flash.c": "789eabdecc0834e6a7a3ae8dc3a2f837e31bd69e51ead99fc9547ffd8265e14f",
+		"test/isotp-version.h": "b6559e8069f815a3015871c4291efdb011f8402d4609b8b9950b34fcfabafa43",
+		"test/isotp.c": "0fd5c6ca1ae578d9586ae84e4bdc8854e5cc7135efa991af201e7943f051c62a",
+		"test/platform.c": "b9819d4452650ad988f96c40d941fb790d3c982431cb88ce09b869169f908c79",
+		"test/runtime.c": "1bb6d47a3e37437aa3c955e249949c2b75ca495155e4e65346b86e3f4af70809",
+		"test/test_core.py": "71b8a9d97b65135444c0ba3ac240857067491783a5539ed3b67dc60db616518a",
+		"test/test_simulator_checker.py": "bf274b027080b53d6b37ad300fc455dff3f15c3a2df15d69e34bda91147e6b0c",
+		"simulator/README.md": "c2e06ac047eba0a5abb78b95b4040ef7b0c46f3eb867a14db0498dc0940e0cb6",
+		"simulator/contracts.py": "6acf66d7fb7ba5a63d2d6b7291b1f4c71358d657c5bd535aef868ab140d9edc2",
+		"simulator/dispatch_probe.S": "dcc365dc0fa21b15be0721f3717168f60d4a9d284b2699f195ad33eaf5358385",
+		"simulator/engine-lock.json": "59cd1f7d28a9d3b949ed7a8fafa1f39f4a4f5f79425213e527ab4aeb0610d7e6",
+		"simulator/isotp_probe.c": "ff176046263bd80d839df1391eceda2c6a34daecfb7127502779d9cf38e1cef7",
+		"simulator/layout_probe.c": "9a5ea0e0145c4d2ca66194d82e0118c6fc8904e9bc3c17cfa9d98bd9bccb00db",
+		"simulator/operating_contracts.py": "648e532339c1d4faec01bdeec6a06a4ba1c3e85703588fa3cffc8c06ae1f29d7",
+		"simulator/platform_contracts.py": "68e642468a3883628bc577b62b6b80eb89f48f3715c454751043bc7b6f1cb8f9",
+		"simulator/platform_layout.c": "bcd1689b68f98f1a92f41caf645827b33a99d58a6c4d34074e356d6b318422a7",
+		"simulator/run.py": "8cab9ec26455af18ae7e1702fa3411eb4aa3bd8a25407fee98908cb8bcfb14d0",
+		"simulator/runner.c": "56ea2fe69cbef87d8c0d0c3356ec88af321360fdad0cda1fd8e94f68477f9ad5",
+		"simulator/runtime_profile.S": "3510092c45f24952f43c6aa94d02129e4352eba219132f55a86d97a49e932ae4",
+		"simulator/startup_probe.c": "50e0803585af2cb5b277b21a4d27198aec6ecbf5d6710e582128eeb7c6e4bc10"
+	},
+	"artifact_sha256": {
+		"validation.json": "0dc954bb646b07faa1777cea9c1f68e54ec87c37f17450e132ece70f29ef63c9",
+		"input.packet": "9d1e2f58a1a9f0c9848c73d4c2ea73b3adca801b5440212217748246558674a5",
+		"snapshots.jsonl": "2d866d55881dbb9f4e4a661812a132c92923d9f594514f31206bc6379d31f6cc",
+		"runner": "8431b58dec405fc0570abfb8fd67f9f598a79bead652afd17d08be6b5c2aa03f"
+	},
+	"limitations": "Synthetic memory only; no SFR/helper mapping or ECU hardware. Operating native evidence covers exact LTO zero-profile entry rejection/park, not admitted service paths. Positive startup/flash/CAN/ROM flows use host shims. Full operating graph now links within budget; physical calibration, ownership, wiring and optimized admitted-path qualification remain pending.",
+	"tool_sha256": {
+		"gcc": "7dba42a7698a9e4a4ce49da3702c96f746579e060d80ace076a6ceba62d65edc",
+		"as": "f71db149abe0b459d3af9866874934ae6c28709a6ac786c4669ead9f3f125565",
+		"ld": "960dc43e3be33955d04e37df9c641c221038c6c6f42caea67a78a56cf1b8229b",
+		"nm": "1c0aedb590f9e71434e096fcde309930627ed42e6ae114f5b1947679d2aabc09",
+		"objcopy": "b31b428def85cfb75f05662cba2e00474416049fd1980f05c1386aaa3efe7a2e",
+		"objdump": "3b220066b49d469a192682a2bbe4f996014a97bf6cdc731a01884e781b44d2cc",
+		"readelf": "b31ee4f76e271b92e370a22450cac38833ecd023557343cde40d98597d174503",
+		"cc1": "e0040f42a14486a3592b86e20c8d2339137632f4b4a297f91d24235c190b9e25",
+		"collect2": "c7d1f70f382233465de9f6e927df31c741e0717ea218fd62a3a17d2ed6acd1be",
+		"lto1": "9809d934cc6660d464f300b86752881db77f0c1b8a5d6db3097ad42b56415b2d",
+		"lto-wrapper": "6197998ddb60c21e9d9334e302417339e4ed69421461d7d0a725bcb313517333",
+		"liblto_plugin": "e0655cc9b6262ba57ae657af2a718734b932313420b93e53fa9d0ca23fcc13dc"
+	}
+}

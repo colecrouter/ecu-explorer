@@ -38,6 +38,7 @@
 	],
 	"scripts": {
 		"build": "npm run build --workspaces",
+		"firmware:evox:operating:build": "python3 -B firmware/evox/tools/build_operating.py",
 		"firmware:evox:simulate": "python3 -B firmware/evox/simulator/run.py",
 		"firmware:evox:platform:build": "python3 -B firmware/evox/tools/build_platform.py",
 		"firmware:evox:build": "python3 -B firmware/evox/tools/build.py",

@@ -15,6 +15,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 from build import build, sha
 from build_platform import build as build_platform
 from platform_contracts import corpus as platform_corpus
+from build_operating import build as build_operating, section
+from operating_contracts import corpus as operating_corpus
 
 
 def execute(args):
@@ -54,7 +56,9 @@ def execute(args):
     cc1 = Path(run([args.toolchain_bin.resolve() / "m32r-elf-gcc",
                     "-print-prog-name=cc1"]).decode().strip())
     pinned[str(cc1)] = sha(cc1)
-    if args.platform:
+    if args.operating:
+        build_operating(args.toolchain_bin.resolve(), output / "target")
+    elif args.platform:
         build_platform(args.toolchain_bin.resolve(), output / "target", probe=True)
     else:
         build(args.toolchain_bin.resolve(), output / "target", startup_probe=True)
@@ -63,19 +67,33 @@ def execute(args):
         path = args.toolchain_bin.resolve() / ("m32r-elf-" + name)
         if pinned[str(path)] != target_manifest["tools"][name]:
             raise ValueError(f"target tool changed during build: {path}")
-    elf = output / "target/first/core.elf"
-    binary = output / "target/first/core.bin"
-    pinned[str(elf)], pinned[str(binary)] = sha(elf), sha(binary)
+    if args.operating:
+        for name in ("collect2", "lto1", "lto-wrapper"):
+            path = Path(run([args.toolchain_bin.resolve() / "m32r-elf-gcc", "-print-prog-name=" + name]).decode().strip()).resolve()
+            if sha(path) != target_manifest["tools"][name]: raise ValueError("LTO tool changed")
+            pinned[str(path)] = sha(path)
+        plugin = cc1.parent / "liblto_plugin.so"
+        if sha(plugin) != target_manifest["tools"]["liblto_plugin"]: raise ValueError("LTO plugin changed")
+        pinned[str(plugin)] = sha(plugin)
+    elf = output / ("target/first/operating.elf" if args.operating else "target/first/core.elf")
+    pinned[str(elf)] = sha(elf)
+    if args.operating:
+        binary_bytes = section(elf, ".text")[1]
+    else:
+        binary = output / "target/first/core.bin"
+        pinned[str(binary)] = sha(binary)
+        binary_bytes = binary.read_bytes()
     symbols = {}
     for line in run([args.toolchain_bin.resolve() / "m32r-elf-nm", "-n", elf]).decode().splitlines():
         fields = line.split()
-        if len(fields) == 3 and fields[1] in (("T", "t") if args.platform else ("T",)):
+        if len(fields) == 3 and fields[1] in (("T", "t") if args.platform or args.operating else ("T",)):
             symbols[fields[2]] = int(fields[0], 16)
     runner = output / "runner"
     link = [compiler, "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
             "-include", engine / "sim/config.h", "-I", source / "include",
             "-I", engine / "bfd", "-I", source / "bfd",
             ROOT / "simulator/runner.c"]
+    if args.operating: link.append("-DEVOX_OPERATING_PROFILE")
     link.extend(engine / path for path in lock["files"]["build"] if path.endswith(".a"))
     if args.library_dir:
         link.extend(["-L", args.library_dir.resolve()])
@@ -85,7 +103,7 @@ def execute(args):
     link.extend(["-lm", "-o", runner])
     run(link)
     pinned[str(runner)] = sha(runner)
-    cases = (platform_corpus if args.platform else corpus)(symbols, binary.read_bytes())
+    cases = (operating_corpus if args.operating else platform_corpus if args.platform else corpus)(symbols, binary_bytes)
     packet = bytearray(struct.pack(">I", len(cases)))
     for case in cases:
         packet.extend(struct.pack(">III", case["entry"], len(case["code"]), case["limit"]))
@@ -126,7 +144,9 @@ if __name__ == "__main__":
     parser.add_argument("--gdb-source", type=Path, required=True)
     parser.add_argument("--gdb-build", type=Path, required=True)
     parser.add_argument("--library-dir", type=Path)
-    parser.add_argument("--platform", action="store_true", help="Execute isolated physical-backend library contracts")
+    profiles = parser.add_mutually_exclusive_group()
+    profiles.add_argument("--operating", action="store_true", help="Execute exact unadmitted LTO operating entry")
+    profiles.add_argument("--platform", action="store_true", help="Execute isolated physical-backend library contracts")
     parser.add_argument("--host-cc", default=os.environ.get("CC", "cc"))
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()

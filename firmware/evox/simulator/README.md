@@ -134,6 +134,16 @@ main and is not the image executed by this runner. See
 The core profile now has two additional startup cases: PSW IE and SM are rejected
 before SP/BSS writes, preserving the incoming stack/link and dirty memory.
 
+## Operating entry profile (2026-11-10)
+
+Use `--operating` instead of `--platform` to repeat-build the full LTO operating
+entry and execute its exact zero-profile ELF text at candidate addresses. Four
+finite cases check two dirty BSS patterns and PSW IE/SM rejection. Code, state
+and stack regions are synthetic; no SFR/helper address is mapped. The zero
+profile must park without device access. Positive admitted-path service remains
+host-shim tested, not native peripheral execution. See
+[operating ownership and size proof](../platform/OPERATING_ENTRY.md).
+
 ## Limits
 
 This validates finite ordinary-memory executions of the compiled CRC/parser
