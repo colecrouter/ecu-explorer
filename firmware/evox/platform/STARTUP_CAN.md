@@ -49,6 +49,9 @@ watchdog servicing. Unknown: physical output wiring, counter units/clock,
 required service interval and full entry-path state. The copied helper's
 r0–r7 scratch use is not proof of every mode/interrupt ABI obligation.
 Preserve its code and state until replacement behavior is established.
+The subsequent [helper audit](FACTORY_HELPER.md) establishes its exact modular
+comparison, scratch-register contract and finite native execution evidence;
+electrical watchdog identity and timing remain unknown.
 
 ## RAM layout decision
 

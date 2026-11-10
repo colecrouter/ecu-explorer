@@ -1,0 +1,29 @@
+{
+	"cases": 384,
+	"engine": "GNU GDB 16.3 M32R simulator",
+	"model": "m32r/d",
+	"rom_sha256": "409e23912db9e445a72f6f7aff25c393549cc07eb0a649cf663fcbf07fda59af",
+	"helper_sha256": "92d755bc618dac16d2254dd263724c4594e0d47894f7bfe74dc061f8da0fa117",
+	"helper_rom_start": "0x1760",
+	"helper_ram_start": "0x808640",
+	"helper_bytes": 84,
+	"max_steps": 32,
+	"artifacts": {
+		"runner.c": "8c475b59191119fca6006a4877b0d73da933071df0c094a3accdec9bca6556aa",
+		"runner": "0ac198c2d1360791719c970c8fa3a89f11f04fbbcd2b89f80d6853c1e4adcd47",
+		"probe.py": "86c51d61a65673b1e9008557adc1501c31afd394fb0e6c80753e4b19dd98df5e",
+		"input.packet": "0fc5a421d5622ac26e4dc94b7a887d64d11bbe337b2b3f38818e9c1972b24f6f",
+		"snapshots.jsonl": "924a4b9d8b55ca15e6220e9ff08f014dabcc31375a5fa8f7ec0a5de84fc0adbc"
+	},
+	"limitations": "Actual captured instructions, fixed synthetic memory for timer/port/state; no SFR semantics, timer progression, GPIO/wiring or hardware watchdog model.",
+	"date": "2026-11-10",
+	"validation": "finite execution of captured helper in synthetic RAM; no ECU hardware",
+	"steps": [9, 32],
+	"inputs": {
+		"deadlines": [0, 1, 1250, 32767, 32768, 65535],
+		"elapsed_offsets": [0, 1, 1249, 1250, 32767, 32768, 32769, 65535],
+		"port_bytes": [0, 64, 191, 255],
+		"incoming_condition": [0, 1],
+		"initial_counter": 65533
+	}
+}

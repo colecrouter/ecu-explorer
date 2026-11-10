@@ -205,3 +205,14 @@ core profile is retained. The candidate is unadmitted and exports no wire image.
 Native backend tests exercise synthetic mapped memory and clock/profile logic;
 host access shims cover denied accesses and address zero. No admitted physical
 profile, verified RAM ownership, measured time base or operating main is provided.
+
+### Factory helper audit (2026-11-10)
+
+[FACTORY_HELPER.md](../firmware/evox/platform/FACTORY_HELPER.md) records the
+84-byte retained helper identity, static callers and memory/register contract.
+384 GNU simulator cases execute its original instructions with synthetic
+timer/port/state memory, including strict deadline equality, half-range and
+counter wrap boundaries. The body uses no stack, preserves r8–r15 and updates
+one output bit and two halfwords when due. Electrical watchdog identity,
+state initialization, timer calibration and competing-writer exclusion remain
+unresolved; no hardware profile or adapter is enabled. Related: #3, #10.
