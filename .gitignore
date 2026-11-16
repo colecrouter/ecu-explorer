@@ -52,3 +52,5 @@ coverage
 
 # TS build info
 *.tsbuildinfo
+# Local GNU simulator source/build cache
+.cache/evox-simulator/

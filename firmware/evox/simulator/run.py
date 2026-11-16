@@ -7,8 +7,10 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 
 from contracts import check, corpus
+from setup import verify_installation
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -22,9 +24,20 @@ from operating_contracts import corpus as operating_corpus
 def execute(args):
     output = args.out.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    source, engine = args.gdb_source.resolve(), args.gdb_build.resolve()
+    cache = ROOT.parents[1] / '.cache/evox-simulator'
+    if bool(args.gdb_source) != bool(args.gdb_build): raise ValueError('supply both GDB paths or neither')
+    source = (args.gdb_source or cache / 'gdb-16.3').resolve()
+    engine = (args.gdb_build or cache / 'build').resolve()
     lock = json.loads((ROOT / "simulator/engine-lock.json").read_text())
     pinned = {}
+    if not args.gdb_source:
+        installation = cache / 'installation.json'
+        local = verify_installation(cache, lock)
+        if local['archive_sha256'] != lock['archive_sha256']: raise ValueError('simulator release mismatch')
+        for name, expected in lock['files']['source'].items():
+            if sha(source / name) != expected: raise ValueError('upstream source mismatch')
+        lock['files'] = local['files']
+        pinned[str(installation)] = sha(installation)
     for kind, base in (("source", source), ("build", engine)):
         for relative, digest in lock["files"][kind].items():
             path = base / relative
@@ -141,15 +154,17 @@ def execute(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--toolchain-bin", type=Path, default=os.environ.get("M32R_TOOLCHAIN_BIN"))
-    parser.add_argument("--gdb-source", type=Path, required=True)
-    parser.add_argument("--gdb-build", type=Path, required=True)
-    parser.add_argument("--library-dir", type=Path)
+    parser.add_argument("--gdb-source", type=Path)
+    parser.add_argument("--gdb-build", type=Path)
+    parser.add_argument("--library-dir", type=Path, default=Path("/opt/homebrew/lib") if Path("/opt/homebrew/lib").is_dir() else None)
     profiles = parser.add_mutually_exclusive_group()
     profiles.add_argument("--operating", action="store_true", help="Execute exact unadmitted LTO operating entry")
     profiles.add_argument("--platform", action="store_true", help="Execute isolated physical-backend library contracts")
     parser.add_argument("--host-cc", default=os.environ.get("CC", "cc"))
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--out", type=Path, default=Path(tempfile.mkdtemp(prefix="evox-sim-")) / "run")
     args = parser.parse_args()
+    if not args.toolchain_bin and shutil.which("m32r-elf-gcc"):
+        args.toolchain_bin = Path(shutil.which("m32r-elf-gcc")).parent
     if not args.toolchain_bin:
         parser.error("set --toolchain-bin or M32R_TOOLCHAIN_BIN")
     execute(args)

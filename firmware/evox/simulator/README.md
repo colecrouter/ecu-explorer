@@ -9,32 +9,56 @@ the externally supplied GDB source/build directories.
 
 ## Reproduce
 
-Use the ordinary GCC toolchain and existing simulator installation:
+Install build prerequisites first: Python 3.12+, a C/C++ compiler, GNU make,
+texinfo, GMP/MPFR development headers, zlib and zstd development libraries.
+On Ubuntu these are `build-essential texinfo libgmp-dev libmpfr-dev zlib1g-dev
+libzstd-dev`; on macOS use Xcode command-line tools and the corresponding
+Homebrew packages. A separate bare-metal `m32r-elf` GCC/binutils toolchain is
+required to compile firmware; this setup builds the CPU simulator only.
 
 ```sh
-export M32R_TOOLCHAIN_BIN=/path/to/m32r-toolchain/bin
-npm run firmware:evox:simulate -- \
-  --gdb-source /path/to/gdb-16.3 \
-  --gdb-build /path/to/gdb-build \
-  --library-dir /path/to/host-libraries \
-  --out /tmp/evox-simulator-new-run
+npm run firmware:evox:simulator:setup
+# m32r-elf-gcc on PATH, or set M32R_TOOLCHAIN_BIN to its bin directory:
+npm run firmware:evox:simulate -- --operating
 ```
 
-`--library-dir` is optional; the successful macOS run uses `/opt/homebrew/lib`.
-The actual local source/build directories are in the adjacent private project's
-`decoder/gdb-16.3` and `decoder/build`. No download, install, hardware operation
-or adjacent-repository edit is performed. The output directory must be new.
-Python 3, a host C compiler, host zlib/zstd libraries and the existing static GNU
-libraries are required; macOS also links iconv. `--host-cc` or `CC` selects the
-host compiler. `--toolchain-bin` can replace the environment variable.
+Setup downloads GNU GDB 16.3 from GNU's HTTPS release server, verifies the
+archive SHA-256 in `engine-lock.json`, extracts with Python's data filter and
+builds `all-sim` without global installation. A generated-Makefile portability
+fix adds a sed command terminator on macOS; no ISA source is patched. All
+sources, logs, binaries and the local `installation.json` live in the ignored
+`.cache/evox-simulator/` directory. `--jobs` controls build parallelism; `--work`
+selects an alternate setup directory (supply its paths explicitly to the runner).
 
-`engine-lock.json` pins the previously built host-specific GNU archives and
-selected public/generated headers. Mismatched or missing dependencies fail;
-the runner never silently skips or swaps engines. Another machine needs a
-separately reviewed simulator build and lock update. The archive SHA is the
-previous investigation's GNU GDB 16.3 identity, not a claim this command rebuilt
-GNU or verified all extracted sources against that archive. Shared system
-library dependencies are recorded by link command, not fully pinned.
+Before sealing installation, setup compiles the actual public-API harness and
+executes a synthetic M32R return instruction. Subsequent setup invocations verify
+the complete cached header/library inventory without rebuilding. Delete or move
+the generated cache to request a clean build. Build failure leaves logs and no
+completed installation manifest.
+
+The runner discovers the default local installation and checks its locally
+recorded artifact hashes, while upstream header and archive identities remain
+fixed. Different hosts need not produce identical static libraries. Execution
+receipts still pin every consumed local artifact. This is integrity/provenance
+tracking, not release-signature verification or a claim of reproducible binary
+hashes across different host compilers. The local manifest is trusted build
+metadata, not an independently authenticated binary distribution.
+
+An output directory is generated automatically unless `--out` is supplied;
+an explicit output must be new. `--library-dir` supplies an optional host library
+search directory (macOS Homebrew commonly needs `/opt/homebrew/lib`). `CC` or
+`--host-cc` selects the harness compiler.
+
+Existing externally provisioned builds remain supported by passing both
+`--gdb-source` and `--gdb-build`; this explicit legacy mode retains the reviewed
+host-specific hashes in `engine-lock.json`. It never silently substitutes an
+engine. No adjacent checkout is required for the default installation path.
+
+GNU GDB/simulator code retains its upstream GPL notices and source/license files
+in the cache. This repository distributes original setup/harness code and source
+URLs/hashes, not GNU binaries. CI uploads build logs/metadata only, and builds
+from source on Linux before executing the API smoke and firmware host contracts.
+Full compiled firmware cases require the separate M32R toolchain and run locally.
 
 ## Execution and acceptance
 

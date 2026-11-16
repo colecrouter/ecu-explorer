@@ -260,3 +260,16 @@ The linked profile is zero/unadmitted. Four exact-image native startup cases
 prove rejection/park and memory guards; admitted read/transition/fault flows run
 under host shims. Optimized admitted-path and hardware qualification remain
 pending. No uploader capability or ECU execution is enabled. Refs #3, #10.
+
+### Repository-local GNU simulator setup (2026-11-16)
+
+`npm run firmware:evox:simulator:setup` downloads the pinned GNU GDB release,
+builds libsim in an ignored local cache and executes an API instruction smoke.
+The runner discovers that installation and verifies its complete local artifact
+inventory while retaining upstream source pins. Explicit legacy installations
+remain hash-locked. Setup does not build the separate M32R cross-compiler.
+A Linux CI job builds/smoke-tests GNU and runs host contracts; full firmware
+cases remain available locally with the cross-toolchain. macOS local builds,
+core/platform/operating cases and the admitted synthetic transcript validate
+the new path. No GNU binaries, firmware capability or ECU operation is added.
+Refs #3, #10.

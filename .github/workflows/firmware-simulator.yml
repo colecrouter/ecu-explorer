@@ -1,0 +1,30 @@
+name: GNU firmware simulator
+on:
+  pull_request:
+    paths: ["firmware/evox/**", ".github/workflows/firmware-simulator.yml"]
+  push:
+    branches: [main]
+    paths: ["firmware/evox/**", ".github/workflows/firmware-simulator.yml"]
+  workflow_dispatch:
+jobs:
+  simulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install GNU build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y build-essential texinfo libgmp-dev libmpfr-dev zlib1g-dev libzstd-dev
+      - name: Build pinned GNU simulator and execute API smoke
+        run: python3 -B firmware/evox/simulator/setup.py --jobs 2
+      - name: Run firmware host contracts
+        run: python3 -B -m unittest discover -s firmware/evox/test -v
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simulator-build-evidence
+          path: |
+            .cache/evox-simulator/*.log
+            .cache/evox-simulator/*.json
