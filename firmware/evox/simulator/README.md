@@ -150,3 +150,19 @@ This validates finite ordinary-memory executions of the compiled CRC/parser
 functions, ISO-TP/dispatcher contracts, and startup assembly with synthetic test entries. It does not validate ECU startup, peripheral behavior, watchdogs,
 CAN, flash programming, interrupts, physical RAM allocation or cycle timing.
 The core remains non-uploadable; host behavior and flash capability are unchanged.
+
+## Synthetic admitted-path transcript
+
+After a successful `--operating` run, execute
+`npm run firmware:evox:transcripts -- --evidence /path/to/operating-evidence`.
+The fixture verifies the ELF identity and implementation pins, patches only the
+26 profile bytes in its private input, and executes unchanged optimized
+instructions. It injects timer ticks, CAN abort completion and a size request,
+checks the exact reply, then injects flash-readiness loss and requires a latched
+fault and assembly park. The original zero-profile ELF remains unchanged.
+
+SFR storage is inert and the fixed helper address contains a source return stub.
+These are explicit synthetic events, not CAN/flash/watchdog emulation. This first
+transcript does not qualify ROM-read, multi-frame, flash-clear or physical helper
+paths. Outputs and a metadata receipt are retained in a fresh transcripts
+subdirectory of the supplied evidence directory. No ECU is accessed.
