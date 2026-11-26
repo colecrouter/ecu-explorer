@@ -27,25 +27,15 @@ export function computeSecurityKey(seed: Uint8Array): Uint8Array {
 	return new Uint8Array([(key16 >> 8) & 0xff, key16 & 0xff]);
 }
 
-function affineByte(x: number): number {
-	return (Math.imul(0x89, x) + 0xd2) & 0xff;
-}
-
-function carryByte(x: number, additiveConstant: number): number {
-	return ((Math.imul(0x89, x) + additiveConstant) >>> 8) & 0xff;
-}
-
 /**
  * Computes the SecurityAccess key for the traced EVO X flash/programming
  * session (`0x27 0x05` / `0x27 0x06`).
  *
- * This 4-byte algorithm was derived from 157 unique observed seed/key pairs
- * captured from real MUT-III flash sessions. It matches the traced structure:
- *
- * - `key[1] = (0x89 * seed[1] + 0xD2) & 0xFF`
- * - `key[3] = (0x89 * seed[3] + 0xD2) & 0xFF`
- * - `key[0] = (0x89 * seed[0] + 0xD2 + 0x8F + hi(0x89 * seed[1] + 0xD0)) & 0xFF`
- * - `key[2] = (0x89 * seed[2] + 0xD2 + 0x8F + hi(0x89 * seed[3] + 0xD1)) & 0xFF`
+ * The seed is two big-endian 16-bit words; each key word is
+ * `(seedWord * 0x89 + 0x61D2) & 0xFFFF`. This is the check the ECU's
+ * resident boot code runs (on a 4B11T 1 MiB M32186 image the instructions
+ * are `LDI R1,#0x89; MUL; ADD3 #0x61D2; STH` at ROM `0x524C`). It matches all
+ * 157 distinct seed/key pairs captured from real MUT-III flash sessions.
  *
  * @param seed - 4-byte seed from `0x67 0x05`
  * @returns 4-byte key for `0x27 0x06`
@@ -58,20 +48,12 @@ export function computeFlashSecurityKey(seed: Uint8Array): Uint8Array {
 		);
 	}
 
-	const [seed0, seed1, seed2, seed3] = seed;
-	if (
-		seed0 === undefined ||
-		seed1 === undefined ||
-		seed2 === undefined ||
-		seed3 === undefined
-	) {
-		throw new RangeError("computeFlashSecurityKey: seed bytes missing");
+	const key = new Uint8Array(4);
+	for (let i = 0; i < 4; i += 2) {
+		const word = ((seed[i] ?? 0) << 8) | (seed[i + 1] ?? 0);
+		const keyWord = (Math.imul(word, 0x89) + 0x61d2) & 0xffff;
+		key[i] = keyWord >> 8;
+		key[i + 1] = keyWord & 0xff;
 	}
-
-	return new Uint8Array([
-		(affineByte(seed0) + 0x8f + carryByte(seed1, 0xd0)) & 0xff,
-		affineByte(seed1),
-		(affineByte(seed2) + 0x8f + carryByte(seed3, 0xd1)) & 0xff,
-		affineByte(seed3),
-	]);
+	return key;
 }
