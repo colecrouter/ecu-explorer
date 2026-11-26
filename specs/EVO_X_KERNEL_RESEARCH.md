@@ -330,8 +330,10 @@ commands `08` / `09` are a separate challenge exchange. The archive contains
 32-bit affine model `key = a * seed + b (mod 2^32)` is inconsistent with that
 set. The earlier implementation was subsequently found in commit `da48e26`
 (`docs/mitsucan-trace-reconciliation`) and restored selectively. Its byte-wise
-transform with carry terms matches all 245 accepted exchanges (157 distinct
-seeds). It is implemented as `computeFlashSecurityKey()` in
+transform with carry terms matched all 245 accepted exchanges (157 distinct
+seeds), but its carry constants were fitted: the ECU's own check is
+`key word = seed word * 0x89 + 0x61D2` per 16-bit word, which the byte-wise
+fit misses for 768 of 65,536 issuable seeds. It is implemented as `computeFlashSecurityKey()` in
 `packages/device/protocols/mut3/src/security.ts`. The failure of one whole-word
 affine model does not contradict this byte-wise transform.
 

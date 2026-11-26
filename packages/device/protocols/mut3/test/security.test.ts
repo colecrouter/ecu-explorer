@@ -41,6 +41,22 @@ describe("computeFlashSecurityKey", () => {
 		}
 	});
 
+	// Seeds the ECU can issue (second word = first word * 5 + 0x77) for which
+	// the low byte's carry into the high byte decides the key. None of them is
+	// in the captures, so the fixtures alone cannot tell the carry constant.
+	it.each([
+		["003e01ad", "83004767"],
+		["005b023e", "92859500"],
+		["00f7054a", "e601366c"],
+		["013e06ad", "0c00f467"],
+	])("carries the low byte correctly for seed %s", (seed, key) => {
+		const bytes = (hex: string) =>
+			Array.from(hex.match(/../g) ?? [], (b) => Number.parseInt(b, 16));
+		expect(
+			Array.from(computeFlashSecurityKey(new Uint8Array(bytes(seed)))),
+		).toEqual(bytes(key));
+	});
+
 	it("returns a fresh 4-byte Uint8Array", () => {
 		const seed = new Uint8Array([0x8f, 0xb2, 0xce, 0xf1]);
 		const key = computeFlashSecurityKey(seed);

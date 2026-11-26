@@ -418,13 +418,15 @@ The flash-session key algorithm is now implemented in `packages/device/protocols
 The solved transform is:
 
 ```text
-affine(x) = (0x89 * x + 0xD2) & 0xFF
-
-key[1] = affine(seed[1])
-key[3] = affine(seed[3])
-key[0] = (affine(seed[0]) + 0x8F + (((0x89 * seed[1] + 0xD0) >>> 8) & 0xFF)) & 0xFF
-key[2] = (affine(seed[2]) + 0x8F + (((0x89 * seed[3] + 0xD1) >>> 8) & 0xFF)) & 0xFF
+for each big-endian 16-bit word w of the seed:
+  key word = (w * 0x89 + 0x61D2) & 0xFFFF
 ```
+
+This is the check in the ECU's resident boot code (ROM `0x524C`:
+`LDI R1,#0x89; MUL; ADD3 #0x61D2; STH`). An earlier byte-wise fit took the low
+byte's carry from `+0xD0` / `+0xD1` instead of `+0xD2`. It also matched every
+captured pair, but gave a wrong key for 768 of the 65,536 seeds the ECU issues
+(the second seed word is the first × 5 + `0x77`), about one session in 85.
 
 **Current implementation**: The captured RAM-kernel upload, write, and recovery workflow is implemented in `evox-kernel.ts`. Hardware validation and additional flashing variants remain open; see [Evo X kernel research](EVO_X_KERNEL_RESEARCH.md).
 

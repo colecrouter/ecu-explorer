@@ -36,7 +36,7 @@ The following open-source projects are the primary references for protocol imple
 | Reference | URL | Purpose |
 |---|---|---|
 | **libmut** (Donour Sizemore) | https://github.com/harshadura/libmut | MUT-III protocol implementation for OpenPort cable. Python + C. Primary reference for MUT-III session layer, frame structure, and service IDs. |
-| **NikolaKozina/j2534** | https://github.com/NikolaKozina/j2534 | Cross-platform J2534 PassThru implementation using libusb. C. Primary reference for OpenPort 2.0 AT command protocol and USB bulk transfer framing. |
+| **openport-j2534** | https://github.com/bisak/openport-j2534 | J2534 PassThru driver for the OpenPort 2.0 on macOS, Linux and Windows. C. Its [`docs/PROTOCOL.md`](https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md) is the primary reference for the AT command protocol and USB bulk transfer framing, checked against the cable and Tactrix's DLL. |
 
 **Attribution requirement**: Any code ported or derived from these references must include a comment of the form:
 ```typescript
@@ -354,7 +354,7 @@ The `browser` bundle is compiled with `target: "webworker"` and cannot use Node.
 ```typescript
 // packages/device/transports/openport2/src/index.ts
 
-// Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L1
+// Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#1-usb-layer-v
 // OpenPort 2.0 USB identifiers
 const VENDOR_ID = 0x0403;
 const PRODUCT_ID = 0xcc4d;
@@ -390,40 +390,40 @@ export class OpenPort2Transport implements DeviceTransport {
 
 ### AT Command Protocol
 
-The OpenPort 2.0 communicates via a text-based AT command protocol over USB bulk transfers. This is a TypeScript port of the protocol implemented in `j2534.c`.
+The OpenPort 2.0 communicates via a text-based AT command protocol over USB bulk transfers. The protocol is documented in openport-j2534's [`docs/PROTOCOL.md`](https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md).
 
 ```typescript
 // packages/device/transports/openport2/src/index.ts
 
 class OpenPort2Connection implements DeviceConnection {
-  // Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L310
+  // Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#1-usb-layer-v
   // USB endpoint addresses for OpenPort 2.0
   private readonly ENDPOINT_IN = 0x81;
   private readonly ENDPOINT_OUT = 0x02;
 
   async sendFrame(data: Uint8Array, timeoutMs = 2000): Promise<Uint8Array> {
-    // Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L390
-    // usb_send_expect() — send data and wait for response
+    // Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#3-replies-and-sequence-numbers-v
+    // send data and wait for the reply
     await this.device.transferOut(this.ENDPOINT_OUT, data);
     const result = await this.device.transferIn(this.ENDPOINT_IN, 256);
     return new Uint8Array(result.data!.buffer);
   }
 
   // AT command helpers
-  // Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L470
+  // Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#4-commands-v
   // PassThruOpen() — "ati\r\n" to identify, "ata\r\n" to open
   private async initialize(): Promise<void> {
     await this.sendAtCommand('ati');  // identify firmware
     await this.sendAtCommand('ata');  // open device
   }
 
-  // Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L540
+  // Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#4-commands-v
   // PassThruConnect() — "oto{protocol} {flags} {baud}\r\n"
   async openChannel(protocol: number, flags: number, baud: number): Promise<void> {
     await this.sendAtCommand(`oto${protocol} ${flags} ${baud}`);
   }
 
-  // Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L700
+  // Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#4-commands-v
   // PassThruWriteMsgs() — "att{channel} {len} {flags}\r\n{data}"
   async writeMessage(channelId: number, data: Uint8Array, flags = 0): Promise<void> {
     const header = new TextEncoder().encode(`att${channelId} ${data.length} ${flags}\r\n`);
@@ -672,7 +672,7 @@ The `packages/definitions/ecuflash/` package uses `fs` for XML file reading. Thi
 **Goal**: Read a ROM from a connected ECU. Read-only — no flash risk.
 
 - [ ] Implement `packages/device/transports/openport2/` (AT command protocol)
-  - Reference: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c
+  - Reference: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md
 - [ ] Implement `packages/device/protocols/mut3/` (MUT-III session layer)
   - Reference: https://github.com/harshadura/libmut
 - [ ] Implement `security.ts` seed/key algorithm for 4B11T ECU
@@ -750,5 +750,5 @@ The `packages/definitions/ecuflash/` package uses `fs` for XML file reading. Thi
 - [VSCode Web Extensions Guide](https://code.visualstudio.com/api/extension-guides/web-extensions) — Web extension runtime documentation
 - [VSCode 1.69 Release Notes — WebUSB](https://code.visualstudio.com/updates/v1_69#_webusb-web-serial-and-webhid-access-on-web) — `workbench.experimental.requestUsbDevice` API
 - [libmut](https://github.com/harshadura/libmut) — MUT-III protocol reference (Donour Sizemore)
-- [NikolaKozina/j2534](https://github.com/NikolaKozina/j2534) — OpenPort 2.0 AT command protocol reference
+- [openport-j2534](https://github.com/bisak/openport-j2534) — OpenPort 2.0 J2534 driver; [`docs/PROTOCOL.md`](https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md) is the AT command protocol reference
 - [WebUSB API (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/WebUSB_API) — `navigator.usb` API reference
