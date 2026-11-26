@@ -192,6 +192,6 @@ For questions about scope or expectations, open an issue or discussion.
 - **EcuFlash**: https://www.tactrix.com/
 - **EvoScan**: https://www.evoscan.com/
 - **RomRaider**: https://romraider.com/
-- **OpenPort 2.0**: https://github.com/NikolaKozina/j2534
+- **OpenPort 2.0**: https://github.com/bisak/openport-j2534
 - **Ghido**: https://ghidra-sre.org/
 - **Ghidra-MCP**: https://github.com/LaurieWired/GhidraMCP

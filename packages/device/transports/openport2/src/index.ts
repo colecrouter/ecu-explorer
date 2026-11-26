@@ -11,12 +11,12 @@ import {
 // USBDevice and USBDeviceRequestOptions are available globally from @types/w3c-web-usb
 // HID types are available via DOM lib.
 
-// Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L1
+// Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#1-usb-layer-v
 // USB vendor/product IDs for OpenPort 2.0
 const VENDOR_ID = 0x0403;
 const PRODUCT_ID = 0xcc4d;
 
-// Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L310
+// Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#1-usb-layer-v
 // USB bulk transfer endpoint defaults
 const DEFAULT_ENDPOINT_IN = 0x81;
 const DEFAULT_ENDPOINT_OUT = 0x02;
@@ -726,7 +726,7 @@ export class OpenPort2Connection implements DeviceConnection {
 	 * Initialize the OpenPort 2.0 device by sending identification and
 	 * connect AT commands.
 	 *
-	 * Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L470
+	 * Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#4-commands-v
 	 */
 	async initialize(): Promise<void> {
 		await this.sendExpect("\r\n\r\nati\r\n", "ari ");
@@ -753,7 +753,7 @@ export class OpenPort2Connection implements DeviceConnection {
 	/**
 	 * Open a J2534 channel on the device.
 	 *
-	 * Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L540
+	 * Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#4-commands-v
 	 *
 	 * @param protocol - J2534 protocol ID (e.g. 6 for ISO15765)
 	 * @param flags    - Protocol-specific flags
@@ -815,7 +815,7 @@ export class OpenPort2Connection implements DeviceConnection {
 	/**
 	 * Write a message to an open channel.
 	 *
-	 * Ref: https://github.com/NikolaKozina/j2534/blob/master/j2534/j2534.c#L700
+	 * Ref: https://github.com/bisak/openport-j2534/blob/main/docs/PROTOCOL.md#4-commands-v
 	 *
 	 * @param channelId - Channel ID returned by openChannel()
 	 * @param data      - Message payload bytes
@@ -840,7 +840,8 @@ export class OpenPort2Connection implements DeviceConnection {
 
 	/**
 	 * Read and decode protocol messages wrapped in the adapter's `AR...` format.
-	 * This is a minimal ISO15765 parser based on the reference J2534 source.
+	 * This is a minimal ISO15765 parser; the frame layout is in openport-j2534's
+	 * docs/PROTOCOL.md §7.
 	 */
 	private async readProtocolMessage(
 		timeoutMs: number,

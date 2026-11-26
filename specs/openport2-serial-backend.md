@@ -9,7 +9,7 @@ This spec now sits beneath the broader shared-hardware architecture described in
 ## References
 
 - Atlas native OpenPort serial driver: <https://github.com/nonnatee/atlas-ecu>
-- Nikola Kozina OpenPort J2534 reference: <https://github.com/NikolaKozina/j2534>
+- openport-j2534, OpenPort 2.0 J2534 driver and wire-protocol reference: <https://github.com/bisak/openport-j2534>
 
 ## Design
 
